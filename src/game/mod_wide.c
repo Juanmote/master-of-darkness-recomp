@@ -132,14 +132,14 @@ void mod_render(const sms_t* s, uint32_t* out, int pitch, int ext, mod_wide_info
     for (int x = 0; x < W; x++) {
       bool in_center = x >= off && x < off + SMS_W;
       if (in_center && !(left_blank && x < off + 8)) continue;
-      uint32_t c = 0xFF000000u;
       int wx = view + x;
-      if (wx >= left && wx < right && wx >= 0 && wx < MAP_W * 16) {
-        int e = map_tile(&m, wx, wy);
-        int t = 256 + (remap[e] >= 0 ? remap[e] : e);
-        c = pal[tile_px(vram, t, wx & 7, wy & 7)];
-      }
-      row[x] = c;
+      // outside the current section (one-screen rooms, section ends): keep repeating the
+      // outermost 16-pixel column, so walls and pillars simply continue
+      if (wx < left) wx = left + (((wx - left) % 16) + 16) % 16;
+      else if (wx >= right) wx = right - 16 + (wx - right) % 16;
+      int e = map_tile(&m, wx, wy);
+      int t = 256 + (remap[e] >= 0 ? remap[e] : e);
+      row[x] = pal[tile_px(vram, t, wx & 7, wy & 7)];
     }
     // sprite pixels that spill past the original right edge
     for (int i = 0; i < SMS_SPR_OVER && off + SMS_W + i < W; i++) {
