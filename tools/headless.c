@@ -2,14 +2,65 @@
 // usage: headless rom.sms -f FRAMES [-i input.txt] [-s f1,f2] [-x ext] [-o dir] [-l state] [-S frame:state] [-a audio.raw]
 #include "../src/core/sms.h"
 #include "../src/game/mod_wide.h"
+#ifdef MOD_HAVE_RECOMP
+#include "../src/recomp/recomp_rt.h"
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 int mod_debug_compare(const sms_t* s, uint8_t* mask);
 
 static sms_t S;
+static sms_t T;  // scratch machine for verification
+static long verify_blocks, verify_fail;
+static int cpu_equal(const z80* a, const z80* b) {
+#define F(x) if (a->x != b->x) { fprintf(stderr, "  %s: rec=%lX ref=%lX\n", #x, (unsigned long)a->x, (unsigned long)b->x); ok = 0; }
+  int ok = 1;
+  F(pc) F(sp) F(ix) F(iy) F(mem_ptr) F(a) F(b) F(c) F(d) F(e) F(h) F(l)
+  F(a_) F(b_) F(c_) F(d_) F(e_) F(h_) F(l_) F(f_) F(i) F(r) F(cyc)
+  F(sf) F(zf) F(yf) F(hf) F(xf) F(pf) F(nf) F(cf) F(iff_delay) F(interrupt_mode) F(iff1) F(iff2) F(halted)
+#undef F
+  return ok;
+}
+static void verify_cb(sms_t* s, const sms_state_t* before, int psg_n) {
+  verify_blocks++;
+  T.st = *before;
+  T.rom = s->rom; T.rom_size = s->rom_size; T.input = s->input;
+  T.st.cpu.userdata = &T;
+  T.st.cpu.int_pending = 0; T.st.cpu.nmi_pending = 0;
+  T.psg_log_n = psg_n;
+  memcpy(T.psg_log, s->psg_log, sizeof(T.psg_log[0]) * psg_n);
+  T.frame_start_cyc = s->frame_start_cyc;
+  int n = 0;
+  while (T.st.cpu.cyc < s->st.cpu.cyc && n < 100000) { z80_exec_one(&T.st.cpu); n++; }
+  int ok = cpu_equal(&s->st.cpu, &T.st.cpu);
+  if (memcmp(s->st.ram, T.st.ram, sizeof T.st.ram)) { fprintf(stderr, "  RAM differs\n"); ok = 0; }
+  if (memcmp(s->st.bank, T.st.bank, 3) || s->st.mapper_ctrl != T.st.mapper_ctrl) { fprintf(stderr, "  banks differ\n"); ok = 0; }
+  if (memcmp(&s->st.vdp, &T.st.vdp, sizeof T.st.vdp)) { fprintf(stderr, "  VDP differs\n"); ok = 0; }
+  if (s->psg_log_n != T.psg_log_n || memcmp(s->psg_log, T.psg_log, sizeof(T.psg_log[0]) * T.psg_log_n)) { fprintf(stderr, "  PSG differs\n"); ok = 0; }
+  if (!ok) {
+    verify_fail++;
+    fprintf(stderr, "MISMATCH frame %u block start pc=%04X bank2=%02X (ref ran %d instr)\n", s->st.frame, before->cpu.pc, before->bank[2], n);
+    if (verify_fail > 5) exit(2);
+    // resync so we can keep looking for other problems
+    s->st = T.st; s->st.cpu.userdata = s;
+    s->st.cpu.read_byte = T.st.cpu.read_byte;
+  }
+}
+static uint8_t cov[1 << 20];
+static uint32_t ram_exec;
+static int watch_addr = -1;
+static void h_ramw(sms_t* s, uint16_t a, uint8_t v) {
+  if (a == watch_addr) printf("W %04X=%02X frame %u pc %04X line %d cyc %lu\n", a, v, s->st.frame, s->st.cpu.pc, s->st.vdp.line, (unsigned long)s->st.cpu.cyc);
+}
+static unsigned long tr_from, tr_to;
+static void h_exec(sms_t* s, uint16_t pc, int off) {
+  if (off >= 0) cov[off] |= 1; else ram_exec++;
+  if (tr_to && s->st.cpu.cyc >= tr_from && s->st.cpu.cyc <= tr_to) printf("X pc=%04X cyc=%lu iff1=%d pend=%d\n", pc, (unsigned long)s->st.cpu.cyc, s->st.cpu.iff1, s->st.cpu.int_pending);
+}
 typedef struct { int from, to; uint8_t btn; } span_t;
 static span_t spans[4096]; static int nspans;
+static struct { int from, to; int addr; int val; } pokes[64]; static int npokes;
 
 static uint8_t parse_btn(const char* t) {
   uint8_t b = 0;
@@ -23,6 +74,7 @@ static uint8_t parse_btn(const char* t) {
 
 int main(int argc, char** argv) {
   int frames = 600, ext = MOD_WIDE_EXT;
+  const char *hashpath = NULL; const char *covpath = NULL; int seed = 0, use_recomp = 0, do_verify = 0;
   const char *input = NULL, *shots = "", *outdir = "out", *load = NULL, *save = NULL, *audio = NULL;
   for (int i = 2; i < argc; i++) {
     if (!strcmp(argv[i], "-f")) frames = atoi(argv[++i]);
@@ -33,6 +85,12 @@ int main(int argc, char** argv) {
     else if (!strcmp(argv[i], "-l")) load = argv[++i];
     else if (!strcmp(argv[i], "-S")) save = argv[++i];
     else if (!strcmp(argv[i], "-a")) audio = argv[++i];
+    else if (!strcmp(argv[i], "-c")) covpath = argv[++i];
+    else if (!strcmp(argv[i], "-R")) use_recomp = 1;
+    else if (!strcmp(argv[i], "-H")) hashpath = argv[++i];
+    else if (!strcmp(argv[i], "-V")) { use_recomp = 1; do_verify = 1; }
+    else if (!strcmp(argv[i], "-r")) seed = atoi(argv[++i]);
+    else if (!strcmp(argv[i], "-p")) { sscanf(argv[++i], "%d-%d:%x=%x", &pokes[npokes].from, &pokes[npokes].to, &pokes[npokes].addr, &pokes[npokes].val); npokes++; }
   }
   static uint8_t rom[1 << 20];
   FILE* f = fopen(argv[1], "rb"); int n = (int)fread(rom, 1, sizeof rom, f); fclose(f);
@@ -42,6 +100,17 @@ int main(int argc, char** argv) {
     f = fopen(load, "rb"); size_t r = fread(sbuf, 1, ssz, f); fclose(f);
     if (!sms_load_state(&S, sbuf, r)) { fprintf(stderr, "bad state\n"); return 1; }
   }
+#ifdef MOD_HAVE_RECOMP
+  if (use_recomp) S.recomp_run = recomp_run;
+#else
+  if (use_recomp) { fprintf(stderr, "built without recompiled code (run tools/recomp/recomp.py first)\n"); return 1; }
+#endif
+  if (getenv("TRACE")) { sscanf(getenv("TRACE"), "%lu-%lu", &tr_from, &tr_to); S.hooks.on_exec = h_exec; }
+  if (getenv("WATCH")) { watch_addr = (int)strtol(getenv("WATCH"), NULL, 16); S.hooks.on_ram_write = h_ramw; }
+#ifdef MOD_HAVE_RECOMP
+  if (do_verify) { sms_init(&T, rom, n); S.recomp_verify = verify_cb; rt_single = 1; }
+#endif
+  if (covpath) { FILE* cf = fopen(covpath, "rb"); if (cf) { if (fread(cov, 1, sizeof cov, cf)) {} fclose(cf); } S.hooks.on_exec = h_exec; }
   if (input) {
     FILE* in = fopen(input, "r"); char line[256];
     while (fgets(line, sizeof line, in)) {
@@ -58,14 +127,44 @@ int main(int argc, char** argv) {
   int W = SMS_W + 2 * ext;
   uint32_t* pix = malloc(sizeof(uint32_t) * W * SMS_H);
   int valid_frames = 0;
+  FILE* hf = hashpath ? fopen(hashpath, "w") : NULL;
   for (int i = 0; i < frames; i++) {
     uint32_t fr = S.st.frame;
     S.input = 0;
     for (int k = 0; k < nspans; k++) if ((int)fr >= spans[k].from && (int)fr <= spans[k].to) S.input |= spans[k].btn;
+    if (seed) {  // random bot after frame 1300
+      static uint32_t rs; static uint8_t held; static int hold_left;
+      if (!rs) rs = seed * 2654435761u;
+      if (fr > 1300) {
+        if (hold_left-- <= 0) {
+          rs = rs * 1103515245u + 12345u; uint32_t r = rs >> 8;
+          held = 0;
+          int d = r % 10;
+          if (d < 5) held |= BTN_RIGHT; else if (d < 6) held |= BTN_LEFT; else if (d < 7) held |= BTN_UP | BTN_RIGHT; else if (d < 8) held |= BTN_DOWN;
+          if ((r >> 4) % 3 == 0) held |= BTN_2;
+          if ((r >> 6) % 3 == 0) held |= BTN_1;
+          if ((r >> 8) % 7 == 0) held |= BTN_UP | BTN_1;
+          hold_left = 4 + (r >> 12) % 30;
+        }
+        S.input |= held;
+        if (fr % 600 == 0) S.input |= BTN_1;  // continue screens etc.
+      }
+    }
+    for (int k = 0; k < npokes; k++) if ((int)fr >= pokes[k].from && (int)fr <= pokes[k].to) S.st.ram[pokes[k].addr & 0x1FFF] = pokes[k].val;
     sms_run_frame(&S);
     mod_wide_info_t info;
     mod_render(&S, pix, W, ext, &info);
     if (info.map_valid) valid_frames++;
+    if (hf) {
+      uint32_t h = 2166136261u;
+      const uint8_t* p1 = (const uint8_t*)S.fb_idx; for (size_t k = 0; k < sizeof S.fb_idx; k++) h = (h ^ p1[k]) * 16777619u;
+      for (size_t k = 0; k < sizeof S.st.ram; k++) h = (h ^ S.st.ram[k]) * 16777619u;
+      const uint8_t* p2 = (const uint8_t*)S.audio; for (size_t k = 0; k < sizeof S.audio; k++) h = (h ^ p2[k]) * 16777619u;
+      uint32_t hf_ = 2166136261u; for (size_t k = 0; k < sizeof S.fb_idx; k++) hf_ = (hf_ ^ p1[k]) * 16777619u;
+      uint32_t hr_ = 2166136261u; for (size_t k = 0; k < sizeof S.st.ram; k++) hr_ = (hr_ ^ S.st.ram[k]) * 16777619u;
+      uint32_t ha_ = 2166136261u; for (size_t k = 0; k < sizeof S.audio; k++) ha_ = (ha_ ^ p2[k]) * 16777619u;
+      fprintf(hf, "%u %08X %lu fb=%08X ram=%08X au=%08X\n", fr, h, (unsigned long)S.st.cpu.cyc, hf_, hr_, ha_);
+    }
     if (getenv("MOD_CMP")) { static uint8_t mk[SMS_W*SMS_H]; int d = mod_debug_compare(&S, mk); if (d > 0) { printf("F%u cam=%d mismatch=%d\n", fr, info.cam, d); char mp[512]; snprintf(mp, sizeof mp, "%s/m%06u.pgm", outdir, fr); FILE* o = fopen(mp, "wb"); fprintf(o, "P5\n256 192\n1\n"); fwrite(mk, 1, sizeof mk, o); fclose(o); } }
     if (af) fwrite(S.audio, 2, SMS_SAMPLES_PER_FRAME, af);
     char key[32], shl[8192];
@@ -80,6 +179,20 @@ int main(int argc, char** argv) {
     if ((int)fr == save_frame) { sms_save_state(&S, sbuf); f = fopen(save_path, "wb"); fwrite(sbuf, 1, ssz, f); fclose(f); }
   }
   if (af) fclose(af);
+  if (hf) fclose(hf);
+#ifdef MOD_HAVE_RECOMP
+  if (use_recomp) S.recomp_run = recomp_run;
+#else
+  if (use_recomp) { fprintf(stderr, "built without recompiled code (run tools/recomp/recomp.py first)\n"); return 1; }
+#endif
+  if (getenv("TRACE")) { sscanf(getenv("TRACE"), "%lu-%lu", &tr_from, &tr_to); S.hooks.on_exec = h_exec; }
+  if (getenv("WATCH")) { watch_addr = (int)strtol(getenv("WATCH"), NULL, 16); S.hooks.on_ram_write = h_ramw; }
+#ifdef MOD_HAVE_RECOMP
+  if (do_verify) { sms_init(&T, rom, n); S.recomp_verify = verify_cb; rt_single = 1; }
+#endif
+  if (covpath) { FILE* cf = fopen(covpath, "wb"); fwrite(cov, 1, n, cf); fclose(cf); printf("ram exec %u\n", ram_exec); }
   printf("frames %d, playfield detected in %d\n", frames, valid_frames);
+  if (use_recomp) printf("interpreter fallback steps (last frame) %u, last pc %04X\n", S.interp_steps, S.last_interp_pc);
+  if (do_verify) printf("verified blocks %ld, mismatches %ld\n", verify_blocks, verify_fail);
   return 0;
 }

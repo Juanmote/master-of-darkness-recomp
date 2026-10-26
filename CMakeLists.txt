@@ -21,3 +21,13 @@ endif()
 
 add_executable(headless tools/headless.c ${MOD_CORE_SOURCES})
 target_link_libraries(headless PRIVATE m)
+
+# Recompiled build for analysis/verification. The generated code is a translation of the
+# game's program, so it is never committed or shipped: generate it from your own ROM with
+#   python3 tools/recomp/recomp.py mod.sms coverage.bin generated
+file(GLOB MOD_GENERATED ${CMAKE_SOURCE_DIR}/generated/recomp_*.c)
+if(MOD_GENERATED)
+  add_executable(headless_recomp tools/headless.c ${MOD_CORE_SOURCES} src/recomp/recomp_rt.c ${MOD_GENERATED})
+  target_compile_definitions(headless_recomp PRIVATE MOD_HAVE_RECOMP)
+  target_link_libraries(headless_recomp PRIVATE m)
+endif()
