@@ -9,8 +9,8 @@ permissions:
   contents: write
 
 env:
-  SDL_TAG: release-2.30.9
-  MOD_VERSION: 0.1.0
+  SDL_TAG: release-2.30.12
+  MOD_VERSION: 0.1.1
 
 jobs:
   apk:
@@ -24,7 +24,10 @@ jobs:
           java-version: '17'
 
       - name: Get SDL2
-        run: git clone --depth 1 -b "$SDL_TAG" https://github.com/libsdl-org/SDL.git android/app/jni/SDL
+        run: |
+          git clone --depth 1 -b "$SDL_TAG" https://github.com/libsdl-org/SDL.git android/app/jni/SDL
+          # The Java side must match the C side exactly: always take it from the same SDL copy
+          cp android/app/jni/SDL/android-project/app/src/main/java/org/libsdl/app/*.java android/app/src/main/java/org/libsdl/app/
 
       - name: Build APK
         working-directory: android
