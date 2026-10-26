@@ -86,7 +86,7 @@ static uint8_t parse_btn(const char* t) {
 
 int main(int argc, char** argv) {
   int frames = 600, ext = MOD_WIDE_EXT;
-  int enhance = 0; const char *hashpath = NULL; const char *covpath = NULL; int seed = 0, use_recomp = 0, do_verify = 0;
+  int enhance = 0, oc = 1; const char *hashpath = NULL; const char *covpath = NULL; int seed = 0, use_recomp = 0, do_verify = 0;
   const char *input = NULL, *shots = "", *outdir = "out", *load = NULL, *save = NULL, *audio = NULL;
   for (int i = 2; i < argc; i++) {
     if (!strcmp(argv[i], "-f")) frames = atoi(argv[++i]);
@@ -100,6 +100,7 @@ int main(int argc, char** argv) {
     else if (!strcmp(argv[i], "-c")) covpath = argv[++i];
     else if (!strcmp(argv[i], "-R")) use_recomp = 1;
     else if (!strcmp(argv[i], "-E")) enhance = 1;
+    else if (!strcmp(argv[i], "-O")) oc = atoi(argv[++i]);
     else if (!strcmp(argv[i], "-H")) hashpath = argv[++i];
     else if (!strcmp(argv[i], "-V")) { use_recomp = 1; do_verify = 1; }
     else if (!strcmp(argv[i], "-r")) seed = atoi(argv[++i]);
@@ -166,7 +167,8 @@ int main(int argc, char** argv) {
       }
     }
     for (int k = 0; k < npokes; k++) if ((int)fr >= pokes[k].from && (int)fr <= pokes[k].to) S.st.ram[pokes[k].addr & 0x1FFF] = pokes[k].val;
-    sms_run_frame(&S);
+    S.cpu_mult = (oc > 1 && mod_is_gameplay(&S)) ? oc : 1;
+    { static uint32_t lp; uint32_t p0 = E.passes; sms_run_frame(&S); if (getenv("PASSLOG")) printf("PASS %u %u\n", fr, E.passes - p0); if (getenv("LAGLOG") && E.passes == p0 && lp) printf("LAG %u cam %d\n", fr, S.st.ram[0x6A0] | (S.st.ram[0x6A1] << 8)); lp = E.passes; }
     mod_enhance_frame(&S, &E);
     mod_wide_info_t info;
     mod_render(&S, pix, W, ext, &info, E.wide ? E.shown : NULL, E.wide ? E.n_shown : 0);
@@ -213,18 +215,7 @@ int main(int argc, char** argv) {
   }
   if (af) fclose(af);
   if (hf) fclose(hf);
-  if (enhance) { mod_enhance_attach(&S, &E); mod_enhance_set_wide(&E, ext > 0, ext); }
-#ifdef MOD_HAVE_RECOMP
-  if (use_recomp) S.recomp_run = recomp_run;
-#else
-  if (use_recomp) { fprintf(stderr, "built without recompiled code (run tools/recomp/recomp.py first)\n"); return 1; }
-#endif
-  if (getenv("TRACE")) { sscanf(getenv("TRACE"), "%lu-%lu", &tr_from, &tr_to); S.hooks.on_exec = h_exec; }
-  if (getenv("OBJLOG")) { objlog = 1; S.hooks.on_ram_write = h_ramw; }
-  if (getenv("WATCH")) { watch_addr = (int)strtol(getenv("WATCH"), NULL, 16); S.hooks.on_ram_write = h_ramw; }
-#ifdef MOD_HAVE_RECOMP
-  if (do_verify) { sms_init(&T, rom, n); S.recomp_verify = verify_cb; rt_single = 1; }
-#endif
+  if (enhance) printf("sprite passes %u in %d frames\n", E.passes, frames);
   if (covpath) { FILE* cf = fopen(covpath, "wb"); fwrite(cov, 1, n, cf); fclose(cf); printf("ram exec %u\n", ram_exec); }
   printf("frames %d, playfield detected in %d\n", frames, valid_frames);
   if (use_recomp) printf("interpreter fallback steps (last frame) %u, last pc %04X\n", S.interp_steps, S.last_interp_pc);

@@ -25,6 +25,7 @@ Port nativo de *Master of Darkness* (Sega Master System, 1992) para Android, con
 - **Formato**: 16:9 panorámico (los laterales se reconstruyen con el mapa real del nivel), 4:3 con píxel cuadrado o tele de tubo (píxel 8:7).
 - **Escalado**: ajustar a pantalla, escala entera o estirar.
 - **Filtro**: nítido, nítido suavizado, suave o scanlines.
+- **Ralentizaciones**: eliminadas (procesador al doble solo durante la partida) u originales.
 - Volumen, intercambio de botones, guardar/cargar estado y reiniciar.
 
 ## Estado

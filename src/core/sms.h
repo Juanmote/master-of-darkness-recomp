@@ -71,6 +71,7 @@ struct sms {
   const uint8_t* rom;
   int rom_size;
   uint8_t input;                                   // active-high BTN_ bits
+  int cpu_mult;                                    // CPU speed multiplier (1 = original, 2 = no slowdown)
   // per-frame outputs
   uint8_t fb_idx[SMS_H][SMS_W];                    // CRAM index per pixel
   uint8_t spr_over[SMS_H][SMS_SPR_OVER];           // sprite pixels past x=255 (0 = none, else 16+c)

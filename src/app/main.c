@@ -9,7 +9,7 @@
 #include "../game/mod_enhance.h"
 #include "font_data.h"
 
-#define APP_VERSION "0.2.1"
+#define APP_VERSION "0.2.2"
 #define KNOWN_CRC 0x96FB4D4Bu
 #define UI_W 640
 #define UI_H 360
@@ -25,10 +25,11 @@ typedef struct {
   int scale;
   int filter;
   int volume;      // 0..10
-  int swap_ab;     // 0: south=jump east=attack, 1: east=jump south=attack
+  int swap_ab;
+  int turbo;       // double CPU speed: removes the original slowdowns     // 0: south=jump east=attack, 1: east=jump south=attack
 } config_t;
 
-static config_t cfg = {1, 0, SCALE_FIT, FILTER_SHARP_SMOOTH, 8, 0};
+static config_t cfg = {1, 0, SCALE_FIT, FILTER_SHARP_SMOOTH, 8, 0, 1};
 static char pref_path[1024];
 
 static void cfg_path(char* out, size_t n, const char* name) { snprintf(out, n, "%s%s", pref_path, name); }
@@ -46,6 +47,7 @@ static void cfg_load(void) {
     else if (sscanf(line, "filter=%d", &v) == 1 && v >= 0 && v < FILTER_COUNT) cfg.filter = v;
     else if (sscanf(line, "volume=%d", &v) == 1 && v >= 0 && v <= 10) cfg.volume = v;
     else if (sscanf(line, "swap_ab=%d", &v) == 1) cfg.swap_ab = v ? 1 : 0;
+    else if (sscanf(line, "turbo=%d", &v) == 1) cfg.turbo = v ? 1 : 0;
   }
   fclose(f);
 }
@@ -54,8 +56,8 @@ static void cfg_save(void) {
   char p[1100]; cfg_path(p, sizeof p, "config.ini");
   FILE* f = fopen(p, "w");
   if (!f) return;
-  fprintf(f, "widescreen=%d\ncrt=%d\nscale=%d\nfilter=%d\nvolume=%d\nswap_ab=%d\n",
-          cfg.widescreen, cfg.crt, cfg.scale, cfg.filter, cfg.volume, cfg.swap_ab);
+  fprintf(f, "widescreen=%d\ncrt=%d\nscale=%d\nfilter=%d\nvolume=%d\nswap_ab=%d\nturbo=%d\n",
+          cfg.widescreen, cfg.crt, cfg.scale, cfg.filter, cfg.volume, cfg.swap_ab, cfg.turbo);
   fclose(f);
 }
 
@@ -160,7 +162,7 @@ static void show_toast(const char* msg, Uint32 ms) {
   toast_until = SDL_GetTicks() + ms;
 }
 
-enum { MI_RESUME, MI_FORMAT, MI_SCALE, MI_FILTER, MI_VOLUME, MI_BUTTONS, MI_SAVE, MI_LOAD, MI_RESET, MI_QUIT, MI_COUNT };
+enum { MI_RESUME, MI_FORMAT, MI_SCALE, MI_FILTER, MI_VOLUME, MI_BUTTONS, MI_TURBO, MI_SAVE, MI_LOAD, MI_RESET, MI_QUIT, MI_COUNT };
 
 static const char* scale_names[SCALE_COUNT] = {"Ajustar a pantalla", "Escala entera", "Estirar"};
 static const char* filter_names[FILTER_COUNT] = {"Nítido", "Nítido suavizado", "Suave", "Scanlines"};
@@ -173,6 +175,7 @@ static void menu_label(int i, char* out, size_t n) {
   case MI_FILTER: snprintf(out, n, "Filtro:   ← %s →", filter_names[cfg.filter]); break;
   case MI_VOLUME: snprintf(out, n, "Volumen:  ← %d%% →", cfg.volume * 10); break;
   case MI_BUTTONS: snprintf(out, n, "Botones:  ← %s →", cfg.swap_ab ? "Saltar con el derecho" : "Saltar con el inferior"); break;
+  case MI_TURBO: snprintf(out, n, "Ralentizaciones: ← %s →", cfg.turbo ? "Eliminadas" : "Originales"); break;
   case MI_SAVE: snprintf(out, n, "Guardar estado"); break;
   case MI_LOAD: snprintf(out, n, "Cargar estado"); break;
   case MI_RESET: snprintf(out, n, "Reiniciar juego"); break;
@@ -217,6 +220,7 @@ static void menu_change(int dir) {
   case MI_FILTER: cfg.filter = (cfg.filter + dir + FILTER_COUNT) % FILTER_COUNT; break;
   case MI_VOLUME: cfg.volume += dir; if (cfg.volume < 0) cfg.volume = 0; if (cfg.volume > 10) cfg.volume = 10; break;
   case MI_BUTTONS: cfg.swap_ab ^= 1; break;
+  case MI_TURBO: cfg.turbo ^= 1; break;
   default: return;
   }
   cfg_save();
@@ -626,6 +630,8 @@ int main(int argc, char** argv) {
         acc -= frame_time;
         frames++;
         S.input = kb_input | pad_buttons_held | stick_dirs();
+        // faster CPU only while playing: menus and story screens time themselves with CPU loops
+        S.cpu_mult = (cfg.turbo && mod_is_gameplay(&S)) ? 2 : 1;
         sms_run_frame(&S);
         mod_enhance_frame(&S, &E);
         if (audio_dev && queued < 8) {
