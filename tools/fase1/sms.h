@@ -2,7 +2,7 @@
 #pragma once
 #include <stdint.h>
 #include <stdbool.h>
-#include "../third_party/z80/z80.h"
+#include "../../third_party/z80/z80.h"
 
 #define SMS_W 256
 #define SMS_H 192

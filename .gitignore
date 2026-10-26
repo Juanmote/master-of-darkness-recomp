@@ -6,3 +6,11 @@
 work/
 tools/trace
 *.ppm
+# builds
+build*/
+android/.gradle/
+android/build/
+android/app/build/
+android/app/.cxx/
+android/app/jni/SDL/
+android/local.properties
