@@ -9,7 +9,7 @@
 #include "../game/mod_enhance.h"
 #include "font_data.h"
 
-#define APP_VERSION "0.2.0"
+#define APP_VERSION "0.2.1"
 #define KNOWN_CRC 0x96FB4D4Bu
 #define UI_W 640
 #define UI_H 360
@@ -21,13 +21,14 @@ enum { FILTER_SHARP, FILTER_SHARP_SMOOTH, FILTER_SMOOTH, FILTER_SCANLINES, FILTE
 
 typedef struct {
   int widescreen;
+  int crt;         // 4:3 mode with the 8:7 pixels of a CRT TV
   int scale;
   int filter;
   int volume;      // 0..10
   int swap_ab;     // 0: south=jump east=attack, 1: east=jump south=attack
 } config_t;
 
-static config_t cfg = {1, SCALE_FIT, FILTER_SHARP_SMOOTH, 8, 0};
+static config_t cfg = {1, 0, SCALE_FIT, FILTER_SHARP_SMOOTH, 8, 0};
 static char pref_path[1024];
 
 static void cfg_path(char* out, size_t n, const char* name) { snprintf(out, n, "%s%s", pref_path, name); }
@@ -40,6 +41,7 @@ static void cfg_load(void) {
   while (fgets(line, sizeof line, f)) {
     int v;
     if (sscanf(line, "widescreen=%d", &v) == 1) cfg.widescreen = v ? 1 : 0;
+    else if (sscanf(line, "crt=%d", &v) == 1) cfg.crt = v ? 1 : 0;
     else if (sscanf(line, "scale=%d", &v) == 1 && v >= 0 && v < SCALE_COUNT) cfg.scale = v;
     else if (sscanf(line, "filter=%d", &v) == 1 && v >= 0 && v < FILTER_COUNT) cfg.filter = v;
     else if (sscanf(line, "volume=%d", &v) == 1 && v >= 0 && v <= 10) cfg.volume = v;
@@ -52,8 +54,8 @@ static void cfg_save(void) {
   char p[1100]; cfg_path(p, sizeof p, "config.ini");
   FILE* f = fopen(p, "w");
   if (!f) return;
-  fprintf(f, "widescreen=%d\nscale=%d\nfilter=%d\nvolume=%d\nswap_ab=%d\n",
-          cfg.widescreen, cfg.scale, cfg.filter, cfg.volume, cfg.swap_ab);
+  fprintf(f, "widescreen=%d\ncrt=%d\nscale=%d\nfilter=%d\nvolume=%d\nswap_ab=%d\n",
+          cfg.widescreen, cfg.crt, cfg.scale, cfg.filter, cfg.volume, cfg.swap_ab);
   fclose(f);
 }
 
@@ -166,7 +168,7 @@ static const char* filter_names[FILTER_COUNT] = {"Nítido", "Nítido suavizado",
 static void menu_label(int i, char* out, size_t n) {
   switch (i) {
   case MI_RESUME: snprintf(out, n, "Continuar"); break;
-  case MI_FORMAT: snprintf(out, n, "Formato:  ← %s →", cfg.widescreen ? "16:9 panorámico" : "4:3 original"); break;
+  case MI_FORMAT: snprintf(out, n, "Formato:  ← %s →", cfg.widescreen ? "16:9 panorámico" : cfg.crt ? "Tele de tubo (8:7)" : "4:3 píxel cuadrado"); break;
   case MI_SCALE: snprintf(out, n, "Escalado: ← %s →", scale_names[cfg.scale]); break;
   case MI_FILTER: snprintf(out, n, "Filtro:   ← %s →", filter_names[cfg.filter]); break;
   case MI_VOLUME: snprintf(out, n, "Volumen:  ← %d%% →", cfg.volume * 10); break;
@@ -202,7 +204,15 @@ static void do_load_state(void) {
 
 static void menu_change(int dir) {
   switch (menu_sel) {
-  case MI_FORMAT: cfg.widescreen ^= 1; mod_enhance_set_wide(&E, cfg.widescreen, MOD_WIDE_EXT); break;
+  case MI_FORMAT: {
+    // cycle 16:9 -> 4:3 -> CRT 8:7
+    int f = cfg.widescreen ? 0 : cfg.crt ? 2 : 1;
+    f = (f + dir + 3) % 3;
+    cfg.widescreen = f == 0;
+    cfg.crt = f == 2;
+    mod_enhance_set_wide(&E, cfg.widescreen, MOD_WIDE_EXT);
+    break;
+  }
   case MI_SCALE: cfg.scale = (cfg.scale + dir + SCALE_COUNT) % SCALE_COUNT; break;
   case MI_FILTER: cfg.filter = (cfg.filter + dir + FILTER_COUNT) % FILTER_COUNT; break;
   case MI_VOLUME: cfg.volume += dir; if (cfg.volume < 0) cfg.volume = 0; if (cfg.volume > 10) cfg.volume = 10; break;
@@ -286,11 +296,12 @@ static void ensure_textures(int game_w) {
 
 static SDL_Rect dest_rect(int ww, int wh, int gw) {
   SDL_Rect r;
-  double sx = (double)ww / gw, sy = (double)wh / SMS_H;
+  double par = (!cfg.widescreen && cfg.crt) ? 8.0 / 7.0 : 1.0;  // pixel aspect ratio
+  double sx = (double)ww / (gw * par), sy = (double)wh / SMS_H;
   double s = sx < sy ? sx : sy;
   if (cfg.scale == SCALE_STRETCH) { r.x = 0; r.y = 0; r.w = ww; r.h = wh; return r; }
   if (cfg.scale == SCALE_INT && s >= 1.0) s = floor(s);
-  r.w = (int)(gw * s + 0.5); r.h = (int)(SMS_H * s + 0.5);
+  r.w = (int)(gw * par * s + 0.5); r.h = (int)(SMS_H * s + 0.5);
   r.x = (ww - r.w) / 2; r.y = (wh - r.h) / 2;
   return r;
 }
