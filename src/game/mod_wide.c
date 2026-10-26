@@ -46,6 +46,8 @@ static inline int tile_px(const uint8_t* vram, int tile, int x, int y) {
   return ((t[0] >> bit) & 1) | (((t[1] >> bit) & 1) << 1) | (((t[2] >> bit) & 1) << 2) | (((t[3] >> bit) & 1) << 3);
 }
 
+static inline bool hidden_column_prio(bool left_blank, int sx) { return left_blank && sx >= 0 && sx < 8; }
+
 static bool detect_playfield(const sms_t* s, const mapctx_t* m, int* cam_out) {
   uint8_t hs = s->line_hscroll[GAME_Y0];
   for (int y = GAME_Y0; y < SMS_H; y++) {
@@ -71,7 +73,8 @@ static bool detect_playfield(const sms_t* s, const mapctx_t* m, int* cam_out) {
   return ok * 10 >= total * 9;
 }
 
-void mod_render(const sms_t* s, uint32_t* out, int pitch, int ext, mod_wide_info_t* info) {
+void mod_render(const sms_t* s, uint32_t* out, int pitch, int ext, mod_wide_info_t* info,
+                const mod_piece_t* pieces, int n_pieces) {
   mod_wide_info_t local;
   if (!info) info = &local;
   memset(info, 0, sizeof *info);
@@ -141,9 +144,49 @@ void mod_render(const sms_t* s, uint32_t* out, int pitch, int ext, mod_wide_info
       int t = 256 + (remap[e] >= 0 ? remap[e] : e);
       row[x] = pal[tile_px(vram, t, wx & 7, wy & 7)];
     }
-    // sprite pixels that spill past the original right edge
-    for (int i = 0; i < SMS_SPR_OVER && off + SMS_W + i < W; i++) {
-      if (s->spr_over[y][i]) row[off + SMS_W + i] = pal[s->spr_over[y][i]];
+    // sprites the game keeps outside its 256-pixel picture (captured by mod_enhance)
+    if (n_pieces) {
+      const sms_vdp_t* d = &s->st.vdp;
+      int h = (d->reg[1] & 0x02) ? 16 : 8;
+      uint8_t drawn[1024];
+      memset(drawn, 0, (size_t)W);
+      for (int i = 0; i < n_pieces; i++) {
+        const mod_piece_t* pc = &pieces[i];
+        int top = pc->y + 1;
+        if (pc->y >= 0xD0 || y < top || y >= top + h) continue;
+        int tile = pc->tile | ((d->reg[6] & 0x04) ? 0x100 : 0);
+        if (h == 16) tile &= ~1;
+        int r = y - top;
+        for (int px = 0; px < 8; px++) {
+          int sx = pc->x + px;           // position in the original picture
+          int X = off + sx;              // position in the wide picture
+          if (X < 0 || X >= W || drawn[X]) continue;
+          bool center = sx >= 0 && sx < SMS_W;
+          if (center) {
+            bool hidden_column = left_blank && sx < 8;
+            bool missing = !pc->in_sat && src[sx] < 16;
+            if (!hidden_column && !missing) continue;
+          }
+          int c = tile_px(vram, tile, px, r);
+          if (!c) continue;
+          drawn[X] = 1;
+          // background tiles with priority stay in front (side areas only)
+          if (!center || hidden_column_prio(left_blank, sx)) {
+            int wx = view + X;
+            if (wx < left) wx = left + (((wx - left) % 16) + 16) % 16;
+            else if (wx >= right) wx = right - 16 + (wx - right) % 16;
+            int e = map_tile(&m, wx, wy);
+            int t = remap[e] >= 0 ? remap[e] : e;
+            if (t >= ram8(s, 0xC6A6) && tile_px(vram, 256 + t, wx & 7, wy & 7)) continue;
+          }
+          row[X] = pal[16 + c];
+        }
+      }
+    } else {
+      // sprite pixels that spill past the original right edge
+      for (int i = 0; i < SMS_SPR_OVER && off + SMS_W + i < W; i++) {
+        if (s->spr_over[y][i]) row[off + SMS_W + i] = pal[s->spr_over[y][i]];
+      }
     }
   }
 }

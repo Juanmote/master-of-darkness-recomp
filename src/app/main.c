@@ -6,9 +6,10 @@
 #include <math.h>
 #include "../core/sms.h"
 #include "../game/mod_wide.h"
+#include "../game/mod_enhance.h"
 #include "font_data.h"
 
-#define APP_VERSION "0.1.3"
+#define APP_VERSION "0.2.0"
 #define KNOWN_CRC 0x96FB4D4Bu
 #define UI_W 640
 #define UI_H 360
@@ -139,6 +140,7 @@ static SDL_AudioDeviceID audio_dev;
 static SDL_GameController* pads[8];
 
 static sms_t S;
+static mod_enhance_t E;
 static uint8_t* rom;
 static size_t rom_size;
 static uint32_t rom_crc;
@@ -200,7 +202,7 @@ static void do_load_state(void) {
 
 static void menu_change(int dir) {
   switch (menu_sel) {
-  case MI_FORMAT: cfg.widescreen ^= 1; break;
+  case MI_FORMAT: cfg.widescreen ^= 1; mod_enhance_set_wide(&E, cfg.widescreen, MOD_WIDE_EXT); break;
   case MI_SCALE: cfg.scale = (cfg.scale + dir + SCALE_COUNT) % SCALE_COUNT; break;
   case MI_FILTER: cfg.filter = (cfg.filter + dir + FILTER_COUNT) % FILTER_COUNT; break;
   case MI_VOLUME: cfg.volume += dir; if (cfg.volume < 0) cfg.volume = 0; if (cfg.volume > 10) cfg.volume = 10; break;
@@ -296,7 +298,7 @@ static SDL_Rect dest_rect(int ww, int wh, int gw) {
 static void present(void) {
   int gw = cfg.widescreen ? WIDE_W : SMS_W;
   ensure_textures(gw);
-  mod_render(&S, pix, gw, cfg.widescreen ? MOD_WIDE_EXT : 0, NULL);
+  mod_render(&S, pix, gw, cfg.widescreen ? MOD_WIDE_EXT : 0, NULL, E.wide ? E.shown : NULL, E.wide ? E.n_shown : 0);
   SDL_UpdateTexture(tex_game, NULL, pix, gw * 4);
   int ww, wh;
   SDL_GetRendererOutputSize(ren, &ww, &wh);
@@ -548,6 +550,8 @@ int main(int argc, char** argv) {
   if (audio_dev) SDL_PauseAudioDevice(audio_dev, 0);
 
   sms_init(&S, rom, (int)rom_size);
+  mod_enhance_attach(&S, &E);
+  mod_enhance_set_wide(&E, cfg.widescreen, MOD_WIDE_EXT);
   if (rom_crc != KNOWN_CRC) show_toast("ROM no reconocida: algunas mejoras pueden fallar", 4000);
   else show_toast("Pulsa SELECT, ATRÁS o toca la pantalla para abrir el menú", 4000);
 
@@ -579,6 +583,7 @@ int main(int argc, char** argv) {
       S.input = 0;
       for (int k = 0; k < ns; k++) if (fr >= spans[k].a && fr <= spans[k].b) S.input |= spans[k].btn;
       sms_run_frame(&S);
+      mod_enhance_frame(&S, &E);
     }
     if (getenv("MOD_MENU")) { menu_open = 1; menu_sel = atoi(getenv("MOD_MENU")); }
     toast_until = 0;
@@ -611,6 +616,7 @@ int main(int argc, char** argv) {
         frames++;
         S.input = kb_input | pad_buttons_held | stick_dirs();
         sms_run_frame(&S);
+        mod_enhance_frame(&S, &E);
         if (audio_dev && queued < 8) {
           for (int i = 0; i < SMS_SAMPLES_PER_FRAME; i++) mixbuf[i] = (int16_t)(S.audio[i] * cfg.volume / 10);
           SDL_QueueAudio(audio_dev, mixbuf, sizeof mixbuf);

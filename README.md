@@ -29,7 +29,7 @@ Port nativo de *Master of Darkness* (Sega Master System, 1992) para Android, con
 
 ## Estado
 - v0.1: el juego original se ejecuta en un núcleo propio (CPU Z80 interpretada, vídeo y sonido) con el 16:9 "decorativo".
-  Los enemigos solo existen en la zona central de 256 px, como en el original.
+- v0.2: los enemigos aparecen y se mueven también por los laterales en 16:9 (en 4:3 el juego es idéntico al original).
 - Siguiente: recompilación del código a C y 16:9 completo con enemigos en los laterales.
 
 Notas técnicas: `docs/NOTAS_TECNICAS.md`.
