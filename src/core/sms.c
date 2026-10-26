@@ -138,6 +138,7 @@ static void vdp_ctrl_write(sms_t* s, uint8_t v) {
   } else if (d->code == 2) {
     d->reg[v & 0x0F] = d->first;
     if (s->hooks.on_vdp_reg) s->hooks.on_vdp_reg(s, v & 0x0F, d->first);
+    s->st.cpu.int_pending = sms_irq_line(s);
   }
 }
 
@@ -168,10 +169,11 @@ static uint8_t vdp_status_read(sms_t* s) {
   d->status = 0;
   d->line_irq = 0;
   d->latch = 0;
+  s->st.cpu.int_pending = 0;
   return r;
 }
 
-static bool irq_line(sms_t* s) {
+bool sms_irq_line(sms_t* s) {
   sms_vdp_t* d = &s->st.vdp;
   return ((d->status & 0x80) && (d->reg[1] & 0x20)) || (d->line_irq && (d->reg[0] & 0x10));
 }
@@ -312,9 +314,27 @@ void sms_run_frame(sms_t* s) {
     if (line == SMS_H + 1) d->status |= 0x80;
     unsigned long target = (unsigned long)(s->frame_start_cyc + (uint64_t)(line + 1) * CYC_PER_LINE);
     while (cpu->cyc < target) {
-      if (irq_line(s)) { cpu->int_pending = 1; cpu->int_data = 0xFF; }
+      if (sms_irq_line(s)) { cpu->int_pending = 1; cpu->int_data = 0xFF; }
       else cpu->int_pending = 0;
+      // take pending interrupts at this instruction boundary (same for both CPU paths)
+      if (!cpu->iff_delay && (cpu->nmi_pending || (cpu->int_pending && cpu->iff1 && !s->ei_shadow))) {
+        z80_process_interrupts(cpu);
+        continue;
+      }
+      if (s->recomp_run && !cpu->halted) {
+        static sms_state_t before;
+        int psg_n = s->psg_log_n;
+        if (s->recomp_verify) before = s->st;
+        s->ei_shadow = 0;
+        if (s->recomp_run(s, target)) {
+          if (s->recomp_verify) s->recomp_verify(s, &before, psg_n);
+          continue;
+        }
+        s->interp_steps++;
+        s->last_interp_pc = cpu->pc;
+      }
       if (s->hooks.on_exec) s->hooks.on_exec(s, cpu->pc, sms_rom_offset(s, cpu->pc));
+      s->ei_shadow = !cpu->halted && sms_peek(s, cpu->pc) == 0xFB;
       z80_step(cpu);
     }
   }

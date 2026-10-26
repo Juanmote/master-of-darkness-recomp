@@ -36,3 +36,26 @@ Cabecera TMR SEGA válida, checksum 6FE6 correcto, región SMS Export, mapper Se
 
 ## Toolchain
 - dl.google.com / maven / gradle bloqueados en el entorno → APK vía GitHub Actions. GitHub (git clone) accesible. Java 21 presente.
+
+## Fase 2 — recompilación estática (26-10-2026)
+- `tools/recomp/recomp.py ROM cobertura.bin generated/` traduce el código Z80 a C.
+  Cada instrucción se genera especializando las plantillas de `src/core/z80_impl.h`
+  (las mismas que usa el intérprete) con los operandos leídos de la ROM.
+- Regiones: `fixed` (0x0000-0x7FFF, bancos 0/1 fijos) y una por banco con código en
+  0x8000-0xBFFF (bancos 2, 3 y 9). Despachador por `switch (pc)`; cualquier dirección
+  desconocida cae al intérprete (red de seguridad).
+- Descubrimiento: cobertura dinámica (`headless -c`, bot aleatorio `-r`, saltos de ronda con
+  `-p 900-1300:dfc0=R -p 900-1300:dfc1=S`) + desensamblado recursivo + tablas de saltos
+  `LD HL,tabla ; JP/CALL 0006`. Resultado: 13.894 instrucciones.
+- Variables: DFC0 = ronda (0-4), DFC1 = sección.
+- Interrupciones: se atienden en el mismo límite de instrucción que el intérprete
+  (comprobación tras accesos a puertos, tras la instrucción siguiente a EI y al agotarse
+  los ciclos de la línea). La sombra de EI se respeta en ambos caminos.
+- Verificación:
+  - `headless_recomp -V`: bloque a bloque contra el intérprete (registros, flags, RAM, VDP,
+    PSG). ~200 millones de bloques en las 5 rondas: 0 diferencias.
+  - `-H`: hash por fotograma (imagen + RAM + audio) de recompilado vs intérprete:
+    105.000 fotogramas idénticos (5 rondas × 3 secciones × 7000).
+- El código generado (`generated/`) es una traducción del programa del juego: no se sube
+  al repositorio ni se incluye en el APK. El APK ejecuta el código del juego desde la ROM
+  del usuario y las mejoras propias se enganchan por dirección.

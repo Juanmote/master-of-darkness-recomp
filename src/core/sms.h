@@ -86,6 +86,12 @@ struct sms {
   uint64_t frame_start_cyc;
   sms_hooks_t hooks;
   void* user;
+  // recompiled CPU (NULL = interpreter only)
+  int (*recomp_run)(sms_t* s, unsigned long target);
+  void (*recomp_verify)(sms_t* s, const sms_state_t* before, int psg_n_before);
+  uint32_t interp_steps;   // instructions run by the interpreter fallback (this frame)
+  uint16_t last_interp_pc;
+  uint8_t ei_shadow;       // last instruction was EI: no interrupt at this boundary
 };
 
 void sms_init(sms_t* s, const uint8_t* rom, int size);
@@ -94,6 +100,7 @@ void sms_run_frame(sms_t* s);
 int sms_rom_offset(const sms_t* s, uint16_t addr);  // -1 if not ROM
 uint8_t sms_peek(const sms_t* s, uint16_t addr);
 uint32_t sms_color(uint8_t cram_value);               // ARGB8888
+bool sms_irq_line(sms_t* s);
 
 size_t sms_state_size(void);
 void sms_save_state(const sms_t* s, void* out);
