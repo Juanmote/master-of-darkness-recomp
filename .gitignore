@@ -1,0 +1,8 @@
+# Nunca subir ROMs ni datos derivados de ellas
+*.sms
+*.SMS
+*.gg
+*.state
+work/
+tools/trace
+*.ppm
