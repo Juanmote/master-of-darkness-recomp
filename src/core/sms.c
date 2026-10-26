@@ -92,7 +92,7 @@ static void psg_render(sms_t* s) {
   const uint32_t step = (uint32_t)(((uint64_t)3579545 << 16) / 16 / SMS_AUDIO_RATE);
   int li = 0;
   for (int i = 0; i < SMS_SAMPLES_PER_FRAME; i++) {
-    uint32_t cyc = (uint32_t)((uint64_t)i * CYC_PER_FRAME / SMS_SAMPLES_PER_FRAME);
+    uint32_t cyc = (uint32_t)((uint64_t)i * CYC_PER_FRAME * s->cpu_mult / SMS_SAMPLES_PER_FRAME);
     while (li < s->psg_log_n && s->psg_log[li].cyc <= cyc) psg_apply(p, s->psg_log[li++].val);
     p->frac += step;
     int ticks = p->frac >> 16;
@@ -294,6 +294,7 @@ void sms_init(sms_t* s, const uint8_t* rom, int size) {
   memset(s, 0, sizeof *s);
   s->rom = rom;
   s->rom_size = size;
+  s->cpu_mult = 1;
   sms_reset(s);
 }
 
@@ -313,7 +314,7 @@ void sms_run_frame(sms_t* s) {
       d->line_counter = d->reg[10];
     }
     if (line == SMS_H + 1) d->status |= 0x80;
-    unsigned long target = (unsigned long)(s->frame_start_cyc + (uint64_t)(line + 1) * CYC_PER_LINE);
+    unsigned long target = (unsigned long)(s->frame_start_cyc + (uint64_t)(line + 1) * CYC_PER_LINE * s->cpu_mult);
     while (cpu->cyc < target) {
       if (sms_irq_line(s)) { cpu->int_pending = 1; cpu->int_data = 0xFF; }
       else cpu->int_pending = 0;

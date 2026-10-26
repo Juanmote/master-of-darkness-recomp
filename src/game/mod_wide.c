@@ -191,6 +191,11 @@ void mod_render(const sms_t* s, uint32_t* out, int pitch, int ext, mod_wide_info
   }
 }
 
+bool mod_is_gameplay(const sms_t* s) {
+  mapctx_t m; int cam;
+  return map_ctx(s, &m) && detect_playfield(s, &m, &cam);
+}
+
 // Debug: marks playfield pixels where the VDP background differs from the RAM map.
 // Returns number of mismatching pixels (sprite pixels are ignored). mask: SMS_H*SMS_W bytes.
 int mod_debug_compare(const sms_t* s, uint8_t* mask) {

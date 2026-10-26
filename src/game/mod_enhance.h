@@ -27,10 +27,11 @@ typedef struct {
   int n_pass[4];
   int pass_head;           // index of the newest completed pass
   int last_age;            // age chosen last frame (used when nothing can be matched)
+  uint32_t passes;          // sprite passes so far (to measure slowdown)
   const mod_piece_t* shown;
   int n_shown;
   // early spawning (one state per spawn list)
-  struct { int last_cam; int next, last; bool active; uint16_t list_base; } spawn[2];
+  struct { int last_cam[2]; int next, last, step; bool active; uint16_t list_base; } spawn[2];
 } mod_enhance_t;
 
 bool mod_enhance_compatible(const sms_t* s);

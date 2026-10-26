@@ -18,6 +18,9 @@ typedef struct {
 
 // Writes SMS_H lines of (SMS_W + 2*ext) ARGB pixels into out (pitch in pixels).
 // ext = 0 gives the original 4:3 picture.
+// True while the level is on screen (the scrolling playfield matches the RAM map).
+bool mod_is_gameplay(const sms_t* s);
+
 void mod_render(const sms_t* s, uint32_t* out, int pitch, int ext, mod_wide_info_t* info,
                 const mod_piece_t* pieces, int n_pieces);
 

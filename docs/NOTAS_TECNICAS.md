@@ -77,3 +77,11 @@ Cabecera TMR SEGA válida, checksum 6FE6 correcto, región SMS Export, mapper Se
   - El renderizador elige, de las últimas 4 pasadas, la que coincide con la tabla de sprites que el VDP mostró.
 - Se comprueban los bytes de la ROM en todas las direcciones enganchadas: si no coinciden, las mejoras no se activan.
 - En 4:3 los ganchos no actúan: 5000 fotogramas idénticos al juego original.
+
+## v0.2.2
+- La cámara también retrocede (2C06: cam--, listas C907/C90C que hacen nacer enemigos en x=1).
+  C905/C90A = listas al avanzar. La aparición adelantada distingue la dirección por el puntero de la lista:
+  al retroceder se comprueba cam-43 y el objeto nace 43 px más a la izquierda.
+- Ralentizaciones: `sms_t.cpu_mult = 2` duplica los ciclos de CPU por línea. Solo se aplica mientras
+  `mod_is_gameplay()` (la intro y los menús miden el tiempo con bucles de CPU y se acelerarían).
+  Con tres murciélagos en R1-1: 252 de 300 fotogramas de lógica en el original, 300 de 300 con la opción.

@@ -65,28 +65,45 @@ static int screen_stop(sms_t* s, int screen) {
 }
 
 static bool spawn_value_valid(sms_t* s, int v, int cam) {
+  if (v < 0) return false;
   int sv = v >> 8, sc = cam >> 8;
   if (sv >= 12) return false;
   if (sv == sc) return true;
-  return sv == sc + 1 && screen_stop(s, sc) == 0;
+  if (sv == sc + 1) return screen_stop(s, sc) == 0;   // camera can scroll right into it
+  if (sv == sc - 1) return screen_stop(s, sv) == 0;   // camera can scroll left into it
+  return false;
 }
 
+// Each list scan normally checks the single camera value the game has just reached.
+// Moving right (lists C905/C90A) we check the value D pixels ahead and create the object
+// D pixels further right; moving left (lists C907/C90C) D pixels behind and further left.
+// After a jump of the camera (new section, change of direction) the whole range between
+// the real camera and the shifted one is checked once.
 static bool spawn_hook(sms_t* s, int k, uint16_t pc) {
   const spawn_addr_t* a = &spawn_addrs[k];
   z80* z = &s->st.cpu;
   typeof(g->spawn[0])* st = &g->spawn[k];
-  if (!g->wide) { st->active = false; st->last_cam = -1000; return false; }
+  if (!g->wide) { st->active = false; st->last_cam[0] = st->last_cam[1] = -1000; return false; }
   int cam = cam16(s);
   if (pc == a->a_hi) {
     if (!st->active) {
-      if (cam == st->last_cam + 1) { st->next = st->last = cam + g->ext; }
-      else { st->next = cam; st->last = cam + g->ext; }
-      st->last_cam = cam;
+      uint16_t base = (z->h << 8) | z->l;  // table base used by RST 28 below
+      uint16_t right = k == 0 ? 0xC905 : 0xC90A, left = k == 0 ? 0xC907 : 0xC90C;
+      int dir;
+      if (base == (ram8(s, right) | (ram8(s, right + 1) << 8))) dir = 1;
+      else if (base == (ram8(s, left) | (ram8(s, left + 1) << 8))) dir = -1;
+      else dir = 0;
+      int d = dir * g->ext;
+      int slot = dir < 0 ? 1 : 0;
+      st->step = dir < 0 ? -1 : 1;
+      if (dir != 0 && cam == st->last_cam[slot] + dir) { st->next = st->last = cam + d; }
+      else { st->next = cam; st->last = cam + d; }
+      st->last_cam[slot] = cam;
+      st->list_base = base;
       st->active = true;
-      st->list_base = (z->h << 8) | z->l;  // table base used by RST 28 below
     }
-    while (st->next <= st->last && !spawn_value_valid(s, st->next, cam)) st->next++;
-    if (st->next > st->last) {  // nothing (valid) to scan: finish through the normal exit
+    while ((st->next - st->last) * st->step <= 0 && !spawn_value_valid(s, st->next, cam)) st->next += st->step;
+    if ((st->next - st->last) * st->step > 0) {  // nothing (valid) left: leave through the normal exit
       st->active = false;
       z->pc = a->end;
       z->cyc += 13;
@@ -106,16 +123,16 @@ static bool spawn_hook(sms_t* s, int k, uint16_t pc) {
   }
   if (pc == a->x_hi) {
     uint16_t obj = z->ix;
-    int x = ram8(s, obj + 4) + (st->next - cam);
+    uint16_t x = (uint16_t)(ram8(s, obj + 4) + (st->next - cam));
     ram_w(s, obj + 4, x & 0xFF);
-    ram_w(s, obj + 5, (x >> 8) & 0xFF);
+    ram_w(s, obj + 5, x >> 8);
     z->pc = a->x_hi_next;
     z->cyc += 19;
     return true;
   }
   if (pc == a->end) {
-    st->next++;
-    if (st->next <= st->last) {  // scan the next camera value
+    st->next += st->step;
+    if ((st->next - st->last) * st->step <= 0) {  // scan the next camera value
       z->h = st->list_base >> 8;
       z->l = st->list_base & 0xFF;
       z->pc = a->a_hi;
@@ -133,6 +150,7 @@ static bool on_hook(sms_t* s, uint16_t pc) {
   switch (pc) {
   case 0x51B6:  // start of the sprite pass
     g->n_building = 0;
+    g->passes++;
     return false;
   case 0x5228: {  // end of the sprite pass: store the completed list
     int h = (g->pass_head + 1) & 3;
@@ -195,7 +213,7 @@ void mod_enhance_attach(sms_t* s, mod_enhance_t* e) {
   for (int k = 0; k < 2; k++) {
     const spawn_addr_t* a = &spawn_addrs[k];
     hook_map[a->a_hi] = hook_map[a->a_lo] = hook_map[a->a_lo2] = hook_map[a->x_hi] = hook_map[a->end] = 1;
-    e->spawn[k].last_cam = -1000;
+    e->spawn[k].last_cam[0] = e->spawn[k].last_cam[1] = -1000;
     e->spawn[k].active = false;
   }
   s->hook_map = hook_map;
