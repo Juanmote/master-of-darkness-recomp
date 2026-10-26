@@ -52,6 +52,10 @@ static void verify_cb(sms_t* s, const sms_state_t* before, int psg_n) {
 static uint8_t cov[1 << 20];
 static uint32_t ram_exec;
 static int watch_addr = -1;
+static int satlines;
+static void h_vramw(sms_t* s, uint16_t a, uint8_t v) {
+  if (satlines && a >= 0x3F00 && a < 0x3F40) { static int lastf = -1; if ((int)s->st.frame != lastf) { lastf = s->st.frame; printf("SATW frame %u line %d\n", s->st.frame, s->st.vdp.line); } }
+}
 static int objlog;
 static void h_ramw(sms_t* s, uint16_t a, uint8_t v) {
   if (objlog && a >= 0xCA40 && a < 0xCF20 && (a & 0x1F) == 0) {
@@ -121,6 +125,7 @@ int main(int argc, char** argv) {
   if (use_recomp) { fprintf(stderr, "built without recompiled code (run tools/recomp/recomp.py first)\n"); return 1; }
 #endif
   if (getenv("TRACE")) { sscanf(getenv("TRACE"), "%lu-%lu", &tr_from, &tr_to); S.hooks.on_exec = h_exec; }
+  if (getenv("SATLINES")) { satlines = 1; S.hooks.on_vram_write = h_vramw; }
   if (getenv("OBJLOG")) { objlog = 1; S.hooks.on_ram_write = h_ramw; }
   if (getenv("WATCH")) { watch_addr = (int)strtol(getenv("WATCH"), NULL, 16); S.hooks.on_ram_write = h_ramw; }
 #ifdef MOD_HAVE_RECOMP
@@ -173,6 +178,22 @@ int main(int argc, char** argv) {
     mod_wide_info_t info;
     mod_render(&S, pix, W, ext, &info, E.wide ? E.shown : NULL, E.wide ? E.n_shown : 0);
     if (info.map_valid) valid_frames++;
+    if (getenv("PLTILES")) {
+      int n = 0, miny = 999;
+      for (int j = 0; j < 64; j++) { if (S.sat_mid[j] == 0xD0) break; int t = S.sat_mid[0x81 + j*2]; if (t >= 1 && t <= 9 && S.sat_mid[j] < 0xC0) { n++; if (S.sat_mid[j] < miny) miny = S.sat_mid[j]; } }
+      int py = (int16_t)(S.st.ram[0xA22] | (S.st.ram[0xA23] << 8));
+      printf("PL %u n=%d miny=%d py=%d\n", fr, n, miny, py);
+    }
+    if (getenv("HUDANY")) {
+      int n = 0; for (int yy = 0; yy < 32; yy++) for (int xx = 0; xx < 256; xx++) n += S.fb_spr[yy][xx];
+      int pl = (int16_t)(S.st.ram[0xA22] | (S.st.ram[0xA23] << 8));
+      printf("HUDANY frame %u hudpix %d playerY %d\n", fr, n, pl);
+    }
+    if (getenv("HUDSPR") && info.map_valid) {
+      int n = 0; for (int yy = 0; yy < 32; yy++) for (int xx = 0; xx < 256; xx++) n += S.fb_spr[yy][xx];
+      int cxv = info.cam - (info.cam - ext < info.left_limit ? info.left_limit : (info.cam - ext + W > info.right_limit && info.right_limit - info.left_limit >= W ? info.right_limit - W : info.cam - ext));
+      (void)cxv; if (n && info.cx != ext) printf("HUDSPR frame %u pixels %d cx %d\n", fr, n, info.cx);
+    }
     if (getenv("SATCHECK") && E.wide) {
       // every in_sat piece shown must be in the VDP sprite table with the same position
       uint16_t sat = (S.st.vdp.reg[5] & 0x7E) << 7;
@@ -209,6 +230,7 @@ int main(int argc, char** argv) {
       FILE* o = fopen(p, "wb"); fprintf(o, "P6\n%d %d\n255\n", W, SMS_H);
       for (int k = 0; k < W * SMS_H; k++) { uint8_t c[3] = {pix[k] >> 16, pix[k] >> 8, pix[k]}; fwrite(c, 1, 3, o); }
       fclose(o);
+      if (getenv("SATDUMP")) { printf("SAT %u:", fr); for (int j = 0; j < 64; j++) printf(" %02X/%02X/%02X", S.sat_mid[j], S.sat_mid[0x80 + j*2], S.sat_mid[0x81 + j*2]); printf("\n"); }
       printf("shot %u valid=%d cam=%d limits=%d..%d\n", fr, info.map_valid, info.cam, info.left_limit, info.right_limit);
     }
     if ((int)fr == save_frame) { sms_save_state(&S, sbuf); f = fopen(save_path, "wb"); fwrite(sbuf, 1, ssz, f); fclose(f); }

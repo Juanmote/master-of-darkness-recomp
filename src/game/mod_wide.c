@@ -120,19 +120,29 @@ void mod_render(const sms_t* s, uint32_t* out, int pitch, int ext, mod_wide_info
     info->cam = cam;
   }
   int cx = valid ? cam - view : ext;  // where the original picture sits in playfield lines
+  info->cx = cx;
   for (int y = 0; y < SMS_H; y++) {
     uint32_t* row = out + y * pitch;
     uint32_t pal[32];
     for (int i = 0; i < 32; i++) pal[i] = sms_color(s->line_cram[y][i]);
     const uint8_t* src = s->fb_idx[y];
     bool fill = valid && y >= GAME_Y0;
+    bool hud = valid && y < GAME_Y0;
     int off = fill ? cx : ext;
     if (ext) for (int x = 0; x < W; x++) row[x] = 0xFF000000u;
-    for (int x = 0; x < SMS_W; x++) row[off + x] = pal[src[x]];
-    if (!ext || !fill) continue;
+    if (hud && cx != ext) {
+      // status bar stays centred, sprites crossing into it follow the playfield
+      for (int x = 0; x < SMS_W; x++) row[ext + x] = pal[s->fb_bg[y][x]];
+      for (int x = 0; x < SMS_W; x++)
+        if (s->fb_spr[y][x]) row[cx + x] = pal[src[x]];
+    } else {
+      for (int x = 0; x < SMS_W; x++) row[off + x] = pal[src[x]];
+    }
+    if (!ext || !valid) continue;
+    if (hud) off = cx;
     bool left_blank = (s->line_reg0[y] & 0x20) != 0;
     int wy = y - GAME_Y0;
-    for (int x = 0; x < W; x++) {
+    for (int x = 0; fill && x < W; x++) {
       bool in_center = x >= off && x < off + SMS_W;
       if (in_center && !(left_blank && x < off + 8)) continue;
       int wx = view + x;
@@ -164,14 +174,15 @@ void mod_render(const sms_t* s, uint32_t* out, int pitch, int ext, mod_wide_info
           bool center = sx >= 0 && sx < SMS_W;
           if (center) {
             bool hidden_column = left_blank && sx < 8;
-            bool missing = !pc->in_sat && src[sx] < 16;
+            bool missing = !pc->in_sat && !s->fb_spr[y][sx];
             if (!hidden_column && !missing) continue;
+            if (hud && !hidden_column) continue;  // over the status bar: only what the game drew
           }
           int c = tile_px(vram, tile, px, r);
           if (!c) continue;
           drawn[X] = 1;
           // background tiles with priority stay in front (side areas only)
-          if (!center || hidden_column_prio(left_blank, sx)) {
+          if (fill && (!center || hidden_column_prio(left_blank, sx))) {
             int wx = view + X;
             if (wx < left) wx = left + (((wx - left) % 16) + 16) % 16;
             else if (wx >= right) wx = right - 16 + (wx - right) % 16;
@@ -182,7 +193,7 @@ void mod_render(const sms_t* s, uint32_t* out, int pitch, int ext, mod_wide_info
           row[X] = pal[16 + c];
         }
       }
-    } else {
+    } else if (fill) {
       // sprite pixels that spill past the original right edge
       for (int i = 0; i < SMS_SPR_OVER && off + SMS_W + i < W; i++) {
         if (s->spr_over[y][i]) row[off + SMS_W + i] = pal[s->spr_over[y][i]];

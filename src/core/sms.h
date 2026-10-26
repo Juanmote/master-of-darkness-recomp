@@ -74,6 +74,8 @@ struct sms {
   int cpu_mult;                                    // CPU speed multiplier (1 = original, 2 = no slowdown)
   // per-frame outputs
   uint8_t fb_idx[SMS_H][SMS_W];                    // CRAM index per pixel
+  uint8_t fb_bg[SMS_H][SMS_W];                     // same, background layer only
+  uint8_t fb_spr[SMS_H][SMS_W];                    // 1 where a sprite pixel is visible
   uint8_t spr_over[SMS_H][SMS_SPR_OVER];           // sprite pixels past x=255 (0 = none, else 16+c)
   uint8_t line_hscroll[SMS_H];
   uint8_t line_vscroll[SMS_H];
