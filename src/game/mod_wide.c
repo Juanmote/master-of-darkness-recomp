@@ -94,34 +94,75 @@ void mod_render(const sms_t* s, uint32_t* out, int pitch, int ext, mod_wide_info
     info->right_limit = right;
   }
   const uint8_t* vram = s->st.vdp.vram;
+  // Tiles the game animates straight in the name table (water...) differ from the RAM map.
+  // Learn "map tile -> tile on screen" from the visible area and apply it to the sides.
+  int16_t remap[256];
+  for (int i = 0; i < 256; i++) remap[i] = -1;
+  int view = cam - ext;   // world X shown at the left edge of the playfield lines
+  if (valid) {
+    uint16_t nt = (s->st.vdp.reg[2] & 0x0E) << 10;
+    for (int r = 0; r < MAP_ROWS * 2; r++)
+      for (int wx = (cam + 8 + 7) & ~7; wx + 8 <= cam + SMS_W; wx += 8) {
+        uint8_t e = map_tile(&m, wx, r * 8);
+        const uint8_t* ne = &vram[nt + ((r + 4) * 32 + ((wx >> 3) & 31)) * 2];
+        if (!(ne[1] & 1)) continue;
+        if (remap[e] == -1) remap[e] = ne[0];
+        else if (remap[e] != ne[0]) remap[e] = -2;   // not a global swap: leave it alone
+      }
+    // keep the wide view inside the current section instead of showing black
+    if (right - left >= W) {
+      if (view < left) view = left;
+      if (view + W > right) view = right - W;
+    }
+    info->cam = cam;
+  }
+  int cx = valid ? cam - view : ext;  // where the original picture sits in playfield lines
   for (int y = 0; y < SMS_H; y++) {
     uint32_t* row = out + y * pitch;
     uint32_t pal[32];
     for (int i = 0; i < 32; i++) pal[i] = sms_color(s->line_cram[y][i]);
     const uint8_t* src = s->fb_idx[y];
-    for (int x = 0; x < SMS_W; x++) row[ext + x] = pal[src[x]];
-    if (!ext) continue;
     bool fill = valid && y >= GAME_Y0;
+    int off = fill ? cx : ext;
+    if (ext) for (int x = 0; x < W; x++) row[x] = 0xFF000000u;
+    for (int x = 0; x < SMS_W; x++) row[off + x] = pal[src[x]];
+    if (!ext || !fill) continue;
     bool left_blank = (s->line_reg0[y] & 0x20) != 0;
+    int wy = y - GAME_Y0;
     for (int x = 0; x < W; x++) {
-      bool in_center = x >= ext && x < ext + SMS_W;
-      if (in_center && !(left_blank && x < ext + 8 && fill)) {
-        continue;
-      }
+      bool in_center = x >= off && x < off + SMS_W;
+      if (in_center && !(left_blank && x < off + 8)) continue;
       uint32_t c = 0xFF000000u;
-      if (fill) {
-        int wx = cam + (x - ext);
-        int wy = y - GAME_Y0;
-        if (wx >= left && wx < right && wx >= 0 && wx < MAP_W * 16) {
-          int t = 256 + map_tile(&m, wx, wy);
-          c = pal[tile_px(vram, t, wx & 7, wy & 7)];
-        }
+      int wx = view + x;
+      if (wx >= left && wx < right && wx >= 0 && wx < MAP_W * 16) {
+        int e = map_tile(&m, wx, wy);
+        int t = 256 + (remap[e] >= 0 ? remap[e] : e);
+        c = pal[tile_px(vram, t, wx & 7, wy & 7)];
       }
       row[x] = c;
     }
     // sprite pixels that spill past the original right edge
-    for (int i = 0; i < SMS_SPR_OVER && ext + SMS_W + i < W; i++) {
-      if (s->spr_over[y][i] && fill) row[ext + SMS_W + i] = pal[s->spr_over[y][i]];
+    for (int i = 0; i < SMS_SPR_OVER && off + SMS_W + i < W; i++) {
+      if (s->spr_over[y][i]) row[off + SMS_W + i] = pal[s->spr_over[y][i]];
     }
   }
+}
+
+// Debug: marks playfield pixels where the VDP background differs from the RAM map.
+// Returns number of mismatching pixels (sprite pixels are ignored). mask: SMS_H*SMS_W bytes.
+int mod_debug_compare(const sms_t* s, uint8_t* mask) {
+  mapctx_t m; int cam;
+  memset(mask, 0, SMS_W * SMS_H);
+  if (!map_ctx(s, &m) || !detect_playfield(s, &m, &cam)) return -1;
+  int n = 0;
+  for (int y = GAME_Y0; y < SMS_H; y++)
+    for (int x = 8; x < SMS_W; x++) {
+      uint8_t v = s->fb_idx[y][x];
+      if (v >= 16) continue;
+      int wx = cam + x, wy = y - GAME_Y0;
+      int t = 256 + map_tile(&m, wx, wy);
+      int c = tile_px(s->st.vdp.vram, t, wx & 7, wy & 7);
+      if (c != v) { mask[y * SMS_W + x] = 1; n++; }
+    }
+  return n;
 }

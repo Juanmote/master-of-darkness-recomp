@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+int mod_debug_compare(const sms_t* s, uint8_t* mask);
 
 static sms_t S;
 typedef struct { int from, to; uint8_t btn; } span_t;
@@ -65,6 +66,7 @@ int main(int argc, char** argv) {
     mod_wide_info_t info;
     mod_render(&S, pix, W, ext, &info);
     if (info.map_valid) valid_frames++;
+    if (getenv("MOD_CMP")) { static uint8_t mk[SMS_W*SMS_H]; int d = mod_debug_compare(&S, mk); if (d > 0) { printf("F%u cam=%d mismatch=%d\n", fr, info.cam, d); char mp[512]; snprintf(mp, sizeof mp, "%s/m%06u.pgm", outdir, fr); FILE* o = fopen(mp, "wb"); fprintf(o, "P5\n256 192\n1\n"); fwrite(mk, 1, sizeof mk, o); fclose(o); } }
     if (af) fwrite(S.audio, 2, SMS_SAMPLES_PER_FRAME, af);
     char key[32], shl[8192];
     snprintf(key, sizeof key, ",%u,", fr); snprintf(shl, sizeof shl, ",%s,", shots);
