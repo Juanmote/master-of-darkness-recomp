@@ -80,6 +80,7 @@ struct sms {
   uint8_t line_display[SMS_H];
   uint8_t line_cram[SMS_H][32];                    // CRAM snapshot per line (raster palette effects)
   int16_t audio[SMS_SAMPLES_PER_FRAME];
+  uint8_t sat_mid[256];                            // sprite table as displayed (copied at line 96)
   // psg write log for the current frame
   struct { uint32_t cyc; uint8_t val; } psg_log[1024];
   int psg_log_n;
@@ -92,6 +93,10 @@ struct sms {
   uint32_t interp_steps;   // instructions run by the interpreter fallback (this frame)
   uint16_t last_interp_pc;
   uint8_t ei_shadow;       // last instruction was EI: no interrupt at this boundary
+  // Address hooks for enhancements (fixed area 0x0000-0x7FFF only). pc_hook returns
+  // true when it has replaced the instruction (it must then update pc/cycles itself).
+  const uint8_t* hook_map;  // 0x8000 entries, nonzero = call pc_hook
+  bool (*pc_hook)(sms_t* s, uint16_t pc);
 };
 
 void sms_init(sms_t* s, const uint8_t* rom, int size);

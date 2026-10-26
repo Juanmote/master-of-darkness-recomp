@@ -59,3 +59,21 @@ Cabecera TMR SEGA válida, checksum 6FE6 correcto, región SMS Export, mapper Se
 - El código generado (`generated/`) es una traducción del programa del juego: no se sube
   al repositorio ni se incluye en el APK. El APK ejecuta el código del juego desde la ROM
   del usuario y las mejoras propias se enganchan por dirección.
+
+## Fase 3 — enemigos en 16:9 (v0.2.0)
+- Objetos: slots de 0x20 bytes desde CA40 (grupo 1: 36 slots hasta CEC0; grupo 2: 10 slots desde CEC0).
+  +0 activo, +2/+3 Y (16 bits), +4/+5 X de pantalla (16 bits), +6/+7 puntero a la lista de piezas.
+- Pasada de sprites 51B6-5228: elimina objetos del grupo 1 con X < -17 o X > 255 (51D5-51E3 → 5238).
+  Constructor de sprites 0DD1: piezas [dy, dx, tile]; solo envía X 0..255; Y SAT = Y16 - 0x11.
+- Apariciones: listas por pantalla (3C9C con C905/C907, 52B5 con C90C); se disparan cuando el byte
+  bajo de la cámara es igual al de la entrada; el objeto nace con X de pantalla 0..255.
+- Mejoras (src/game/mod_enhance.c, código propio enganchado por dirección, solo en 16:9):
+  - 51D5: rango de vida ampliado a [-17-43-8, 255+43]; los objetos fuera de 0..255 no se mandan al VDP
+    pero sus piezas se capturan para los laterales.
+  - 0DD1 / 520E: captura de piezas (observación, sin cambiar nada).
+  - Listas de aparición: cámara virtual +43 (3CA6/3CB3/3CD6 y 52BD/52CA/52ED) y X de nacimiento +desplazamiento
+    (3CEE / 5305). En cambios de tramo se recorren los 44 valores pendientes. El puntero de la tabla se restaura
+    en cada repetición del escaneo.
+  - El renderizador elige, de las últimas 4 pasadas, la que coincide con la tabla de sprites que el VDP mostró.
+- Se comprueban los bytes de la ROM en todas las direcciones enganchadas: si no coinciden, las mejoras no se activan.
+- En 4:3 los ganchos no actúan: 5000 fotogramas idénticos al juego original.

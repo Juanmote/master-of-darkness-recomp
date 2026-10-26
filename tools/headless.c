@@ -2,6 +2,7 @@
 // usage: headless rom.sms -f FRAMES [-i input.txt] [-s f1,f2] [-x ext] [-o dir] [-l state] [-S frame:state] [-a audio.raw]
 #include "../src/core/sms.h"
 #include "../src/game/mod_wide.h"
+#include "../src/game/mod_enhance.h"
 #ifdef MOD_HAVE_RECOMP
 #include "../src/recomp/recomp_rt.h"
 #endif
@@ -11,6 +12,7 @@
 int mod_debug_compare(const sms_t* s, uint8_t* mask);
 
 static sms_t S;
+static mod_enhance_t E;
 static sms_t T;  // scratch machine for verification
 static long verify_blocks, verify_fail;
 static int cpu_equal(const z80* a, const z80* b) {
@@ -50,7 +52,17 @@ static void verify_cb(sms_t* s, const sms_state_t* before, int psg_n) {
 static uint8_t cov[1 << 20];
 static uint32_t ram_exec;
 static int watch_addr = -1;
+static int objlog;
 static void h_ramw(sms_t* s, uint16_t a, uint8_t v) {
+  if (objlog && a >= 0xCA40 && a < 0xCF20 && (a & 0x1F) == 0) {
+    uint8_t* sl = &s->st.ram[(a & 0x1FFF)];
+    int x = (int16_t)(sl[4] | (sl[5] << 8));
+    int y = (int16_t)(sl[2] | (sl[3] << 8));
+    static uint8_t prev[0x2000];
+    int was = prev[a & 0x1FFF]; prev[a & 0x1FFF] = v;
+    if ((v == 0) != (was == 0))
+      printf("O %s slot %04X frame %u pc %04X bank %02X x=%d y=%d cam=%d\n", v ? "NEW " : "FREE", a, s->st.frame, s->st.cpu.pc, s->st.bank[2], x, y, s->st.ram[0x6A0] | (s->st.ram[0x6A1] << 8));
+  }
   if (a == watch_addr) printf("W %04X=%02X frame %u pc %04X line %d cyc %lu\n", a, v, s->st.frame, s->st.cpu.pc, s->st.vdp.line, (unsigned long)s->st.cpu.cyc);
 }
 static unsigned long tr_from, tr_to;
@@ -74,7 +86,7 @@ static uint8_t parse_btn(const char* t) {
 
 int main(int argc, char** argv) {
   int frames = 600, ext = MOD_WIDE_EXT;
-  const char *hashpath = NULL; const char *covpath = NULL; int seed = 0, use_recomp = 0, do_verify = 0;
+  int enhance = 0; const char *hashpath = NULL; const char *covpath = NULL; int seed = 0, use_recomp = 0, do_verify = 0;
   const char *input = NULL, *shots = "", *outdir = "out", *load = NULL, *save = NULL, *audio = NULL;
   for (int i = 2; i < argc; i++) {
     if (!strcmp(argv[i], "-f")) frames = atoi(argv[++i]);
@@ -87,6 +99,7 @@ int main(int argc, char** argv) {
     else if (!strcmp(argv[i], "-a")) audio = argv[++i];
     else if (!strcmp(argv[i], "-c")) covpath = argv[++i];
     else if (!strcmp(argv[i], "-R")) use_recomp = 1;
+    else if (!strcmp(argv[i], "-E")) enhance = 1;
     else if (!strcmp(argv[i], "-H")) hashpath = argv[++i];
     else if (!strcmp(argv[i], "-V")) { use_recomp = 1; do_verify = 1; }
     else if (!strcmp(argv[i], "-r")) seed = atoi(argv[++i]);
@@ -100,12 +113,14 @@ int main(int argc, char** argv) {
     f = fopen(load, "rb"); size_t r = fread(sbuf, 1, ssz, f); fclose(f);
     if (!sms_load_state(&S, sbuf, r)) { fprintf(stderr, "bad state\n"); return 1; }
   }
+  if (enhance) { mod_enhance_attach(&S, &E); mod_enhance_set_wide(&E, ext > 0, ext); }
 #ifdef MOD_HAVE_RECOMP
   if (use_recomp) S.recomp_run = recomp_run;
 #else
   if (use_recomp) { fprintf(stderr, "built without recompiled code (run tools/recomp/recomp.py first)\n"); return 1; }
 #endif
   if (getenv("TRACE")) { sscanf(getenv("TRACE"), "%lu-%lu", &tr_from, &tr_to); S.hooks.on_exec = h_exec; }
+  if (getenv("OBJLOG")) { objlog = 1; S.hooks.on_ram_write = h_ramw; }
   if (getenv("WATCH")) { watch_addr = (int)strtol(getenv("WATCH"), NULL, 16); S.hooks.on_ram_write = h_ramw; }
 #ifdef MOD_HAVE_RECOMP
   if (do_verify) { sms_init(&T, rom, n); S.recomp_verify = verify_cb; rt_single = 1; }
@@ -152,9 +167,27 @@ int main(int argc, char** argv) {
     }
     for (int k = 0; k < npokes; k++) if ((int)fr >= pokes[k].from && (int)fr <= pokes[k].to) S.st.ram[pokes[k].addr & 0x1FFF] = pokes[k].val;
     sms_run_frame(&S);
+    mod_enhance_frame(&S, &E);
     mod_wide_info_t info;
-    mod_render(&S, pix, W, ext, &info);
+    mod_render(&S, pix, W, ext, &info, E.wide ? E.shown : NULL, E.wide ? E.n_shown : 0);
     if (info.map_valid) valid_frames++;
+    if (getenv("SATCHECK") && E.wide) {
+      // every in_sat piece shown must be in the VDP sprite table with the same position
+      uint16_t sat = (S.st.vdp.reg[5] & 0x7E) << 7;
+      int miss = 0, tot = 0;
+      const mod_piece_t* L = E.shown; int LN = E.n_shown;
+      for (int k = 0; k < LN; k++) {
+        if (!L[k].in_sat) continue;
+        tot++;
+        int found = 0;
+        for (int j = 0; j < 64; j++) {
+          if (S.sat_mid[j] == (uint8_t)L[k].y && S.sat_mid[0x80 + j * 2] == (uint8_t)L[k].x) { found = 1; break; }
+        }
+        if (!found) miss++;
+      }
+      if (tot) printf("SAT frame %u pieces %d missing %d\n", fr, tot, miss);
+    }
+    if (getenv("RAMDUMP")) { static FILE* rd; if (!rd) rd = fopen(getenv("RAMDUMP"), "wb"); fwrite(S.st.ram, 1, 0x2000, rd); }
     if (hf) {
       uint32_t h = 2166136261u;
       const uint8_t* p1 = (const uint8_t*)S.fb_idx; for (size_t k = 0; k < sizeof S.fb_idx; k++) h = (h ^ p1[k]) * 16777619u;
@@ -180,12 +213,14 @@ int main(int argc, char** argv) {
   }
   if (af) fclose(af);
   if (hf) fclose(hf);
+  if (enhance) { mod_enhance_attach(&S, &E); mod_enhance_set_wide(&E, ext > 0, ext); }
 #ifdef MOD_HAVE_RECOMP
   if (use_recomp) S.recomp_run = recomp_run;
 #else
   if (use_recomp) { fprintf(stderr, "built without recompiled code (run tools/recomp/recomp.py first)\n"); return 1; }
 #endif
   if (getenv("TRACE")) { sscanf(getenv("TRACE"), "%lu-%lu", &tr_from, &tr_to); S.hooks.on_exec = h_exec; }
+  if (getenv("OBJLOG")) { objlog = 1; S.hooks.on_ram_write = h_ramw; }
   if (getenv("WATCH")) { watch_addr = (int)strtol(getenv("WATCH"), NULL, 16); S.hooks.on_ram_write = h_ramw; }
 #ifdef MOD_HAVE_RECOMP
   if (do_verify) { sms_init(&T, rom, n); S.recomp_verify = verify_cb; rt_single = 1; }

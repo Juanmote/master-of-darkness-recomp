@@ -2,6 +2,7 @@
 // rebuilt from the level map that the game keeps in RAM.
 #pragma once
 #include "../core/sms.h"
+#include "mod_enhance.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -17,7 +18,8 @@ typedef struct {
 
 // Writes SMS_H lines of (SMS_W + 2*ext) ARGB pixels into out (pitch in pixels).
 // ext = 0 gives the original 4:3 picture.
-void mod_render(const sms_t* s, uint32_t* out, int pitch, int ext, mod_wide_info_t* info);
+void mod_render(const sms_t* s, uint32_t* out, int pitch, int ext, mod_wide_info_t* info,
+                const mod_piece_t* pieces, int n_pieces);
 
 #ifdef __cplusplus
 }

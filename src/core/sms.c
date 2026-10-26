@@ -212,6 +212,7 @@ static void render_line(sms_t* s, int y) {
     prio[x] = (e & 0x1000) && c != 0;
   }
   uint16_t sat = (d->reg[5] & 0x7E) << 7;
+  if (y == 96) memcpy(s->sat_mid, &d->vram[sat], 256);
   int h = (d->reg[1] & 0x02) ? 16 : 8;
   int zoom = (d->reg[1] & 0x01) ? 2 : 1;
   int count = 0;
@@ -332,6 +333,11 @@ void sms_run_frame(sms_t* s) {
         }
         s->interp_steps++;
         s->last_interp_pc = cpu->pc;
+      }
+      if (s->hook_map && cpu->pc < 0x8000 && s->hook_map[cpu->pc] && !cpu->halted &&
+          s->st.bank[0] == 0 && s->st.bank[1] == 1 && s->pc_hook(s, cpu->pc)) {
+        s->ei_shadow = 0;
+        continue;
       }
       if (s->hooks.on_exec) s->hooks.on_exec(s, cpu->pc, sms_rom_offset(s, cpu->pc));
       s->ei_shadow = !cpu->halted && sms_peek(s, cpu->pc) == 0xFB;

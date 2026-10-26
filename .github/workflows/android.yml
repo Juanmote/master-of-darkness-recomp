@@ -10,7 +10,7 @@ permissions:
 
 env:
   SDL_TAG: release-2.30.12
-  MOD_VERSION: 0.1.3
+  MOD_VERSION: 0.2.0
 
 jobs:
   apk:
