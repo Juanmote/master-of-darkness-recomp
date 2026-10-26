@@ -1,0 +1,53 @@
+apply plugin: 'com.android.application'
+
+android {
+    namespace "com.juanmote.masterofdarkness"
+    compileSdkVersion 34
+    if (project.hasProperty('ndkVer')) {
+        ndkVersion project.ndkVer
+    }
+    defaultConfig {
+        applicationId "com.juanmote.masterofdarkness"
+        minSdkVersion 21
+        targetSdkVersion 34
+        versionCode Integer.parseInt(project.findProperty('modVersionCode') ?: '1')
+        versionName project.findProperty('modVersionName') ?: '0.1.0'
+        externalNativeBuild {
+            cmake {
+                arguments "-DANDROID_APP_PLATFORM=android-21", "-DANDROID_STL=c++_static"
+                abiFilters 'arm64-v8a', 'armeabi-v7a'
+            }
+        }
+    }
+    signingConfigs {
+        // Fixed key committed to the repo so every build can update the previous one
+        // without uninstalling. It only identifies this fan project.
+        mod {
+            storeFile file('../keystore/mod-release.jks')
+            storePassword 'masterofdarkness'
+            keyAlias 'mod'
+            keyPassword 'masterofdarkness'
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.mod
+        }
+        debug {
+            signingConfig signingConfigs.mod
+        }
+    }
+    externalNativeBuild {
+        cmake {
+            path 'jni/CMakeLists.txt'
+        }
+    }
+    lint {
+        abortOnError false
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+}
