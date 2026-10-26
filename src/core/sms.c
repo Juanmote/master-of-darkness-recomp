@@ -194,7 +194,10 @@ static void render_line(sms_t* s, int y) {
   s->line_reg0[y] = d->reg[0];
   s->line_display[y] = (d->reg[1] & 0x40) != 0;
   memcpy(s->line_cram[y], d->cram, 32);
-  if (!(d->reg[1] & 0x40)) { memset(out, backdrop, SMS_W); return; }
+  if (!(d->reg[1] & 0x40)) {
+    memset(out, backdrop, SMS_W); memset(s->fb_bg[y], backdrop, SMS_W); memset(s->fb_spr[y], 0, SMS_W);
+    return;
+  }
   uint16_t nt = (d->reg[2] & 0x0E) << 10;
   int hs = (y < 16 && (d->reg[0] & 0x40)) ? 0 : d->reg[8];
   for (int x = 0; x < SMS_W; x++) {
@@ -211,6 +214,8 @@ static void render_line(sms_t* s, int y) {
     out[x] = ((e & 0x800) ? 16 : 0) + c;
     prio[x] = (e & 0x1000) && c != 0;
   }
+  memcpy(s->fb_bg[y], out, SMS_W);
+  memset(s->fb_spr[y], 0, SMS_W);
   uint16_t sat = (d->reg[5] & 0x7E) << 7;
   if (y == 96) memcpy(s->sat_mid, &d->vram[sat], 256);
   int h = (d->reg[1] & 0x02) ? 16 : 8;
@@ -239,10 +244,10 @@ static void render_line(sms_t* s, int y) {
       if (drawn[x]) { d->status |= 0x20; continue; }
       drawn[x] = 1;
       if (x >= SMS_W) over[x - SMS_W] = 16 + c;
-      else if (!prio[x]) out[x] = 16 + c;
+      else if (!prio[x]) { out[x] = 16 + c; s->fb_spr[y][x] = 1; }
     }
   }
-  if (d->reg[0] & 0x20) memset(out, backdrop, 8);
+  if (d->reg[0] & 0x20) { memset(out, backdrop, 8); memset(s->fb_bg[y], backdrop, 8); memset(s->fb_spr[y], 0, 8); }
 }
 
 // ---------------- ports ----------------

@@ -85,3 +85,9 @@ Cabecera TMR SEGA válida, checksum 6FE6 correcto, región SMS Export, mapper Se
 - Ralentizaciones: `sms_t.cpu_mult = 2` duplica los ciclos de CPU por línea. Solo se aplica mientras
   `mod_is_gameplay()` (la intro y los menús miden el tiempo con bucles de CPU y se acelerarían).
   Con tres murciélagos en R1-1: 252 de 300 fotogramas de lógica en el original, 300 de 300 con la opción.
+
+## v0.2.3
+- "Decapitación": con el encuadre panorámico detenido (inicio/final de tramo) la zona de juego se desplaza
+  respecto al marcador, y los píxeles de sprite en las líneas del marcador se dibujaban con el desplazamiento
+  del marcador. El núcleo guarda ahora fondo (`fb_bg`) y máscara de sprites (`fb_spr`) por línea; en las líneas
+  del marcador el fondo va centrado y los sprites siguen a la zona de juego.

@@ -14,6 +14,7 @@ typedef struct {
   bool map_valid;     // game area matched the RAM map this frame
   int cam;            // camera X used for the extension
   int left_limit, right_limit;
+  int cx;             // x of the original picture inside the playfield lines
 } mod_wide_info_t;
 
 // Writes SMS_H lines of (SMS_W + 2*ext) ARGB pixels into out (pitch in pixels).
