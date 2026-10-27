@@ -9,7 +9,7 @@
 #include "../game/mod_enhance.h"
 #include "font_data.h"
 
-#define APP_VERSION "0.3.1"
+#define APP_VERSION "0.3.2"
 #define KNOWN_CRC 0x96FB4D4Bu
 #define UI_W 640
 #define UI_H 360
@@ -458,20 +458,6 @@ static void handle_event(SDL_Event* e) {
     if (e->caxis.axis == SDL_CONTROLLER_AXIS_LEFTY) stick_y[s] = e->caxis.value;
     break;
   }
-  case SDL_FINGERDOWN:
-    if (!menu_open) menu_set_open(1);
-    else {
-      // tap on a menu row
-      int ww, wh; SDL_GetRendererOutputSize(ren, &ww, &wh);
-      double us = (double)ww / UI_W < (double)wh / UI_H ? (double)ww / UI_W : (double)wh / UI_H;
-      double ux = (e->tfinger.x * ww - (ww - UI_W * us) / 2) / us;
-      double uy = (e->tfinger.y * wh - (wh - UI_H * us) / 2) / us;
-      int bh = 40 + MI_COUNT * 26 + 30, by = (UI_H - bh) / 2;
-      int row = (int)floor((uy - (by + 37)) / 26);
-      (void)ux;
-      if (row >= 0 && row < MI_COUNT) { menu_sel = row; menu_activate(); }
-    }
-    break;
   }
 }
 
@@ -568,7 +554,7 @@ int main(int argc, char** argv) {
   mod_enhance_attach(&S, &E);
   mod_enhance_set_wide(&E, cfg.widescreen, MOD_WIDE_EXT);
   if (rom_crc != KNOWN_CRC) show_toast("ROM no reconocida: algunas mejoras pueden fallar", 4000);
-  else show_toast("Pulsa SELECT, ATRÁS o toca la pantalla para abrir el menú", 4000);
+  else show_toast("Pulsa SELECT o ATRÁS para abrir el menú", 4000);
 
   const double frame_time = 1.0 / 60.0;
   double acc = 0;
