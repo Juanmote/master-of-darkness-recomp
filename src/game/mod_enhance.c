@@ -9,6 +9,7 @@
 // the sprite pieces the game discards so the renderer can draw them in the side areas.
 // Nothing changes in 4:3 mode.
 #include "mod_enhance.h"
+#include "mod_wide.h"
 #include <string.h>
 
 static mod_enhance_t* g;
@@ -19,7 +20,7 @@ static inline void ram_w(sms_t* s, uint16_t a, uint8_t v) { s->st.ram[a & 0x1FFF
 
 // ---------------------------------------------------------------- sprite capture
 // Same piece walk as the game's sprite builder (0x0DD1), without the X limits.
-static void capture(sms_t* s, uint16_t obj) {
+static void capture(sms_t* s, uint16_t obj, bool sent) {
   if (!g->wide) return;
   int y16 = (int16_t)(ram8(s, obj + 2) | (ram8(s, obj + 3) << 8));
   int x16 = (int16_t)(ram8(s, obj + 4) | (ram8(s, obj + 5) << 8));
@@ -34,11 +35,11 @@ static void capture(sms_t* s, uint16_t obj) {
     pc->x = (int16_t)px;
     pc->y = (int16_t)(py - 0x11);
     pc->tile = sms_peek(s, p + 2);
-    pc->in_sat = px >= 0 && px <= 255;
+    pc->in_sat = sent && px >= 0 && px <= 255;  // only if the game really sent it to the VDP
   }
 }
 
-static bool in_wide_range(int x16) { return x16 >= -17 - g->ext - 8 && x16 <= 255 + g->ext; }
+static bool in_wide_range(int x16) { return x16 >= -17 - g->margin_l - 8 && x16 <= 255 + g->margin_r; }
 
 // ---------------------------------------------------------------- spawn lists
 typedef struct {
@@ -83,7 +84,7 @@ static bool spawn_hook(sms_t* s, int k, uint16_t pc) {
   const spawn_addr_t* a = &spawn_addrs[k];
   z80* z = &s->st.cpu;
   typeof(g->spawn[0])* st = &g->spawn[k];
-  if (!g->wide) { st->active = false; st->last_cam[0] = st->last_cam[1] = -1000; return false; }
+  if (!g->wide) { st->active = false; st->last_cam[0] = st->last_cam[1] = -1000; st->done_hi = -100000; st->done_lo = 100000; return false; }
   int cam = cam16(s);
   if (pc == a->a_hi) {
     if (!st->active) {
@@ -93,11 +94,22 @@ static bool spawn_hook(sms_t* s, int k, uint16_t pc) {
       if (base == (ram8(s, right) | (ram8(s, right + 1) << 8))) dir = 1;
       else if (base == (ram8(s, left) | (ram8(s, left + 1) << 8))) dir = -1;
       else dir = 0;
-      int d = dir * g->ext;
+      // values to check: the ones that became visible since the last scan
       int slot = dir < 0 ? 1 : 0;
       st->step = dir < 0 ? -1 : 1;
-      if (dir != 0 && cam == st->last_cam[slot] + dir) { st->next = st->last = cam + d; }
-      else { st->next = cam; st->last = cam + d; }
+      if (dir > 0) {
+        int to = cam + g->margin_r;
+        int from = (cam == st->last_cam[0] + 1 && st->done_hi >= cam) ? st->done_hi + 1 : cam;
+        st->next = from; st->last = to;
+        if (to > st->done_hi || from == cam) st->done_hi = to;
+      } else if (dir < 0) {
+        int to = cam - g->margin_l;
+        int from = (cam == st->last_cam[1] - 1 && st->done_lo <= cam) ? st->done_lo - 1 : cam;
+        st->next = from; st->last = to;
+        if (to < st->done_lo || from == cam) st->done_lo = to;
+      } else {
+        st->next = st->last = cam;
+      }
       st->last_cam[slot] = cam;
       st->list_base = base;
       st->active = true;
@@ -160,11 +172,11 @@ static bool on_hook(sms_t* s, uint16_t pc) {
     return false;
   }
   case 0x0DD1:  // sprite builder: observe
-    capture(s, z->ix);
+    capture(s, z->ix, true);
     return false;
   case 0x520E: {  // second object group, off the original screen: observe
     int x16 = (int16_t)(ram8(s, z->ix + 4) | (ram8(s, z->ix + 5) << 8));
-    if (in_wide_range(x16)) capture(s, z->ix);
+    if (in_wide_range(x16)) capture(s, z->ix, false);
     return false;
   }
   case 0x51D5: {  // first object group: keep-alive / draw decision
@@ -172,7 +184,7 @@ static bool on_hook(sms_t* s, uint16_t pc) {
     int x16 = (int16_t)(ram8(s, z->ix + 4) | (ram8(s, z->ix + 5) << 8));
     if (x16 >= 0 && x16 <= 255) { z->a = 0; z->pc = 0x51E5; z->cyc += 35; }
     else if (x16 >= -17 && x16 < 0) { z->a = (0x11 + (x16 & 0xFF)) & 0xFF; z->pc = 0x51E5; z->cyc += 74; }
-    else if (in_wide_range(x16)) { capture(s, z->ix); z->pc = 0x51E9; z->cyc += 35; }
+    else if (in_wide_range(x16)) { capture(s, z->ix, false); z->pc = 0x51E9; z->cyc += 35; }
     else { z->pc = 0x5238; z->cyc += 35; }
     return true;
   }
@@ -214,6 +226,8 @@ void mod_enhance_attach(sms_t* s, mod_enhance_t* e) {
     const spawn_addr_t* a = &spawn_addrs[k];
     hook_map[a->a_hi] = hook_map[a->a_lo] = hook_map[a->a_lo2] = hook_map[a->x_hi] = hook_map[a->end] = 1;
     e->spawn[k].last_cam[0] = e->spawn[k].last_cam[1] = -1000;
+    e->spawn[k].done_hi = -100000;
+    e->spawn[k].done_lo = 100000;
     e->spawn[k].active = false;
   }
   s->hook_map = hook_map;
@@ -223,6 +237,7 @@ void mod_enhance_attach(sms_t* s, mod_enhance_t* e) {
 void mod_enhance_set_wide(mod_enhance_t* e, bool wide, int ext) {
   e->wide = wide;
   e->ext = ext;
+  e->margin_l = e->margin_r = wide ? ext : 0;
   if (!wide) {
     e->n_building = e->n_shown = 0;
     for (int i = 0; i < 4; i++) e->n_pass[i] = 0;
@@ -245,6 +260,10 @@ static int pass_matches(const sms_t* s, const mod_piece_t* p, int n, int* total)
 }
 
 void mod_enhance_frame(const sms_t* s, mod_enhance_t* e) {
+  // margins for the next frame's game logic
+  if (!e->wide || !mod_visible_margins(s, e->ext, &e->margin_l, &e->margin_r)) {
+    e->margin_l = e->margin_r = e->wide ? e->ext : 0;
+  }
   e->shown = NULL;
   e->n_shown = 0;
   if (!e->wide) return;

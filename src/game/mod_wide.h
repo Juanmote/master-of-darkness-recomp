@@ -22,6 +22,10 @@ typedef struct {
 // True while the level is on screen (the scrolling playfield matches the RAM map).
 bool mod_is_gameplay(const sms_t* s);
 
+// How many pixels of playable area the wide picture shows beyond the original 256
+// on each side right now (depends on where the view is held at section edges).
+bool mod_visible_margins(const sms_t* s, int ext, int* left_px, int* right_px);
+
 void mod_render(const sms_t* s, uint32_t* out, int pitch, int ext, mod_wide_info_t* info,
                 const mod_piece_t* pieces, int n_pieces);
 

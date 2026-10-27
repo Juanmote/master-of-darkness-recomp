@@ -73,36 +73,95 @@ static bool detect_playfield(const sms_t* s, const mapctx_t* m, int* cam_out) {
   return ok * 10 >= total * 9;
 }
 
+typedef struct {
+  int cam;          // camera X of the picture on screen
+  int left, right;  // world limits of the current section
+  int view;         // world X at the left edge of the playfield lines
+  int cx;           // where the original 256-pixel picture sits in those lines
+} view_t;
+
+static void compute_view(const mapctx_t* m, int cam, int ext, view_t* v) {
+  const int W = SMS_W + 2 * ext;
+  int sc = cam >> 8, s0 = sc, s1 = sc;
+  while (s0 > 0 && desc_stop(m, s0 - 1) == 0) s0--;
+  while (s1 < 11 && desc_stop(m, s1) == 0) s1++;
+  v->cam = cam;
+  v->left = s0 * 256;
+  v->right = (s1 + 1) * 256;
+  v->view = cam - ext;
+  // keep the wide view inside the current section when it is wide enough
+  if (v->right - v->left >= W) {
+    if (v->view < v->left) v->view = v->left;
+    if (v->view + W > v->right) v->view = v->right - W;
+  }
+  v->cx = cam - v->view;
+}
+
+bool mod_visible_margins(const sms_t* s, int ext, int* left_px, int* right_px) {
+  mapctx_t m;
+  int cam;
+  if (ext <= 0 || !map_ctx(s, &m) || !detect_playfield(s, &m, &cam)) return false;
+  view_t v;
+  compute_view(&m, cam, ext, &v);
+  const int W = SMS_W + 2 * ext;
+  int l = v.cx, r = W - v.cx - SMS_W;
+  if (l > cam - v.left) l = cam - v.left;                 // nothing playable beyond the limits
+  if (r > v.right - (cam + SMS_W)) r = v.right - (cam + SMS_W);
+  *left_px = l < 0 ? 0 : l;
+  *right_px = r < 0 ? 0 : r;
+  return true;
+}
+
+// Cells of the current section that differ from the RAM map (broken blocks, opened
+// passages, dialog boxes...) as last seen on screen: the side areas use them too.
+static struct {
+  uint32_t key;
+  int16_t t[MAP_ROWS * 2][MAP_W * 2];
+} ovr = {0xFFFFFFFFu, {{0}}};
+
+// Last good wide picture of the playfield, reused while the game shows something
+// the map cannot explain (boss effects, dialog) without moving the camera.
+#define CACHE_W (SMS_W + 2 * 64)
+static struct {
+  bool ok;
+  uint32_t key;
+  int cx, W;
+  uint32_t px[SMS_H][CACHE_W];
+} cache;
+
+static uint32_t section_key(const sms_t* s) {
+  return ((uint32_t)ram8(s, 0xDFC0) << 24) | ((uint32_t)ram8(s, 0xDFC1) << 16) |
+         ((uint32_t)ram8(s, RAM_MAPBANK) << 8) | (uint8_t)(ram8(s, RAM_METATILE) ^ ram8(s, RAM_SCRDESC) ^ ram8(s, RAM_SCRDESC + 1));
+}
+
+static uint32_t scene_key(const sms_t* s) {
+  return ((uint32_t)ram16(s, RAM_CAM) << 16) | ((uint32_t)ram8(s, 0xDFC0) << 8) | ram8(s, 0xDFC1);
+}
+
+static inline uint32_t darken(uint32_t c) { return 0xFF000000u | ((c >> 1) & 0x7F7F7Fu); }
+
 void mod_render(const sms_t* s, uint32_t* out, int pitch, int ext, mod_wide_info_t* info,
                 const mod_piece_t* pieces, int n_pieces) {
   mod_wide_info_t local;
   if (!info) info = &local;
   memset(info, 0, sizeof *info);
   const int W = SMS_W + 2 * ext;
+  const uint8_t* vram = s->st.vdp.vram;
   mapctx_t m;
   int cam = 0;
-  bool valid = ext > 0 && map_ctx(s, &m) && detect_playfield(s, &m, &cam);
-  int left = 0, right = 0;
-  if (valid) {
-    int sc = cam >> 8;
-    int s0 = sc;
-    while (s0 > 0 && desc_stop(&m, s0 - 1) == 0) s0--;
-    int s1 = sc;
-    while (s1 < 11 && desc_stop(&m, s1) == 0) s1++;
-    left = s0 * 256;
-    right = (s1 + 1) * 256;
-    info->map_valid = true;
-    info->cam = cam;
-    info->left_limit = left;
-    info->right_limit = right;
-  }
-  const uint8_t* vram = s->st.vdp.vram;
-  // Tiles the game animates straight in the name table (water...) differ from the RAM map.
-  // Learn "map tile -> tile on screen" from the visible area and apply it to the sides.
+  bool valid = ext > 0 && W <= CACHE_W && map_ctx(s, &m) && detect_playfield(s, &m, &cam);
+  view_t v = {0, 0, 0, -ext, ext};
   int16_t remap[256];
   for (int i = 0; i < 256; i++) remap[i] = -1;
-  int view = cam - ext;   // world X shown at the left edge of the playfield lines
+  bool from_cache = false;
   if (valid) {
+    compute_view(&m, cam, ext, &v);
+    info->map_valid = true;
+    info->cam = cam;
+    info->left_limit = v.left;
+    info->right_limit = v.right;
+    // Tiles the game animates straight in the name table (water...) differ from the map:
+    // learn "map tile -> tile on screen" from the visible area and apply it to the sides.
     uint16_t nt = (s->st.vdp.reg[2] & 0x0E) << 10;
     for (int r = 0; r < MAP_ROWS * 2; r++)
       for (int wx = (cam + 8 + 7) & ~7; wx + 8 <= cam + SMS_W; wx += 8) {
@@ -110,24 +169,38 @@ void mod_render(const sms_t* s, uint32_t* out, int pitch, int ext, mod_wide_info
         const uint8_t* ne = &vram[nt + ((r + 4) * 32 + ((wx >> 3) & 31)) * 2];
         if (!(ne[1] & 1)) continue;
         if (remap[e] == -1) remap[e] = ne[0];
-        else if (remap[e] != ne[0]) remap[e] = -2;   // not a global swap: leave it alone
+        else if (remap[e] != ne[0]) remap[e] = -2;   // not a global swap
       }
-    // keep the wide view inside the current section instead of showing black
-    if (right - left >= W) {
-      if (view < left) view = left;
-      if (view + W > right) view = right - W;
+    // remember cells that differ from the map in this section
+    uint32_t key = section_key(s);
+    if (key != ovr.key) {
+      ovr.key = key;
+      for (int r = 0; r < MAP_ROWS * 2; r++) for (int c = 0; c < MAP_W * 2; c++) ovr.t[r][c] = -1;
     }
-    info->cam = cam;
+    for (int r = 0; r < MAP_ROWS * 2; r++)
+      for (int wx = (cam + 8 + 7) & ~7; wx + 8 <= cam + SMS_W; wx += 8) {
+        uint8_t e = map_tile(&m, wx, r * 8);
+        const uint8_t* ne = &vram[nt + ((r + 4) * 32 + ((wx >> 3) & 31)) * 2];
+        int shown = remap[e] >= 0 ? remap[e] : e;
+        ovr.t[r][wx >> 3] = ((ne[1] & 1) && ne[0] != shown && remap[e] != -2) ? ne[0] : -1;
+      }
+  } else if (ext > 0 && cache.ok && cache.W == W && cache.key == scene_key(s) && s->line_display[100]) {
+    from_cache = true;
+    v.cx = cache.cx;
   }
-  int cx = valid ? cam - view : ext;  // where the original picture sits in playfield lines
-  info->cx = cx;
+  info->cx = v.cx;
+  const int cx = v.cx;
+  const sms_vdp_t* d = &s->st.vdp;
+  const int sh = (d->reg[1] & 0x02) ? 16 : 8;
   for (int y = 0; y < SMS_H; y++) {
     uint32_t* row = out + y * pitch;
     uint32_t pal[32];
     for (int i = 0; i < 32; i++) pal[i] = sms_color(s->line_cram[y][i]);
     const uint8_t* src = s->fb_idx[y];
-    bool fill = valid && y >= GAME_Y0;
-    bool hud = valid && y < GAME_Y0;
+    bool scene = valid || from_cache;
+    bool fill = scene && y >= GAME_Y0;
+    bool hud = scene && y < GAME_Y0;
+    bool left_blank = (s->line_reg0[y] & 0x20) != 0;
     int off = fill ? cx : ext;
     if (ext) for (int x = 0; x < W; x++) row[x] = 0xFF000000u;
     if (hud && cx != ext) {
@@ -135,59 +208,63 @@ void mod_render(const sms_t* s, uint32_t* out, int pitch, int ext, mod_wide_info
       for (int x = 0; x < SMS_W; x++) row[ext + x] = pal[s->fb_bg[y][x]];
       for (int x = 0; x < SMS_W; x++)
         if (s->fb_spr[y][x]) row[cx + x] = pal[src[x]];
+    } else if (fill && from_cache) {
+      memcpy(row, cache.px[y], sizeof(uint32_t) * W);
+      for (int x = left_blank ? 8 : 0; x < SMS_W; x++) row[cx + x] = pal[src[x]];
     } else {
       for (int x = 0; x < SMS_W; x++) row[off + x] = pal[src[x]];
     }
     if (!ext || !valid) continue;
     if (hud) off = cx;
-    bool left_blank = (s->line_reg0[y] & 0x20) != 0;
     int wy = y - GAME_Y0;
+    // side areas from the map
     for (int x = 0; fill && x < W; x++) {
       bool in_center = x >= off && x < off + SMS_W;
       if (in_center && !(left_blank && x < off + 8)) continue;
-      int wx = view + x;
-      // outside the current section (one-screen rooms, section ends): keep repeating the
-      // outermost 16-pixel column, so walls and pillars simply continue
-      if (wx < left) wx = left + (((wx - left) % 16) + 16) % 16;
-      else if (wx >= right) wx = right - 16 + (wx - right) % 16;
+      int wx = v.view + x;
+      bool outside = wx < v.left || wx >= v.right;
+      // outside the section (one-screen rooms, section ends): repeat the outermost
+      // 16-pixel column, darkened so it does not look playable
+      if (wx < v.left) wx = v.left + (((wx - v.left) % 16) + 16) % 16;
+      else if (wx >= v.right) wx = v.right - 16 + (wx - v.right) % 16;
+      int o = ovr.t[wy >> 3][wx >> 3];
       int e = map_tile(&m, wx, wy);
-      int t = 256 + (remap[e] >= 0 ? remap[e] : e);
-      row[x] = pal[tile_px(vram, t, wx & 7, wy & 7)];
+      int t = 256 + (o >= 0 ? o : remap[e] >= 0 ? remap[e] : e);
+      uint32_t c = pal[tile_px(vram, t, wx & 7, wy & 7)];
+      row[x] = outside ? darken(c) : c;
     }
     // sprites the game keeps outside its 256-pixel picture (captured by mod_enhance)
     if (n_pieces) {
-      const sms_vdp_t* d = &s->st.vdp;
-      int h = (d->reg[1] & 0x02) ? 16 : 8;
-      uint8_t drawn[1024];
+      uint8_t drawn[CACHE_W];
       memset(drawn, 0, (size_t)W);
       for (int i = 0; i < n_pieces; i++) {
         const mod_piece_t* pc = &pieces[i];
         int top = pc->y + 1;
-        if (pc->y >= 0xD0 || y < top || y >= top + h) continue;
+        if (pc->y >= 0xD0 || y < top || y >= top + sh) continue;
         int tile = pc->tile | ((d->reg[6] & 0x04) ? 0x100 : 0);
-        if (h == 16) tile &= ~1;
+        if (sh == 16) tile &= ~1;
         int r = y - top;
         for (int px = 0; px < 8; px++) {
           int sx = pc->x + px;           // position in the original picture
           int X = off + sx;              // position in the wide picture
           if (X < 0 || X >= W || drawn[X]) continue;
+          int wx = v.view + X;
+          if (wx < v.left || wx >= v.right) continue;   // belongs to another area
           bool center = sx >= 0 && sx < SMS_W;
+          bool hidden_column = left_blank && sx >= 0 && sx < 8;
           if (center) {
-            bool hidden_column = left_blank && sx < 8;
             bool missing = !pc->in_sat && !s->fb_spr[y][sx];
             if (!hidden_column && !missing) continue;
-            if (hud && !hidden_column) continue;  // over the status bar: only what the game drew
+            if (hud && !hidden_column && pc->in_sat) continue;
           }
           int c = tile_px(vram, tile, px, r);
           if (!c) continue;
           drawn[X] = 1;
           // background tiles with priority stay in front (side areas only)
-          if (fill && (!center || hidden_column_prio(left_blank, sx))) {
-            int wx = view + X;
-            if (wx < left) wx = left + (((wx - left) % 16) + 16) % 16;
-            else if (wx >= right) wx = right - 16 + (wx - right) % 16;
+          if (fill && (!center || hidden_column)) {
+            int o = ovr.t[wy >> 3][wx >> 3];
             int e = map_tile(&m, wx, wy);
-            int t = remap[e] >= 0 ? remap[e] : e;
+            int t = o >= 0 ? o : remap[e] >= 0 ? remap[e] : e;
             if (t >= ram8(s, 0xC6A6) && tile_px(vram, 256 + t, wx & 7, wy & 7)) continue;
           }
           row[X] = pal[16 + c];
@@ -196,9 +273,17 @@ void mod_render(const sms_t* s, uint32_t* out, int pitch, int ext, mod_wide_info
     } else if (fill) {
       // sprite pixels that spill past the original right edge
       for (int i = 0; i < SMS_SPR_OVER && off + SMS_W + i < W; i++) {
-        if (s->spr_over[y][i]) row[off + SMS_W + i] = pal[s->spr_over[y][i]];
+        int wx = v.view + off + SMS_W + i;
+        if (s->spr_over[y][i] && wx < v.right) row[off + SMS_W + i] = pal[s->spr_over[y][i]];
       }
     }
+  }
+  if (valid) {
+    cache.ok = true;
+    cache.key = scene_key(s);
+    cache.cx = cx;
+    cache.W = W;
+    for (int y = GAME_Y0; y < SMS_H; y++) memcpy(cache.px[y], out + y * pitch, sizeof(uint32_t) * W);
   }
 }
 

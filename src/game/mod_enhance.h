@@ -31,7 +31,8 @@ typedef struct {
   const mod_piece_t* shown;
   int n_shown;
   // early spawning (one state per spawn list)
-  struct { int last_cam[2]; int next, last, step; bool active; uint16_t list_base; } spawn[2];
+  struct { int last_cam[2]; int done_hi, done_lo; int next, last, step; bool active; uint16_t list_base; } spawn[2];
+  int margin_l, margin_r;    // playable pixels visible beyond the original picture (per side)
 } mod_enhance_t;
 
 bool mod_enhance_compatible(const sms_t* s);
