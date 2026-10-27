@@ -138,7 +138,23 @@ static uint32_t scene_key(const sms_t* s) {
   return ((uint32_t)ram16(s, RAM_CAM) << 16) | ((uint32_t)ram8(s, 0xDFC0) << 8) | ram8(s, 0xDFC1);
 }
 
-static inline uint32_t darken(uint32_t c) { return 0xFF000000u | ((c >> 1) & 0x7F7F7Fu); }
+// Width in pixels of the pattern repeated at a section edge, per metatile row: the
+// smallest period that repeats exactly next to the edge (sky: 16, tombs: 32...), or
+// the best matching one when the row has no exact period.
+static int row_period(const mapctx_t* m, int row, int edge_col, int dir) {
+  int best_k = 1, best = -1;
+  for (int k = 1; k <= 8; k++) {
+    int score = 0;
+    for (int j = 0; j < k; j++) {
+      int a = edge_col - dir * j, b = a - dir * k;
+      if (a < 0 || a >= MAP_W || b < 0 || b >= MAP_W) return best_k * 16;
+      if (m->s->st.ram[(MAP_BASE + row * 0xC0 + a) & 0x1FFF] == m->s->st.ram[(MAP_BASE + row * 0xC0 + b) & 0x1FFF]) score++;
+    }
+    if (score == k) return k * 16;
+    if (score * 100 / k > best) { best = score * 100 / k; best_k = k; }
+  }
+  return best_k * 16;
+}
 
 void mod_render(const sms_t* s, uint32_t* out, int pitch, int ext, mod_wide_info_t* info,
                 const mod_piece_t* pieces, int n_pieces) {
@@ -190,6 +206,11 @@ void mod_render(const sms_t* s, uint32_t* out, int pitch, int ext, mod_wide_info
   }
   info->cx = v.cx;
   const int cx = v.cx;
+  int per_l[MAP_ROWS], per_r[MAP_ROWS];
+  for (int r = 0; r < MAP_ROWS; r++) {
+    per_l[r] = valid ? row_period(&m, r, v.left >> 4, -1) : 16;
+    per_r[r] = valid ? row_period(&m, r, (v.right >> 4) - 1, 1) : 16;
+  }
   const sms_vdp_t* d = &s->st.vdp;
   const int sh = (d->reg[1] & 0x02) ? 16 : 8;
   for (int y = 0; y < SMS_H; y++) {
@@ -222,16 +243,15 @@ void mod_render(const sms_t* s, uint32_t* out, int pitch, int ext, mod_wide_info
       bool in_center = x >= off && x < off + SMS_W;
       if (in_center && !(left_blank && x < off + 8)) continue;
       int wx = v.view + x;
-      bool outside = wx < v.left || wx >= v.right;
-      // outside the section (one-screen rooms, section ends): repeat the outermost
-      // 16-pixel column, darkened so it does not look playable
-      if (wx < v.left) wx = v.left + (((wx - v.left) % 16) + 16) % 16;
-      else if (wx >= v.right) wx = v.right - 16 + (wx - v.right) % 16;
+      // outside the section (one-screen rooms, section ends): keep repeating the
+      // pattern found at the edge, so walls, tombs or pillars simply continue
+      int pl = per_l[wy >> 4], pr = per_r[wy >> 4];
+      if (wx < v.left) wx = v.left + (((wx - v.left) % pl) + pl) % pl;
+      else if (wx >= v.right) wx = v.right - pr + (wx - v.right) % pr;
       int o = ovr.t[wy >> 3][wx >> 3];
       int e = map_tile(&m, wx, wy);
       int t = 256 + (o >= 0 ? o : remap[e] >= 0 ? remap[e] : e);
-      uint32_t c = pal[tile_px(vram, t, wx & 7, wy & 7)];
-      row[x] = outside ? darken(c) : c;
+      row[x] = pal[tile_px(vram, t, wx & 7, wy & 7)];
     }
     // sprites the game keeps outside its 256-pixel picture (captured by mod_enhance)
     if (n_pieces) {

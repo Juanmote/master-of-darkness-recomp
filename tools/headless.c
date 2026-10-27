@@ -239,6 +239,10 @@ int main(int argc, char** argv) {
   if (hf) fclose(hf);
   if (enhance) printf("sprite passes %u in %d frames\n", E.passes, frames);
   if (covpath) { FILE* cf = fopen(covpath, "wb"); fwrite(cov, 1, n, cf); fclose(cf); printf("ram exec %u\n", ram_exec); }
+  { char p[512]; FILE* o;
+    snprintf(p, sizeof p, "%s/ram.bin", outdir); o = fopen(p, "wb"); fwrite(S.st.ram, 1, 0x2000, o); fclose(o);
+    snprintf(p, sizeof p, "%s/vram.bin", outdir); o = fopen(p, "wb"); fwrite(S.st.vdp.vram, 1, 0x4000, o); fclose(o);
+    snprintf(p, sizeof p, "%s/cram.bin", outdir); o = fopen(p, "wb"); fwrite(S.st.vdp.cram, 1, 32, o); fclose(o); }
   printf("frames %d, playfield detected in %d\n", frames, valid_frames);
   if (use_recomp) printf("interpreter fallback steps (last frame) %u, last pc %04X\n", S.interp_steps, S.last_interp_pc);
   if (do_verify) printf("verified blocks %ld, mismatches %ld\n", verify_blocks, verify_fail);
