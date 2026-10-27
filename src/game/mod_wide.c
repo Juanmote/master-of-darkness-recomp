@@ -138,22 +138,16 @@ static uint32_t scene_key(const sms_t* s) {
   return ((uint32_t)ram16(s, RAM_CAM) << 16) | ((uint32_t)ram8(s, 0xDFC0) << 8) | ram8(s, 0xDFC1);
 }
 
-// Width in pixels of the pattern repeated at a section edge, per metatile row: the
-// smallest period that repeats exactly next to the edge (sky: 16, tombs: 32...), or
-// the best matching one when the row has no exact period.
+// Width in pixels of the pattern repeated at a section edge, per metatile row: 32 when
+// the two metatiles next to the edge repeat exactly (tombs, wide facades), otherwise
+// the outermost 16-pixel column, so walls stay solid.
 static int row_period(const mapctx_t* m, int row, int edge_col, int dir) {
-  int best_k = 1, best = -1;
-  for (int k = 1; k <= 8; k++) {
-    int score = 0;
-    for (int j = 0; j < k; j++) {
-      int a = edge_col - dir * j, b = a - dir * k;
-      if (a < 0 || a >= MAP_W || b < 0 || b >= MAP_W) return best_k * 16;
-      if (m->s->st.ram[(MAP_BASE + row * 0xC0 + a) & 0x1FFF] == m->s->st.ram[(MAP_BASE + row * 0xC0 + b) & 0x1FFF]) score++;
-    }
-    if (score == k) return k * 16;
-    if (score * 100 / k > best) { best = score * 100 / k; best_k = k; }
-  }
-  return best_k * 16;
+  const uint8_t* map = &m->s->st.ram[(MAP_BASE + row * 0xC0) & 0x1FFF];
+  int c0 = edge_col, c1 = edge_col - dir, c2 = edge_col - 2 * dir, c3 = edge_col - 3 * dir;
+  if (c3 < 0 || c3 >= MAP_W) return 16;
+  if (map[c0] == map[c1]) return 16;                        // uniform: plain wall/sky
+  if (map[c0] == map[c2] && map[c1] == map[c3]) return 32;  // exact 2-metatile pattern
+  return 16;
 }
 
 void mod_render(const sms_t* s, uint32_t* out, int pitch, int ext, mod_wide_info_t* info,

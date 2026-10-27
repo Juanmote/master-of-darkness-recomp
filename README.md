@@ -19,7 +19,7 @@ Port nativo de *Master of Darkness* (Sega Master System, 1992) para Android, con
 | Saltar | Botón inferior (A en Xbox) — intercambiable en el menú | X / K / Espacio |
 | Atacar | Botón derecho / izquierdo / superior | Z / J |
 | Pausa del juego | START | Enter |
-| Menú de opciones | SELECT / ATRÁS, o tocar la pantalla | Esc / Tab |
+| Menú de opciones | SELECT / ATRÁS | Esc / Tab |
 
 ## Opciones del menú
 - **Formato**: 16:9 panorámico (los laterales se reconstruyen con el mapa real del nivel), 4:3 con píxel cuadrado o tele de tubo (píxel 8:7).
