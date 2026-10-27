@@ -91,3 +91,16 @@ Cabecera TMR SEGA válida, checksum 6FE6 correcto, región SMS Export, mapper Se
   respecto al marcador, y los píxeles de sprite en las líneas del marcador se dibujaban con el desplazamiento
   del marcador. El núcleo guarda ahora fondo (`fb_bg`) y máscara de sprites (`fb_spr`) por línea; en las líneas
   del marcador el fondo va centrado y los sprites siguen a la zona de juego.
+
+## v0.3.0 (revisión completa del usuario)
+- Piezas de sprite fuera de los límites del tramo (zona de al lado) ya no se dibujan: eran las
+  "máscaras dentro de los muros".
+- Zonas fuera del tramo (salas de una pantalla, jefes) se oscurecen al 50 % para que no parezcan jugables.
+- Celdas que difieren del mapa (bloques rotos, pasadizos abiertos, cuadros de diálogo) se recuerdan por tramo
+  (`ovr`) y se usan también en los laterales.
+- Si el juego muestra algo que el mapa no explica (efectos de jefe, diálogos) sin mover la cámara, se reutilizan
+  los laterales del último fotograma bueno (`cache`, clave cámara+ronda+sección).
+- Objetos cuyo origen está fuera de 0..255: sus piezas nunca llegan al VDP (`in_sat` falso) → se dibujan
+  también en la zona central (barcas cortadas).
+- Margen de aparición/eliminación dinámico (`mod_visible_margins`): lo que realmente se ve de zona jugable a
+  cada lado (0..86 px) según el encuadre detenido en los extremos del tramo.
