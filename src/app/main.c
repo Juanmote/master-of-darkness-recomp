@@ -9,7 +9,7 @@
 #include "../game/mod_enhance.h"
 #include "font_data.h"
 
-#define APP_VERSION "0.3.0"
+#define APP_VERSION "0.3.1"
 #define KNOWN_CRC 0x96FB4D4Bu
 #define UI_W 640
 #define UI_H 360

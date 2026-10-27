@@ -95,7 +95,8 @@ Cabecera TMR SEGA válida, checksum 6FE6 correcto, región SMS Export, mapper Se
 ## v0.3.0 (revisión completa del usuario)
 - Piezas de sprite fuera de los límites del tramo (zona de al lado) ya no se dibujan: eran las
   "máscaras dentro de los muros".
-- Zonas fuera del tramo (salas de una pantalla, jefes) se oscurecen al 50 % para que no parezcan jugables.
+- (v0.3.1) Sin oscurecido: rompía la continuidad. Fuera del tramo se repite, fila a fila de metatiles, el patrón
+  que se repite junto al borde (periodo exacto más corto de 16 a 128 px; si no hay, el que más coincide).
 - Celdas que difieren del mapa (bloques rotos, pasadizos abiertos, cuadros de diálogo) se recuerdan por tramo
   (`ovr`) y se usan también en los laterales.
 - Si el juego muestra algo que el mapa no explica (efectos de jefe, diálogos) sin mover la cámara, se reutilizan
