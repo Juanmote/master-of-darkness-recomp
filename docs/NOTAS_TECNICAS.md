@@ -122,3 +122,11 @@ Cabecera TMR SEGA válida, checksum 6FE6 correcto, región SMS Export, mapper Se
 - Apariciones: cada lista guarda la ventana de valores ya comprobados (bordes de lo visible). Al cambiar de
   sentido ya no se vuelve a comprobar todo lo visible: un enemigo eliminado a la vista (gema de 4-2) solo vuelve
   cuando su punto sale de la vista y vuelve a entrar, como en el original.
+
+## v0.3.4
+- `edge_rules` admite `flip` (columna en espejo: 3-1, la línea oscura del ladrillo queda junto al hueco) y
+  `cover` (se pinta también N columnas dentro de la sala, solo fondo; 4-3 jefe: muro simétrico). 1-3: la sala
+  de las casas sigue también por la izquierda.
+- Laterales sin mapa (efectos de jefe): solo se continúa lo que se repite cada 16 px en cada banda de 8 líneas
+  (suelo, muro, color liso). Drácula (dibujado con tiles de fondo) ya no se duplica: allí va el color de fondo.
+- Banco de pruebas de bordes: render de una sala desde volcados de RAM/VRAM con mod_render (fuera del repo).
