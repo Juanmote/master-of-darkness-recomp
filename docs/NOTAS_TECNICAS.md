@@ -130,3 +130,8 @@ Cabecera TMR SEGA válida, checksum 6FE6 correcto, región SMS Export, mapper Se
 - Laterales sin mapa (efectos de jefe): solo se continúa lo que se repite cada 16 px en cada banda de 8 líneas
   (suelo, muro, color liso). Drácula (dibujado con tiles de fondo) ya no se duplica: allí va el color de fondo.
 - Banco de pruebas de bordes: render de una sala desde volcados de RAM/VRAM con mod_render (fuera del repo).
+
+## v0.3.5
+- 3-1 campanario: el muro izquierdo cubre también la columna de cielo del borde de la sala (`cover` 1).
+- 4-2 tras la gema: comprobado con vídeo en 4:3 (juego original): la dama y el cuadro reaparecen igual al
+  retroceder. Es comportamiento del juego, no se toca.
