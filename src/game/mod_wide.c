@@ -180,7 +180,8 @@ static int row_period(const mapctx_t* m, int row, int edge_col, int dir) {
 static const struct { uint8_t round, section; char side; uint8_t edge, src, period, flip, cover; } edge_rules[] = {
   {0, 2, 'R', 127, 0xFF, 7, 0, 0},  // 1-3: the row of houses goes on (not the edge pillar alone)
   {0, 2, 'L', 112, 0xFF, 7, 0, 0},
-  {2, 0, 'L', 112, 127, 1, 1, 0},   // 3-1 bell tower: brick wall like the right side, mirrored
+  {2, 0, 'L', 112, 127, 1, 1, 1},   // 3-1 bell tower: brick wall like the right side, mirrored,
+                                    // also over the sky column at the edge of the room
   {2, 2, 'L', 48, 47, 1, 0, 0},     // 3-3 dead end: the wall behind it, not an open room
   {3, 2, 'L', 176, 191, 1, 0, 1},   // 4-3 boss: wall like the right side, one column more
 };
