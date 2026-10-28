@@ -105,3 +105,20 @@ Cabecera TMR SEGA válida, checksum 6FE6 correcto, región SMS Export, mapper Se
   también en la zona central (barcas cortadas).
 - Margen de aparición/eliminación dinámico (`mod_visible_margins`): lo que realmente se ve de zona jugable a
   cada lado (0..86 px) según el encuadre detenido en los extremos del tramo.
+
+## v0.3.3 (segunda revisión completa)
+- Colisión de metatiles: tabla en RAM D900 indexada por metatile (bits 0-1: 0 paso libre, 2 muro...).
+  El patrón de 32 px en los bordes solo se usa si los dos metatiles son del mismo tipo (4-3: ya no salen
+  huecos de cueva dentro del muro).
+- Bordes elegidos a mano (`edge_rules` en mod_wide.c, por ronda/sección/columna de borde): 1-3 la hilera de
+  casas sigue (periodo 7 metatiles), 3-1 campanario pared izquierda = derecha, 3-3 callejón sin salida = muro de
+  detrás, 4-3 jefe pared izquierda = derecha.
+- Caché de laterales: guarda índices de paleta (los destellos se aplican también a los laterales) y solo se usa
+  si el marcador sigue siendo el mismo (fin del juego / créditos ya no se descentran). Por cada lado: si el borde
+  de la imagen no ha cambiado se mantiene lo guardado; si ha cambiado (sala del jefe 5-1 a oscuras) se continúa
+  lo que hay ahora en el borde.
+- Objetos que han estado dentro de la imagen original (`seen_in` por slot) pueden salir volando por los laterales
+  aunque allí no haya zona jugable (murciélagos del campanario): se mantienen vivos y se dibujan 43 px más.
+- Apariciones: cada lista guarda la ventana de valores ya comprobados (bordes de lo visible). Al cambiar de
+  sentido ya no se vuelve a comprobar todo lo visible: un enemigo eliminado a la vista (gema de 4-2) solo vuelve
+  cuando su punto sale de la vista y vuelve a entrar, como en el original.
