@@ -41,3 +41,8 @@ Requiere SDL2: `cmake -S . -B build && cmake --build build`, y coloca la ROM com
 ## Créditos y licencias
 - Port: Juanmote. *Master of Darkness* © SEGA / SIMS 1992; este proyecto no incluye ningún dato del juego.
 - Núcleo Z80: [superzazu/z80](https://github.com/superzazu/z80) (MIT). SDL2 (zlib). Fuente de los menús: DejaVu Sans Mono.
+
+## Traducción al español
+Traducción al español v1.2 (C) 2018 **Traducciones Wave** (traduccioneswave.blogspot.com).
+El parche original y su LÉEME están en `assets/es/`. El launcher lo aplica sobre la ROM del usuario al elegir
+"Idioma: Español" en el menú.

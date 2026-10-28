@@ -8,8 +8,9 @@
 #include "../game/mod_wide.h"
 #include "../game/mod_enhance.h"
 #include "font_data.h"
+#include "patch_es.h"
 
-#define APP_VERSION "0.3.5"
+#define APP_VERSION "0.4.0"
 #define KNOWN_CRC 0x96FB4D4Bu
 #define UI_W 640
 #define UI_H 360
@@ -25,11 +26,12 @@ typedef struct {
   int scale;
   int filter;
   int volume;      // 0..10
-  int swap_ab;
-  int turbo;       // double CPU speed: removes the original slowdowns     // 0: south=jump east=attack, 1: east=jump south=attack
+  int jump_btn;    // SDL controller button that jumps (the other face buttons attack)
+  int turbo;       // double CPU speed: removes the original slowdowns
+  int lang;        // 0: original (English), 1: Spanish translation patch
 } config_t;
 
-static config_t cfg = {1, 0, SCALE_FIT, FILTER_SHARP_SMOOTH, 8, 0, 1};
+static config_t cfg = {1, 0, SCALE_FIT, FILTER_SHARP_SMOOTH, 8, SDL_CONTROLLER_BUTTON_A, 1, 0};
 static char pref_path[1024];
 
 static void cfg_path(char* out, size_t n, const char* name) { snprintf(out, n, "%s%s", pref_path, name); }
@@ -39,6 +41,7 @@ static void cfg_load(void) {
   FILE* f = fopen(p, "r");
   if (!f) return;
   char line[128];
+  int jump_seen = 0;
   while (fgets(line, sizeof line, f)) {
     int v;
     if (sscanf(line, "widescreen=%d", &v) == 1) cfg.widescreen = v ? 1 : 0;
@@ -46,8 +49,10 @@ static void cfg_load(void) {
     else if (sscanf(line, "scale=%d", &v) == 1 && v >= 0 && v < SCALE_COUNT) cfg.scale = v;
     else if (sscanf(line, "filter=%d", &v) == 1 && v >= 0 && v < FILTER_COUNT) cfg.filter = v;
     else if (sscanf(line, "volume=%d", &v) == 1 && v >= 0 && v <= 10) cfg.volume = v;
-    else if (sscanf(line, "swap_ab=%d", &v) == 1) cfg.swap_ab = v ? 1 : 0;
+    else if (sscanf(line, "swap_ab=%d", &v) == 1 && !jump_seen) cfg.jump_btn = v ? SDL_CONTROLLER_BUTTON_B : SDL_CONTROLLER_BUTTON_A;
+    else if (sscanf(line, "jump_btn=%d", &v) == 1 && v >= SDL_CONTROLLER_BUTTON_A && v <= SDL_CONTROLLER_BUTTON_Y) { cfg.jump_btn = v; jump_seen = 1; }
     else if (sscanf(line, "turbo=%d", &v) == 1) cfg.turbo = v ? 1 : 0;
+    else if (sscanf(line, "lang=%d", &v) == 1) cfg.lang = v ? 1 : 0;
   }
   fclose(f);
 }
@@ -56,8 +61,8 @@ static void cfg_save(void) {
   char p[1100]; cfg_path(p, sizeof p, "config.ini");
   FILE* f = fopen(p, "w");
   if (!f) return;
-  fprintf(f, "widescreen=%d\ncrt=%d\nscale=%d\nfilter=%d\nvolume=%d\nswap_ab=%d\nturbo=%d\n",
-          cfg.widescreen, cfg.crt, cfg.scale, cfg.filter, cfg.volume, cfg.swap_ab, cfg.turbo);
+  fprintf(f, "widescreen=%d\ncrt=%d\nscale=%d\nfilter=%d\nvolume=%d\njump_btn=%d\nturbo=%d\nlang=%d\n",
+          cfg.widescreen, cfg.crt, cfg.scale, cfg.filter, cfg.volume, cfg.jump_btn, cfg.turbo, cfg.lang);
   fclose(f);
 }
 
@@ -149,6 +154,35 @@ static uint8_t* rom;
 static size_t rom_size;
 static uint32_t rom_crc;
 static uint32_t* pix;
+static uint8_t* rom_orig;   // the user's ROM as loaded (the patch is applied on a copy)
+
+// IPS patch: records [offset 3][size 2][data] or [offset 3][0 0][run 2][value 1], "EOF"
+static int ips_apply(uint8_t* dst, size_t size, const uint8_t* p, size_t n) {
+  if (n < 8 || memcmp(p, "PATCH", 5)) return 0;
+  size_t i = 5;
+  while (i + 3 <= n && memcmp(p + i, "EOF", 3)) {
+    if (i + 5 > n) return 0;
+    size_t off = ((size_t)p[i] << 16) | (p[i + 1] << 8) | p[i + 2], len = (p[i + 3] << 8) | p[i + 4];
+    i += 5;
+    if (len) {
+      if (i + len > n || off + len > size) return 0;
+      memcpy(dst + off, p + i, len); i += len;
+    } else {
+      if (i + 3 > n) return 0;
+      size_t run = (p[i] << 8) | p[i + 1];
+      if (off + run > size) return 0;
+      memset(dst + off, p[i + 2], run); i += 3;
+    }
+  }
+  return 1;
+}
+
+static void apply_language(void) {
+  if (!rom || !rom_orig) return;
+  memcpy(rom, rom_orig, rom_size);
+  if (cfg.lang && rom_crc == KNOWN_CRC && !ips_apply(rom, rom_size, patch_es, sizeof patch_es))
+    memcpy(rom, rom_orig, rom_size);
+}
 
 static int menu_open, menu_sel;
 static char toast[128];
@@ -162,7 +196,20 @@ static void show_toast(const char* msg, Uint32 ms) {
   toast_until = SDL_GetTicks() + ms;
 }
 
-enum { MI_RESUME, MI_FORMAT, MI_SCALE, MI_FILTER, MI_VOLUME, MI_BUTTONS, MI_TURBO, MI_SAVE, MI_LOAD, MI_RESET, MI_QUIT, MI_COUNT };
+enum { MI_RESUME, MI_FORMAT, MI_SCALE, MI_FILTER, MI_VOLUME, MI_BUTTONS, MI_TURBO, MI_LANG, MI_SAVE, MI_LOAD, MI_RESET, MI_QUIT, MI_COUNT };
+
+static void menu_set_open(int open);
+static int capture_jump;   // waiting for the player to press the jump button
+
+static const char* button_name(int b) {
+  switch (b) {
+  case SDL_CONTROLLER_BUTTON_A: return "A (abajo)";
+  case SDL_CONTROLLER_BUTTON_B: return "B (derecha)";
+  case SDL_CONTROLLER_BUTTON_X: return "X (izquierda)";
+  case SDL_CONTROLLER_BUTTON_Y: return "Y (arriba)";
+  }
+  return "?";
+}
 
 static const char* scale_names[SCALE_COUNT] = {"Ajustar a pantalla", "Escala entera", "Estirar"};
 static const char* filter_names[FILTER_COUNT] = {"Nítido", "Nítido suavizado", "Suave", "Scanlines"};
@@ -174,7 +221,11 @@ static void menu_label(int i, char* out, size_t n) {
   case MI_SCALE: snprintf(out, n, "Escalado: ← %s →", scale_names[cfg.scale]); break;
   case MI_FILTER: snprintf(out, n, "Filtro:   ← %s →", filter_names[cfg.filter]); break;
   case MI_VOLUME: snprintf(out, n, "Volumen:  ← %d%% →", cfg.volume * 10); break;
-  case MI_BUTTONS: snprintf(out, n, "Botones:  ← %s →", cfg.swap_ab ? "Saltar con el derecho" : "Saltar con el inferior"); break;
+  case MI_BUTTONS:
+    if (capture_jump) snprintf(out, n, "Saltar:   pulsa el botón que quieras...");
+    else snprintf(out, n, "Saltar:   botón %s", button_name(cfg.jump_btn));
+    break;
+  case MI_LANG: snprintf(out, n, "Idioma:   ← %s →", cfg.lang ? "Español (Traducciones Wave)" : "Inglés (original)"); break;
   case MI_TURBO: snprintf(out, n, "Ralentizaciones: ← %s →", cfg.turbo ? "Eliminadas" : "Originales"); break;
   case MI_SAVE: snprintf(out, n, "Guardar estado"); break;
   case MI_LOAD: snprintf(out, n, "Cargar estado"); break;
@@ -219,8 +270,16 @@ static void menu_change(int dir) {
   case MI_SCALE: cfg.scale = (cfg.scale + dir + SCALE_COUNT) % SCALE_COUNT; break;
   case MI_FILTER: cfg.filter = (cfg.filter + dir + FILTER_COUNT) % FILTER_COUNT; break;
   case MI_VOLUME: cfg.volume += dir; if (cfg.volume < 0) cfg.volume = 0; if (cfg.volume > 10) cfg.volume = 10; break;
-  case MI_BUTTONS: cfg.swap_ab ^= 1; break;
+  case MI_BUTTONS: capture_jump = 1; return;
   case MI_TURBO: cfg.turbo ^= 1; break;
+  case MI_LANG:
+    if (rom_crc != KNOWN_CRC) { show_toast("La traducción necesita la ROM original sin modificar", 3000); return; }
+    cfg.lang ^= 1;
+    apply_language();
+    sms_reset(&S);
+    menu_set_open(0);
+    show_toast(cfg.lang ? "Juego en español (reiniciado)" : "Juego en inglés (reiniciado)", 2500);
+    break;
   default: return;
   }
   cfg_save();
@@ -228,6 +287,7 @@ static void menu_change(int dir) {
 
 static void menu_set_open(int open) {
   menu_open = open;
+  capture_jump = 0;
   if (open) { menu_sel = 0; SDL_ClearQueuedAudio(audio_dev); }
 }
 
@@ -253,7 +313,7 @@ static void draw_ui(void) {
   ui_clear();
   if (menu_open) {
     ui_rect(0, 0, UI_W, UI_H, 0xA0000000);
-    int bw = 480, bh = 40 + MI_COUNT * 26 + 30;
+    int bw = 520, bh = 40 + MI_COUNT * 24 + 30;
     int bx = (UI_W - bw) / 2, by = (UI_H - bh) / 2;
     ui_rect(bx, by, bw, bh, 0xE0140C18);
     ui_rect(bx, by, bw, 2, 0xFFB0302A);
@@ -261,11 +321,12 @@ static void draw_ui(void) {
     ui_text_center(by + 10, "MASTER OF DARKNESS", 0xE8C060);
     for (int i = 0; i < MI_COUNT; i++) {
       char l[128]; menu_label(i, l, sizeof l);
-      int y = by + 40 + i * 26;
-      if (i == menu_sel) ui_rect(bx + 10, y - 3, bw - 20, 24, 0xFF5A1A1A);
+      int y = by + 40 + i * 24;
+      if (i == menu_sel) ui_rect(bx + 10, y - 3, bw - 20, 22, 0xFF5A1A1A);
       ui_text(bx + 24, y, l, i == menu_sel ? 0xFFFFFF : 0xB8B0A8);
     }
-    ui_text_center(by + bh - 26, "v" APP_VERSION "  ·  Recomp por Juanmote", 0x807870);
+    ui_text_center(by + bh - 26, cfg.lang ? "v" APP_VERSION " · Recomp por Juanmote · Traducción: Wave"
+                                          : "v" APP_VERSION "  ·  Recomp por Juanmote", 0x807870);
   }
   if (toast[0] && SDL_GetTicks() < toast_until) {
     int w = text_width(toast) + 24;
@@ -367,11 +428,11 @@ static uint8_t keymap(SDL_Keycode k) {
   return 0;
 }
 
+static int is_face(int b) { return b >= SDL_CONTROLLER_BUTTON_A && b <= SDL_CONTROLLER_BUTTON_Y; }
+
 static uint8_t padmap(int b) {
-  int jump_btn = cfg.swap_ab ? SDL_CONTROLLER_BUTTON_B : SDL_CONTROLLER_BUTTON_A;
-  int atk_btn = cfg.swap_ab ? SDL_CONTROLLER_BUTTON_A : SDL_CONTROLLER_BUTTON_B;
-  if (b == jump_btn) return BTN_2;
-  if (b == atk_btn || b == SDL_CONTROLLER_BUTTON_X || b == SDL_CONTROLLER_BUTTON_Y) return BTN_1;
+  if (b == cfg.jump_btn) return BTN_2;
+  if (is_face(b)) return BTN_1;   // every other face button attacks
   switch (b) {
   case SDL_CONTROLLER_BUTTON_DPAD_UP: return BTN_UP;
   case SDL_CONTROLLER_BUTTON_DPAD_DOWN: return BTN_DOWN;
@@ -439,9 +500,14 @@ static void handle_event(SDL_Event* e) {
     if (b == SDL_CONTROLLER_BUTTON_BACK || b == SDL_CONTROLLER_BUTTON_GUIDE || b == SDL_CONTROLLER_BUTTON_MISC1) {
       menu_set_open(!menu_open); break;
     }
+    if (menu_open && capture_jump) {
+      if (is_face(b)) { cfg.jump_btn = b; cfg_save(); capture_jump = 0; show_toast("Botón de saltar guardado", 1500); }
+      else if (b == SDL_CONTROLLER_BUTTON_START) capture_jump = 0;
+      break;
+    }
     if (menu_open) {
-      int ok_btn = cfg.swap_ab ? SDL_CONTROLLER_BUTTON_B : SDL_CONTROLLER_BUTTON_A;
-      int back_btn = cfg.swap_ab ? SDL_CONTROLLER_BUTTON_A : SDL_CONTROLLER_BUTTON_B;
+      int ok_btn = SDL_CONTROLLER_BUTTON_A;
+      int back_btn = SDL_CONTROLLER_BUTTON_B;
       menu_nav(b == SDL_CONTROLLER_BUTTON_DPAD_UP ? -1 : b == SDL_CONTROLLER_BUTTON_DPAD_DOWN ? 1 : 0,
                b == SDL_CONTROLLER_BUTTON_DPAD_LEFT ? -1 : b == SDL_CONTROLLER_BUTTON_DPAD_RIGHT ? 1 : 0,
                b == ok_btn || b == SDL_CONTROLLER_BUTTON_START, b == back_btn);
@@ -488,6 +554,8 @@ static void find_and_load_rom(int argc, char** argv) {
     free(rom); rom = NULL; return;
   }
   rom_crc = crc32_buf(rom, rom_size);
+  rom_orig = malloc(rom_size);
+  if (rom_orig) memcpy(rom_orig, rom, rom_size);
 }
 
 static void error_screen(void) {
@@ -550,6 +618,7 @@ int main(int argc, char** argv) {
   audio_dev = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
   if (audio_dev) SDL_PauseAudioDevice(audio_dev, 0);
 
+  apply_language();
   sms_init(&S, rom, (int)rom_size);
   mod_enhance_attach(&S, &E);
   mod_enhance_set_wide(&E, cfg.widescreen, MOD_WIDE_EXT);

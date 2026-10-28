@@ -135,3 +135,12 @@ Cabecera TMR SEGA válida, checksum 6FE6 correcto, región SMS Export, mapper Se
 - 3-1 campanario: el muro izquierdo cubre también la columna de cielo del borde de la sala (`cover` 1).
 - 4-2 tras la gema: comprobado con vídeo en 4:3 (juego original): la dama y el cuadro reaparecen igual al
   retroceder. Es comportamiento del juego, no se toca.
+
+## v0.4.0 — traducción al español
+- Parche IPS de Traducciones Wave (v1.2, 2018, ROM base CRC 96FB4D4B) en `assets/es/` y embebido en
+  `src/app/patch_es.h` (`tools/gen_patch.py`). El launcher lo aplica en memoria sobre una copia de la ROM del
+  usuario solo si la ROM es la original; opción "Idioma" en el menú (reinicia el juego). Créditos en el pie del menú.
+- El parche solo cambia texto (bancos 1, 3, 4 y 15, más la suma de control): no toca ninguna dirección
+  enganchada, las mejoras 16:9 siguen activas con el juego en español.
+- Botón de saltar: se elige pulsándolo (`jump_btn`, cualquiera de A/B/X/Y; los demás atacan). Sustituye a
+  `swap_ab` (se migra al cargar la configuración). El menú acepta con A y vuelve con B.
