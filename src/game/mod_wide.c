@@ -126,8 +126,26 @@ static struct {
   bool ok;
   uint32_t key;
   int cx, W;
-  uint32_t px[SMS_H][CACHE_W];
+  uint8_t idx[SMS_H][CACHE_W];   // palette indices (background only), so palette effects still apply
+  uint16_t hud[4 * 32];          // name table rows of the status bar
 } cache;
+
+static void read_hud(const sms_t* s, uint16_t* out) {
+  uint16_t nt = (s->st.vdp.reg[2] & 0x0E) << 10;
+  for (int i = 0; i < 4 * 32; i++) {
+    const uint8_t* e = &s->st.vdp.vram[nt + i * 2];
+    out[i] = e[0] | (e[1] << 8);
+  }
+}
+
+// The status bar is still the one of the cached picture (not the ending, a story screen...)
+static bool same_hud(const sms_t* s) {
+  uint16_t h[4 * 32];
+  read_hud(s, h);
+  int ok = 0;
+  for (int i = 0; i < 4 * 32; i++) ok += h[i] == cache.hud[i];
+  return ok * 4 >= 4 * 32 * 3;
+}
 
 static uint32_t section_key(const sms_t* s) {
   return ((uint32_t)ram8(s, 0xDFC0) << 24) | ((uint32_t)ram8(s, 0xDFC1) << 16) |
@@ -141,13 +159,59 @@ static uint32_t scene_key(const sms_t* s) {
 // Width in pixels of the pattern repeated at a section edge, per metatile row: 32 when
 // the two metatiles next to the edge repeat exactly (tombs, wide facades), otherwise
 // the outermost 16-pixel column, so walls stay solid.
+static inline int mt_attr(const mapctx_t* m, uint8_t mtile) { return m->s->st.ram[(0xD900 + mtile) & 0x1FFF] & 3; }
+
 static int row_period(const mapctx_t* m, int row, int edge_col, int dir) {
   const uint8_t* map = &m->s->st.ram[(MAP_BASE + row * 0xC0) & 0x1FFF];
   int c0 = edge_col, c1 = edge_col - dir, c2 = edge_col - 2 * dir, c3 = edge_col - 3 * dir;
   if (c3 < 0 || c3 >= MAP_W) return 16;
   if (map[c0] == map[c1]) return 16;                        // uniform: plain wall/sky
-  if (map[c0] == map[c2] && map[c1] == map[c3]) return 32;  // exact 2-metatile pattern
+  // exact 2-metatile pattern of the same kind (tombs...); a wall next to an opening
+  // (collision differs) must not turn into a row of holes
+  if (map[c0] == map[c2] && map[c1] == map[c3] && mt_attr(m, map[c0]) == mt_attr(m, map[c1])) return 32;
   return 16;
+}
+
+// Hand-picked edges (round, section, side, edge column): what to repeat beyond them.
+// src: metatile column to repeat instead of the edge one; period: metatiles per repeat.
+static const struct { uint8_t round, section; char side; uint8_t edge, src, period; } edge_rules[] = {
+  {0, 2, 'R', 127, 0xFF, 7},   // 1-3: the row of houses goes on (not the edge pillar alone)
+  {2, 0, 'L', 112, 127, 1},    // 3-1 bell tower: brick wall like the right side
+  {2, 2, 'L', 48, 47, 1},      // 3-3 dead end: the wall behind it, not an open room
+  {3, 2, 'L', 176, 191, 1},    // 4-3 boss: wall like the right side, no open corridor
+};
+
+typedef struct { int base[MAP_ROWS], per[MAP_ROWS]; } side_src_t;
+
+static void side_sources(const sms_t* s, const mapctx_t* m, const view_t* v, side_src_t* L, side_src_t* R) {
+  int round = ram8(s, 0xDFC0), section = ram8(s, 0xDFC1);
+  int el = v->left >> 4, er = (v->right >> 4) - 1;
+  for (int r = 0; r < MAP_ROWS; r++) {
+    L->per[r] = row_period(m, r, el, -1); L->base[r] = v->left;
+    R->per[r] = row_period(m, r, er, 1);  R->base[r] = v->right - R->per[r];
+  }
+  for (unsigned i = 0; i < sizeof edge_rules / sizeof edge_rules[0]; i++) {
+    if (edge_rules[i].round != round || edge_rules[i].section != section) continue;
+    bool left = edge_rules[i].side == 'L';
+    if (edge_rules[i].edge != (left ? el : er)) continue;
+    side_src_t* t = left ? L : R;
+    int p = edge_rules[i].period * 16;
+    for (int r = 0; r < MAP_ROWS; r++) {
+      t->per[r] = p;
+      if (edge_rules[i].src != 0xFF) t->base[r] = edge_rules[i].src * 16;
+      else t->base[r] = left ? v->left : v->right - p;
+    }
+  }
+}
+
+static inline int pmod(int a, int p) { return ((a % p) + p) % p; }
+
+// world x of the map cell shown at wx (beyond the area limits: the repeated pattern)
+static inline int side_wx(const view_t* v, const side_src_t* L, const side_src_t* R, int wx, int wy) {
+  int r = wy >> 4;
+  if (wx < v->left) return L->base[r] + pmod(wx - v->left, L->per[r]);
+  if (wx >= v->right) return R->base[r] + pmod(wx - v->right, R->per[r]);
+  return wx;
 }
 
 void mod_render(const sms_t* s, uint32_t* out, int pitch, int ext, mod_wide_info_t* info,
@@ -194,17 +258,15 @@ void mod_render(const sms_t* s, uint32_t* out, int pitch, int ext, mod_wide_info
         int shown = remap[e] >= 0 ? remap[e] : e;
         ovr.t[r][wx >> 3] = ((ne[1] & 1) && ne[0] != shown && remap[e] != -2) ? ne[0] : -1;
       }
-  } else if (ext > 0 && cache.ok && cache.W == W && cache.key == scene_key(s) && s->line_display[100]) {
+  } else if (ext > 0 && cache.ok && cache.W == W && cache.key == scene_key(s) && s->line_display[100] &&
+             same_hud(s)) {
     from_cache = true;
     v.cx = cache.cx;
   }
   info->cx = v.cx;
   const int cx = v.cx;
-  int per_l[MAP_ROWS], per_r[MAP_ROWS];
-  for (int r = 0; r < MAP_ROWS; r++) {
-    per_l[r] = valid ? row_period(&m, r, v.left >> 4, -1) : 16;
-    per_r[r] = valid ? row_period(&m, r, (v.right >> 4) - 1, 1) : 16;
-  }
+  side_src_t srcL, srcR;
+  if (valid) side_sources(s, &m, &v, &srcL, &srcR);
   const sms_vdp_t* d = &s->st.vdp;
   const int sh = (d->reg[1] & 0x02) ? 16 : 8;
   for (int y = 0; y < SMS_H; y++) {
@@ -224,28 +286,38 @@ void mod_render(const sms_t* s, uint32_t* out, int pitch, int ext, mod_wide_info
       for (int x = 0; x < SMS_W; x++)
         if (s->fb_spr[y][x]) row[cx + x] = pal[src[x]];
     } else if (fill && from_cache) {
-      memcpy(row, cache.px[y], sizeof(uint32_t) * W);
+      // The map does not explain the picture (boss effects, dialog boxes): per side, keep
+      // the last good side area while the picture next to it is unchanged, otherwise
+      // continue what is at the edge of the picture now (a darkened room, a new floor).
+      const uint8_t* bg = s->fb_bg[y];
+      const uint8_t* ci = cache.idx[y];
+      bool keepL = true, keepR = true;
+      for (int x = 8; x < 24; x++) if (bg[x] != ci[cx + x]) { keepL = false; break; }
+      for (int x = SMS_W - 16; x < SMS_W; x++) if (bg[x] != ci[cx + x]) { keepR = false; break; }
+      for (int X = 0; X < cx; X++) row[X] = pal[keepL ? ci[X] : bg[8 + pmod(X - cx - 8, 16)]];
+      for (int X = cx + SMS_W; X < W; X++) row[X] = pal[keepR ? ci[X] : bg[SMS_W - 16 + pmod(X - cx - SMS_W, 16)]];
       for (int x = left_blank ? 8 : 0; x < SMS_W; x++) row[cx + x] = pal[src[x]];
+      if (left_blank) for (int x = 0; x < 8; x++) row[cx + x] = pal[keepL ? ci[cx + x] : bg[8 + pmod(x - 8, 16)]];
     } else {
       for (int x = 0; x < SMS_W; x++) row[off + x] = pal[src[x]];
     }
     if (!ext || !valid) continue;
     if (hud) off = cx;
     int wy = y - GAME_Y0;
+    uint8_t* cidx = cache.idx[y];
     // side areas from the map
     for (int x = 0; fill && x < W; x++) {
       bool in_center = x >= off && x < off + SMS_W;
-      if (in_center && !(left_blank && x < off + 8)) continue;
-      int wx = v.view + x;
+      if (in_center && !(left_blank && x < off + 8)) { cidx[x] = s->fb_bg[y][x - off]; continue; }
       // outside the section (one-screen rooms, section ends): keep repeating the
       // pattern found at the edge, so walls, tombs or pillars simply continue
-      int pl = per_l[wy >> 4], pr = per_r[wy >> 4];
-      if (wx < v.left) wx = v.left + (((wx - v.left) % pl) + pl) % pl;
-      else if (wx >= v.right) wx = v.right - pr + (wx - v.right) % pr;
+      int wx = side_wx(&v, &srcL, &srcR, v.view + x, wy);
       int o = ovr.t[wy >> 3][wx >> 3];
       int e = map_tile(&m, wx, wy);
       int t = 256 + (o >= 0 ? o : remap[e] >= 0 ? remap[e] : e);
-      row[x] = pal[tile_px(vram, t, wx & 7, wy & 7)];
+      int c = tile_px(vram, t, wx & 7, wy & 7);
+      row[x] = pal[c];
+      cidx[x] = (uint8_t)c;
     }
     // sprites the game keeps outside its 256-pixel picture (captured by mod_enhance)
     if (n_pieces) {
@@ -263,7 +335,9 @@ void mod_render(const sms_t* s, uint32_t* out, int pitch, int ext, mod_wide_info
           int X = off + sx;              // position in the wide picture
           if (X < 0 || X >= W || drawn[X]) continue;
           int wx = v.view + X;
-          if (wx < v.left || wx >= v.right) continue;   // belongs to another area
+          // beyond the area limits: only objects that came from inside (leaving the room),
+          // not objects of the next area
+          if ((wx < v.left || wx >= v.right) && !pc->keep) continue;
           bool center = sx >= 0 && sx < SMS_W;
           bool hidden_column = left_blank && sx >= 0 && sx < 8;
           if (center) {
@@ -276,10 +350,11 @@ void mod_render(const sms_t* s, uint32_t* out, int pitch, int ext, mod_wide_info
           drawn[X] = 1;
           // background tiles with priority stay in front (side areas only)
           if (fill && (!center || hidden_column)) {
-            int o = ovr.t[wy >> 3][wx >> 3];
-            int e = map_tile(&m, wx, wy);
+            int sw = side_wx(&v, &srcL, &srcR, wx, wy);
+            int o = ovr.t[wy >> 3][sw >> 3];
+            int e = map_tile(&m, sw, wy);
             int t = o >= 0 ? o : remap[e] >= 0 ? remap[e] : e;
-            if (t >= ram8(s, 0xC6A6) && tile_px(vram, 256 + t, wx & 7, wy & 7)) continue;
+            if (t >= ram8(s, 0xC6A6) && tile_px(vram, 256 + t, sw & 7, wy & 7)) continue;
           }
           row[X] = pal[16 + c];
         }
@@ -297,7 +372,7 @@ void mod_render(const sms_t* s, uint32_t* out, int pitch, int ext, mod_wide_info
     cache.key = scene_key(s);
     cache.cx = cx;
     cache.W = W;
-    for (int y = GAME_Y0; y < SMS_H; y++) memcpy(cache.px[y], out + y * pitch, sizeof(uint32_t) * W);
+    read_hud(s, cache.hud);
   }
 }
 

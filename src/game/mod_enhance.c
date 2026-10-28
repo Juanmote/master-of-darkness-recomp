@@ -20,12 +20,20 @@ static inline void ram_w(sms_t* s, uint16_t a, uint8_t v) { s->st.ram[a & 0x1FFF
 
 // ---------------------------------------------------------------- sprite capture
 // Same piece walk as the game's sprite builder (0x0DD1), without the X limits.
+static int slot_of(uint16_t obj) {
+  if (obj < 0xCA40 || obj >= 0xCA40 + 46 * 0x20 || (obj & 0x1F)) return -1;
+  return (obj - 0xCA40) >> 5;
+}
+
 static void capture(sms_t* s, uint16_t obj, bool sent) {
   if (!g->wide) return;
+  int slot = slot_of(obj);
   int y16 = (int16_t)(ram8(s, obj + 2) | (ram8(s, obj + 3) << 8));
   int x16 = (int16_t)(ram8(s, obj + 4) | (ram8(s, obj + 5) << 8));
   uint16_t fp = ram8(s, obj + 6) | (ram8(s, obj + 7) << 8);
   int count = sms_peek(s, fp);
+  if (slot >= 0 && x16 >= 0 && x16 <= 255) g->seen_in[slot] = 1;
+  uint8_t keep = slot >= 0 ? g->seen_in[slot] : 0;
   for (int i = 0; i < count && g->n_building < MOD_MAX_PIECES; i++) {
     uint16_t p = fp + 1 + i * 3;
     int py = (uint16_t)(y16 + (int8_t)sms_peek(s, p));
@@ -36,10 +44,19 @@ static void capture(sms_t* s, uint16_t obj, bool sent) {
     pc->y = (int16_t)(py - 0x11);
     pc->tile = sms_peek(s, p + 2);
     pc->in_sat = sent && px >= 0 && px <= 255;  // only if the game really sent it to the VDP
+    pc->keep = keep;
   }
 }
 
-static bool in_wide_range(int x16) { return x16 >= -17 - g->margin_l - 8 && x16 <= 255 + g->margin_r; }
+// Objects that have been inside the original picture may leave it over the side areas even
+// where nothing playable is shown there (one-screen rooms): they fly out of view instead of
+// vanishing at the edge of the original picture.
+static bool in_wide_range(uint16_t obj, int x16) {
+  int slot = slot_of(obj);
+  bool out = slot >= 0 && g->seen_in[slot];
+  int ml = out ? g->ext : g->margin_l, mr = out ? g->ext : g->margin_r;
+  return x16 >= -17 - ml - 8 && x16 <= 255 + mr;
+}
 
 // ---------------------------------------------------------------- spawn lists
 typedef struct {
@@ -84,7 +101,7 @@ static bool spawn_hook(sms_t* s, int k, uint16_t pc) {
   const spawn_addr_t* a = &spawn_addrs[k];
   z80* z = &s->st.cpu;
   typeof(g->spawn[0])* st = &g->spawn[k];
-  if (!g->wide) { st->active = false; st->last_cam[0] = st->last_cam[1] = -1000; st->done_hi = -100000; st->done_lo = 100000; return false; }
+  if (!g->wide) { st->active = false; st->edge_ok_r = st->edge_ok_l = false; return false; }
   int cam = cam16(s);
   if (pc == a->a_hi) {
     if (!st->active) {
@@ -94,23 +111,28 @@ static bool spawn_hook(sms_t* s, int k, uint16_t pc) {
       if (base == (ram8(s, right) | (ram8(s, right + 1) << 8))) dir = 1;
       else if (base == (ram8(s, left) | (ram8(s, left + 1) << 8))) dir = -1;
       else dir = 0;
-      // values to check: the ones that became visible since the last scan
-      int slot = dir < 0 ? 1 : 0;
+      // Values to check: only those that have just come into view. Values that were
+      // already visible are not checked again (an enemy killed in view, by a gem for
+      // example, comes back only after its spot leaves the view and enters it again,
+      // as in the original game where the check happens at the edge of the screen).
+      bool near = cam - st->edge_cam >= -8 && cam - st->edge_cam <= 8;
       st->step = dir < 0 ? -1 : 1;
       if (dir > 0) {
         int to = cam + g->margin_r;
-        int from = (cam == st->last_cam[0] + 1 && st->done_hi >= cam) ? st->done_hi + 1 : cam;
+        int from = (st->edge_ok_r && near) ? st->edge_r + 1 : cam;
         st->next = from; st->last = to;
-        if (to > st->done_hi || from == cam) st->done_hi = to;
+        if (!(st->edge_ok_r && near) || to > st->edge_r) st->edge_r = to;
+        st->edge_ok_r = true;
       } else if (dir < 0) {
         int to = cam - g->margin_l;
-        int from = (cam == st->last_cam[1] - 1 && st->done_lo <= cam) ? st->done_lo - 1 : cam;
+        int from = (st->edge_ok_l && near) ? st->edge_l - 1 : cam;
         st->next = from; st->last = to;
-        if (to < st->done_lo || from == cam) st->done_lo = to;
+        if (!(st->edge_ok_l && near) || to < st->edge_l) st->edge_l = to;
+        st->edge_ok_l = true;
       } else {
         st->next = st->last = cam;
       }
-      st->last_cam[slot] = cam;
+      st->edge_cam = cam;
       st->list_base = base;
       st->active = true;
     }
@@ -136,6 +158,8 @@ static bool spawn_hook(sms_t* s, int k, uint16_t pc) {
   if (pc == a->x_hi) {
     uint16_t obj = z->ix;
     uint16_t x = (uint16_t)(ram8(s, obj + 4) + (st->next - cam));
+    int slot = slot_of(obj);
+    if (slot >= 0) g->seen_in[slot] = 0;
     ram_w(s, obj + 4, x & 0xFF);
     ram_w(s, obj + 5, x >> 8);
     z->pc = a->x_hi_next;
@@ -163,6 +187,7 @@ static bool on_hook(sms_t* s, uint16_t pc) {
   case 0x51B6:  // start of the sprite pass
     g->n_building = 0;
     g->passes++;
+    for (int i = 0; i < 46; i++) if (!ram8(s, 0xCA40 + i * 0x20)) g->seen_in[i] = 0;
     return false;
   case 0x5228: {  // end of the sprite pass: store the completed list
     int h = (g->pass_head + 1) & 3;
@@ -176,7 +201,7 @@ static bool on_hook(sms_t* s, uint16_t pc) {
     return false;
   case 0x520E: {  // second object group, off the original screen: observe
     int x16 = (int16_t)(ram8(s, z->ix + 4) | (ram8(s, z->ix + 5) << 8));
-    if (in_wide_range(x16)) capture(s, z->ix, false);
+    if (in_wide_range(z->ix, x16)) capture(s, z->ix, false);
     return false;
   }
   case 0x51D5: {  // first object group: keep-alive / draw decision
@@ -184,7 +209,7 @@ static bool on_hook(sms_t* s, uint16_t pc) {
     int x16 = (int16_t)(ram8(s, z->ix + 4) | (ram8(s, z->ix + 5) << 8));
     if (x16 >= 0 && x16 <= 255) { z->a = 0; z->pc = 0x51E5; z->cyc += 35; }
     else if (x16 >= -17 && x16 < 0) { z->a = (0x11 + (x16 & 0xFF)) & 0xFF; z->pc = 0x51E5; z->cyc += 74; }
-    else if (in_wide_range(x16)) { capture(s, z->ix, false); z->pc = 0x51E9; z->cyc += 35; }
+    else if (in_wide_range(z->ix, x16)) { capture(s, z->ix, false); z->pc = 0x51E9; z->cyc += 35; }
     else { z->pc = 0x5238; z->cyc += 35; }
     return true;
   }
@@ -225,11 +250,10 @@ void mod_enhance_attach(sms_t* s, mod_enhance_t* e) {
   for (int k = 0; k < 2; k++) {
     const spawn_addr_t* a = &spawn_addrs[k];
     hook_map[a->a_hi] = hook_map[a->a_lo] = hook_map[a->a_lo2] = hook_map[a->x_hi] = hook_map[a->end] = 1;
-    e->spawn[k].last_cam[0] = e->spawn[k].last_cam[1] = -1000;
-    e->spawn[k].done_hi = -100000;
-    e->spawn[k].done_lo = 100000;
     e->spawn[k].active = false;
   }
+  for (int k = 0; k < 2; k++) e->spawn[k].edge_ok_r = e->spawn[k].edge_ok_l = false;
+  memset(e->seen_in, 0, sizeof e->seen_in);
   s->hook_map = hook_map;
   s->pc_hook = on_hook;
 }
@@ -263,6 +287,18 @@ void mod_enhance_frame(const sms_t* s, mod_enhance_t* e) {
   // margins for the next frame's game logic
   if (!e->wide || !mod_visible_margins(s, e->ext, &e->margin_l, &e->margin_r)) {
     e->margin_l = e->margin_r = e->wide ? e->ext : 0;
+  }
+  // what stays covered after this frame: the window shrinks when the view moves back or
+  // the visible margin gets smaller, so those values are checked again when they reappear
+  if (e->wide && mod_is_gameplay(s)) {
+    int cam = s->st.ram[0x06A0] | (s->st.ram[0x06A1] << 8);
+    for (int k = 0; k < 2; k++) {
+      if (e->spawn[k].edge_r > cam + e->margin_r) e->spawn[k].edge_r = cam + e->margin_r;
+      if (e->spawn[k].edge_l < cam - e->margin_l) e->spawn[k].edge_l = cam - e->margin_l;
+      e->spawn[k].edge_cam = cam;
+    }
+  } else {
+    for (int k = 0; k < 2; k++) e->spawn[k].edge_ok_r = e->spawn[k].edge_ok_l = false;
   }
   e->shown = NULL;
   e->n_shown = 0;

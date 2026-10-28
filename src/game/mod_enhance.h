@@ -14,6 +14,7 @@ typedef struct {
   int16_t y;      // sprite Y as written to the SAT (picture line = y + 1)
   uint8_t tile;
   uint8_t in_sat; // the original game also sent this piece to the VDP
+  uint8_t keep;   // object was inside the original picture: draw it even beyond the area limits
 } mod_piece_t;
 
 typedef struct {
@@ -31,7 +32,10 @@ typedef struct {
   const mod_piece_t* shown;
   int n_shown;
   // early spawning (one state per spawn list)
-  struct { int last_cam[2]; int done_hi, done_lo; int next, last, step; bool active; uint16_t list_base; } spawn[2];
+  // per spawn list; edge_*: spawn values already checked (the visible window edges)
+  struct { int next, last, step; bool active; uint16_t list_base;
+           int edge_r, edge_l, edge_cam; bool edge_ok_r, edge_ok_l; } spawn[2];
+  uint8_t seen_in[46];       // object slot has been inside the original picture
   int margin_l, margin_r;    // playable pixels visible beyond the original picture (per side)
 } mod_enhance_t;
 
