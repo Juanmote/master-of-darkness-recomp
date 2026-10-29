@@ -42,7 +42,15 @@ Requiere SDL2: `cmake -S . -B build && cmake --build build`, y coloca la ROM com
 - Port: Juanmote. *Master of Darkness* © SEGA / SIMS 1992; este proyecto no incluye ningún dato del juego.
 - Núcleo Z80: [superzazu/z80](https://github.com/superzazu/z80) (MIT). SDL2 (zlib). Fuente de los menús: DejaVu Sans Mono.
 
+## Música
+Se puede cargar un pack de música propio (un .zip con archivos .ogg). Cómo prepararlo:
+[docs/PACK_MUSICA.md](docs/PACK_MUSICA.md).
+
 ## Traducción
 El juego puede jugarse traducido con un parche IPS que elige el propio usuario, igual que la ROM
 (Opciones › Parche). El parche no se incluye en el APK ni en el repositorio. Probado con la
 traducción al español v1.2 de **Traducciones Wave** (traduccioneswave.blogspot.com), que se acredita en el menú.
+
+## Bibliotecas de terceros
+- [stb_vorbis](https://github.com/nothings/stb) (dominio público): decodifica los .ogg del pack de música.
+- [miniz](https://github.com/richgel999/miniz) (MIT, `third_party/miniz/LICENSE`): lee el .zip del pack.

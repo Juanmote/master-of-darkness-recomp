@@ -88,6 +88,7 @@ static uint8_t parse_btn(const char* t) {
   return b;
 }
 
+static bool mus_has_test(int id) { return id == (int)strtol(getenv("MUSHOOK"), NULL, 16); }
 int main(int argc, char** argv) {
   int frames = 600, ext = MOD_WIDE_EXT;
   int enhance = 0, oc = 1; const char *hashpath = NULL; const char *covpath = NULL; int seed = 0, use_recomp = 0, do_verify = 0;
@@ -125,6 +126,7 @@ int main(int argc, char** argv) {
   if (use_recomp) { fprintf(stderr, "built without recompiled code (run tools/recomp/recomp.py first)\n"); return 1; }
 #endif
   if (getenv("DJ")) E.double_jump = true;
+  if (getenv("MUSHOOK")) E.music_has = mus_has_test;
   if (getenv("DIFF")) E.difficulty = atoi(getenv("DIFF")); else E.difficulty = 1;
   if (getenv("RESPAWN")) E.respawn = atoi(getenv("RESPAWN"));
   if (getenv("HERO")) { static uint8_t hm[16]; memset(hm, 0xFF, 16); const char* h = getenv("HERO"); int i, c, n; while (sscanf(h, "%x:%x%n", &i, &c, &n) == 2) { hm[i & 15] = c; h += n; if (*h == ',') h++; else break; } mod_set_hero_colors(hm); }
@@ -178,6 +180,7 @@ int main(int argc, char** argv) {
     for (int k = 0; k < npokes; k++) if ((int)fr >= pokes[k].from && (int)fr <= pokes[k].to) S.st.ram[pokes[k].addr & 0x1FFF] = pokes[k].val;
     S.cpu_mult = (oc > 1 && mod_is_gameplay(&S)) ? oc : 1;
     if (getenv("WPN") && (int)fr == atoi(getenv("WPN"))) { S.st.ram[0x1FB7] = 2; S.st.ram[0x1FB8] = 3; S.st.ram[0x1FB9] = 99; S.st.ram[0x1FBA] = 9; mod_request_hud(&E, 7); }
+    if (getenv("MUSHOOK")) for (int ev; (ev = mod_music_poll(&E)); ) printf("MUS %u %03X\n", fr, ev);
     { static uint32_t lp; uint32_t p0 = E.passes; sms_run_frame(&S); if (getenv("PASSLOG")) printf("PASS %u %u\n", fr, E.passes - p0); if (getenv("LAGLOG") && E.passes == p0 && lp) printf("LAG %u cam %d\n", fr, S.st.ram[0x6A0] | (S.st.ram[0x6A1] << 8)); lp = E.passes; }
     mod_enhance_frame(&S, &E);
     mod_wide_info_t info;

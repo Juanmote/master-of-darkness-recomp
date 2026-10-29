@@ -345,6 +345,11 @@ void sms_run_frame(sms_t* s) {
         s->ei_shadow = 0;
         continue;
       }
+      if (s->hook2_pc && cpu->pc == s->hook2_pc && s->st.bank[2] == s->hook2_bank && !cpu->halted &&
+          s->pc_hook(s, cpu->pc)) {
+        s->ei_shadow = 0;
+        continue;
+      }
       if (s->hooks.on_exec) s->hooks.on_exec(s, cpu->pc, sms_rom_offset(s, cpu->pc));
       s->ei_shadow = !cpu->halted && sms_peek(s, cpu->pc) == 0xFB;
       z80_step(cpu);

@@ -10,7 +10,8 @@ set(MOD_CORE_SOURCES
 
 find_package(SDL2 REQUIRED CONFIG)
 
-add_executable(masterofdarkness src/app/main.c ${MOD_CORE_SOURCES})
+add_executable(masterofdarkness src/app/main.c src/app/music.c third_party/miniz/miniz.c ${MOD_CORE_SOURCES})
+target_include_directories(masterofdarkness PRIVATE third_party/miniz third_party/stb)
 if(TARGET SDL2::SDL2main)
   target_link_libraries(masterofdarkness PRIVATE SDL2::SDL2main)
 endif()

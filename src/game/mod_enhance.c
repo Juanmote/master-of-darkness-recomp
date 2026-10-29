@@ -286,6 +286,20 @@ static bool on_hook(sms_t* s, uint16_t pc) {
   case 0x3DD9:
     if (g->saved_dmg_addr) { ram_w(s, (uint16_t)g->saved_dmg_addr, g->saved_dmg); g->saved_dmg_addr = 0; }
     return false;
+  case 0x811C:  // sound driver (bank 9): A = (C103) is the sound that starts now
+    if (s->st.bank[2] == 9) {
+      int id = ram8(s, 0xC103);
+      int ev = 0;
+      if (id >= 0x81 && id <= 0x8F) {
+        if (g->music_has && g->music_has(id)) {
+          ram_w(s, 0xC103, 0xC1);   // the driver stops everything instead (as before a new track)
+          ev = MOD_MUSIC_PLAY | id;
+        } else ev = MOD_MUSIC_STOP | id;
+      } else if (id == 0xC0) ev = MOD_MUSIC_FADE;
+      else if (id == 0xC1) ev = MOD_MUSIC_STOP;
+      if (ev && g->n_music_events < 8) g->music_events[g->n_music_events++] = ev;
+    }
+    return false;
   case 0x51B6:  // start of the sprite pass
     // status bar redraw requested by a cheat: call the game's own routine (the one used
     // when an item is picked up) and come back here
@@ -357,8 +371,22 @@ static const struct { uint16_t addr; uint8_t b[4]; } signature[] = {
 
 void mod_request_hud(mod_enhance_t* e, int parts) { e->hud_pending |= (uint8_t)parts; }
 
+int mod_music_poll(mod_enhance_t* e) {
+  if (!e->n_music_events) return 0;
+  int ev = e->music_events[0];
+  for (int i = 1; i < e->n_music_events; i++) e->music_events[i - 1] = e->music_events[i];
+  e->n_music_events--;
+  return ev;
+}
+
+bool mod_music_paused(const sms_t* s) { return s->st.ram[0x0108] != 0; }
+
+void mod_music_request(sms_t* s, int id) { s->st.ram[0x0106] = (uint8_t)id; }
+
 bool mod_enhance_compatible(const sms_t* s) {
-  if (s->rom_size < 0x8000) return false;
+  if (s->rom_size < 0x28000) return false;
+  static const uint8_t drv[4] = {0x3A, 0x03, 0xC1, 0xCB};   // 9:811C LD A,(C103) ; BIT 7,A
+  if (memcmp(s->rom + 9 * 0x4000 + 0x011C, drv, 4)) return false;
   for (unsigned i = 0; i < sizeof signature / sizeof signature[0]; i++)
     if (memcmp(s->rom + signature[i].addr, signature[i].b, 4)) return false;
   return true;
@@ -366,7 +394,7 @@ bool mod_enhance_compatible(const sms_t* s) {
 
 void mod_enhance_attach(sms_t* s, mod_enhance_t* e) {
   g = e;
-  if (!mod_enhance_compatible(s)) { s->hook_map = NULL; return; }
+  if (!mod_enhance_compatible(s)) { s->hook_map = NULL; s->hook2_pc = 0; return; }
   memset(hook_map, 0, sizeof hook_map);
   static const uint16_t addrs[] = {0x51B6, 0x5228, 0x0DD1, 0x520E, 0x51D5, 0x3CD0, 0x52E7, 0x3CDD, 0x52F4,
                                    0x5238, 0x523D, 0x46F1, 0x6198, 0x3DD6, 0x3DD9};
@@ -384,6 +412,8 @@ void mod_enhance_attach(sms_t* s, mod_enhance_t* e) {
   memset(e->seen_in, 0, sizeof e->seen_in);
   s->hook_map = hook_map;
   s->pc_hook = on_hook;
+  s->hook2_pc = 0x811C;   // sound driver, bank 9
+  s->hook2_bank = 9;
 }
 
 void mod_enhance_set_wide(mod_enhance_t* e, bool wide, int ext) {

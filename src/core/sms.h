@@ -101,6 +101,9 @@ struct sms {
   // true when it has replaced the instruction (it must then update pc/cycles itself).
   const uint8_t* hook_map;  // 0x8000 entries, nonzero = call pc_hook
   bool (*pc_hook)(sms_t* s, uint16_t pc);
+  // one extra hook in the switchable slot 2 (0x8000-0xBFFF) for a given ROM bank
+  uint16_t hook2_pc;
+  uint8_t hook2_bank;
 };
 
 void sms_init(sms_t* s, const uint8_t* rom, int size);

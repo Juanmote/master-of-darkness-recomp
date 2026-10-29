@@ -180,3 +180,13 @@ Cabecera TMR SEGA válida, checksum 6FE6 correcto, región SMS Export, mapper Se
 - Doble salto: estados del protagonista CA31 (0 suelo, 3 subiendo, 2 cayendo), CA2B fotograma del arco,
   C701 botones pulsados en el fotograma. Al pulsar saltar en el aire: estado 3, arco a 0, velocidad 0 e Y
   alineada a 8 (la comprobación de suelo necesita la misma alineación que un salto desde el suelo).
+
+## v0.7.0 — pack de música
+- Controlador de sonido en el banco 9 (se ejecuta en la interrupción). C104/C105/C106 son peticiones; 8093 elige
+  por prioridad y deja la ganadora en C103; 811C la arranca: 0x81-0x8F música, 0x90-0xBD efectos, C0 fundido,
+  C1 parar todo (847E borra C103-C28F), C108 ≠ 0 = pausa.
+- Gancho en el banco conmutable (nuevo en el núcleo: `hook2_pc`/`hook2_bank`) en 9:811C: si la pista tiene
+  sustituto, C103 pasa a C1 (silencio, como antes de cualquier pista nueva) y la app reproduce el .ogg.
+- `src/app/music.c`: zip con miniz, Ogg con stb_vorbis decodificado sobre la marcha, remuestreo lineal a 44100 Hz
+  mono, intro + bucle, fundido de 1 s. Formato documentado en docs/PACK_MUSICA.md.
+- Pistas que no se repiten (medido con la salida del PSG): 81, 85, 86, 8A.

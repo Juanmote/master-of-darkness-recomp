@@ -51,6 +51,10 @@ typedef struct {
   int difficulty;            // MOD_DIFF_*
   int frac_taken, frac_dealt;
   int saved_dmg_addr; uint8_t saved_dmg;
+  // music pack: the game's sound driver asks before starting a track
+  bool (*music_has)(int id);   // set by the app: a replacement exists for this track
+  int music_events[8];         // MOD_MUSIC_* | id, read by the app with mod_music_poll
+  int n_music_events;
   // double jump
   bool double_jump;
   bool air_jump_used;
@@ -64,6 +68,14 @@ typedef struct {
 
 enum { MOD_RESPAWN_ON, MOD_RESPAWN_OFF, MOD_RESPAWN_MIXED };
 enum { MOD_DIFF_EASY, MOD_DIFF_NORMAL, MOD_DIFF_HARD };
+// music events: MOD_MUSIC_PLAY | id (replacement takes over), MOD_MUSIC_STOP [| id of an original track],
+// MOD_MUSIC_FADE (the game fades the music out)
+#define MOD_MUSIC_PLAY 0x100
+#define MOD_MUSIC_STOP 0x200
+#define MOD_MUSIC_FADE 0x300
+int mod_music_poll(mod_enhance_t* e);           // next event or 0
+bool mod_music_paused(const sms_t* s);          // the game has paused its sound (pause screen)
+void mod_music_request(sms_t* s, int id);       // ask the game to play a track (music test)
 
 bool mod_enhance_compatible(const sms_t* s);
 // Asks the game to redraw parts of the status bar (after a cheat changed weapons or lives).

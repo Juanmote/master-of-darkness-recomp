@@ -8,8 +8,9 @@
 #include "../game/mod_wide.h"
 #include "../game/mod_enhance.h"
 #include "font_data.h"
+#include "music.h"
 
-#define APP_VERSION "0.6.0"
+#define APP_VERSION "0.7.0"
 #define KNOWN_CRC 0x96FB4D4Bu
 #define UI_W 640
 #define UI_H 360
@@ -36,9 +37,10 @@ typedef struct {
   int difficulty;  // MOD_DIFF_*
   int respawn;     // MOD_RESPAWN_*
   int dbl_jump;
+  int music_pack;  // play the user's music pack instead of the original tracks
 } config_t;
 
-static config_t cfg = {1, 0, SCALE_FIT, FILTER_SHARP_SMOOTH, 8, SDL_CONTROLLER_BUTTON_A, SDL_CONTROLLER_BUTTON_Y, 1, 0, 0, 0, 0, 1, MOD_DIFF_NORMAL, MOD_RESPAWN_ON, 0};
+static config_t cfg = {1, 0, SCALE_FIT, FILTER_SHARP_SMOOTH, 8, SDL_CONTROLLER_BUTTON_A, SDL_CONTROLLER_BUTTON_Y, 1, 0, 0, 0, 0, 1, MOD_DIFF_NORMAL, MOD_RESPAWN_ON, 0, 1};
 static char pref_path[1024];
 
 static void cfg_path(char* out, size_t n, const char* name) { snprintf(out, n, "%s%s", pref_path, name); }
@@ -68,6 +70,7 @@ static void cfg_load(void) {
     else if (sscanf(line, "difficulty=%d", &v) == 1 && v >= 0 && v <= 2) cfg.difficulty = v;
     else if (sscanf(line, "respawn=%d", &v) == 1 && v >= 0 && v <= 2) cfg.respawn = v;
     else if (sscanf(line, "dbl_jump=%d", &v) == 1) cfg.dbl_jump = v ? 1 : 0;
+    else if (sscanf(line, "music_pack=%d", &v) == 1) cfg.music_pack = v ? 1 : 0;
   }
   fclose(f);
   if (cfg.sub_btn == cfg.jump_btn) cfg.sub_btn = cfg.jump_btn == SDL_CONTROLLER_BUTTON_Y ? SDL_CONTROLLER_BUTTON_X : SDL_CONTROLLER_BUTTON_Y;
@@ -78,9 +81,9 @@ static void cfg_save(void) {
   FILE* f = fopen(p, "w");
   if (!f) return;
   fprintf(f, "widescreen=%d\ncrt=%d\nscale=%d\nfilter=%d\nvolume=%d\njump_btn=%d\nsub_btn=%d\nturbo=%d\nlang=%d\n"
-             "suit=%d\ncheat_inv=%d\ncheat_lives=%d\ntriggers=%d\ndifficulty=%d\nrespawn=%d\ndbl_jump=%d\n",
+             "suit=%d\ncheat_inv=%d\ncheat_lives=%d\ntriggers=%d\ndifficulty=%d\nrespawn=%d\ndbl_jump=%d\nmusic_pack=%d\n",
           cfg.widescreen, cfg.crt, cfg.scale, cfg.filter, cfg.volume, cfg.jump_btn, cfg.sub_btn, cfg.turbo, cfg.lang,
-          cfg.suit, cfg.cheat_inv, cfg.cheat_lives, cfg.triggers, cfg.difficulty, cfg.respawn, cfg.dbl_jump);
+          cfg.suit, cfg.cheat_inv, cfg.cheat_lives, cfg.triggers, cfg.difficulty, cfg.respawn, cfg.dbl_jump, cfg.music_pack);
   fclose(f);
 }
 
@@ -228,6 +231,32 @@ static void apply_language(void) {
 
 static int lang_active(void) { return cfg.lang && patch_data && rom_crc == KNOWN_CRC; }
 
+// ---------------------------------------------------------------- music pack
+static int music_current = -1;   // last track the game asked for
+static int waiting_music;
+
+static void music_pack_path(char* out, size_t n) {
+#ifdef __ANDROID__
+  snprintf(out, n, "%s/musica.zip", SDL_AndroidGetInternalStoragePath());
+#else
+  cfg_path(out, n, "musica.zip");
+#endif
+}
+
+static bool music_enabled_has(int id) { return cfg.music_pack && music_has(id); }
+
+static void load_music_pack(void) {
+  char p[1100]; music_pack_path(p, sizeof p);
+  music_load_pack(p);
+}
+
+static void request_music_file(void) {
+#ifdef __ANDROID__
+  waiting_music = 1;
+  SDL_AndroidSendMessage(0x8002, 0);
+#endif
+}
+
 // Opens the system file picker (Android): the result is copied to patch.ips by GameActivity.
 static int waiting_patch;
 static void request_patch_file(void) {
@@ -303,15 +332,15 @@ enum {
   MI_RESUME, MI_SAVE, MI_LOAD, MI_GAME, MI_CHEATS, MI_VIDEO, MI_OPTIONS, MI_RESET, MI_QUIT,
   MI_DIFF, MI_RESPAWN, MI_DJUMP,
   MI_FORMAT, MI_SCALE, MI_FILTER, MI_SUIT,
-  MI_VOLUME, MI_BUTTONS, MI_SUBBTN, MI_TURBO, MI_TRIGGERS, MI_LANG, MI_PATCH,
+  MI_VOLUME, MI_BUTTONS, MI_SUBBTN, MI_TURBO, MI_TRIGGERS, MI_LANG, MI_PATCH, MI_MUSIC, MI_MUSPACK, MI_MUSTEST,
   MI_INV, MI_LIVES, MI_WEAPON, MI_SUB, MI_START, MI_WARP,
   MI_BACK
 };
 enum { PAGE_MAIN, PAGE_VIDEO, PAGE_OPTIONS, PAGE_CHEATS, PAGE_GAME };
-static const int page_items[5][10] = {
+static const int page_items[5][11] = {
   {MI_RESUME, MI_SAVE, MI_LOAD, MI_GAME, MI_CHEATS, MI_VIDEO, MI_OPTIONS, MI_RESET, MI_QUIT, -1},
   {MI_FORMAT, MI_SCALE, MI_FILTER, MI_SUIT, MI_BACK, -1},
-  {MI_VOLUME, MI_BUTTONS, MI_SUBBTN, MI_TRIGGERS, MI_LANG, MI_PATCH, MI_BACK, -1},
+  {MI_VOLUME, MI_BUTTONS, MI_SUBBTN, MI_TRIGGERS, MI_LANG, MI_PATCH, MI_MUSIC, MI_MUSPACK, MI_MUSTEST, MI_BACK, -1},
   {MI_INV, MI_LIVES, MI_WEAPON, MI_SUB, MI_START, MI_WARP, MI_BACK, -1},
   {MI_DIFF, MI_RESPAWN, MI_DJUMP, MI_TURBO, MI_BACK, -1},
 };
@@ -326,7 +355,7 @@ static void apply_game_options(void) {
 }
 static int menu_page;
 
-static int page_count(int p) { int n = 0; while (n < 10 && page_items[p][n] >= 0) n++; return n; }
+static int page_count(int p) { int n = 0; while (n < 11 && page_items[p][n] >= 0) n++; return n; }
 static int cur_item(void) { return page_items[menu_page][menu_sel]; }
 
 static void menu_set_open(int open);
@@ -344,6 +373,8 @@ static const char* button_name(int b) {
 
 static const char* scale_names[SCALE_COUNT] = {"Ajustar a pantalla", "Escala entera", "Estirar"};
 static const char* filter_names[FILTER_COUNT] = {"Nítido", "Nítido suavizado", "Suave", "Scanlines"};
+
+static int music_test_sel;
 
 static const char* patch_name(void) {
   if (!patch_data) return "ninguno (elegir archivo)";
@@ -383,6 +414,19 @@ static void menu_label(int i, char* out, size_t n) {
   case MI_TRIGGERS: snprintf(out, n, "Gatillos (L2 rebobinar, R2 acelerar): ← %s →", cfg.triggers ? "Sí" : "No"); break;
   case MI_LANG: snprintf(out, n, "Idioma:   ← %s →", lang_active() ? "Traducido (parche)" : "Inglés (original)"); break;
   case MI_PATCH: snprintf(out, n, "Parche:   %s", patch_name()); break;
+  case MI_MUSIC:
+    if (!music_pack_loaded()) snprintf(out, n, "Música:   original");
+    else snprintf(out, n, "Música:   ← %s →", cfg.music_pack ? "pack del usuario" : "original");
+    break;
+  case MI_MUSPACK:
+    if (music_pack_loaded()) snprintf(out, n, "Pack de música: %d pistas (cambiar)", music_pack_tracks());
+    else snprintf(out, n, "Pack de música: ninguno (elegir .zip)");
+    break;
+  case MI_MUSTEST: {
+    const music_track_t* t = &music_tracks[music_test_sel];
+    snprintf(out, n, "Probar música: ← %s %s%s →", t->file, t->name, music_has(t->id) && cfg.music_pack ? " (pack)" : "");
+    break;
+  }
   case MI_INV: snprintf(out, n, "Invencible:      ← %s →", cfg.cheat_inv ? "Sí" : "No"); break;
   case MI_LIVES: snprintf(out, n, "Vidas infinitas: ← %s →", cfg.cheat_lives ? "Sí" : "No"); break;
   case MI_WEAPON: snprintf(out, n, "Arma:     ← %s →", weapon_names[gram(RAM_WEAPON) & 3]); break;
@@ -409,7 +453,7 @@ static void do_load_state(void) {
   char p[1100]; state_file(p, sizeof p);
   size_t n = 0;
   uint8_t* buf = load_file(p, &n);
-  if (buf && sms_load_state(&S, buf, n)) show_toast("Estado cargado", 1500);
+  if (buf && sms_load_state(&S, buf, n)) { music_stop(); show_toast("Estado cargado", 1500); }
   else show_toast("No hay ningún estado guardado", 2000);
   free(buf);
 }
@@ -427,6 +471,7 @@ static void set_language(int lang) {
   }
   cfg.lang = lang;
   apply_language();
+  music_stop();
   sms_reset(&S);
   menu_set_open(0);
   show_toast(lang ? "Juego traducido (reiniciado)" : "Juego en inglés (reiniciado)", 2500);
@@ -451,6 +496,22 @@ static void menu_change(int dir) {
   case MI_SUBBTN: capture_jump = 2; return;
   case MI_TURBO: cfg.turbo ^= 1; break;
   case MI_TRIGGERS: cfg.triggers ^= 1; break;
+  case MI_MUSIC:
+    if (!music_pack_loaded()) { show_toast("Primero elige un pack de música", 2000); return; }
+    cfg.music_pack ^= 1;
+    music_stop();
+    if (music_current > 0) mod_music_request(&S, music_current);   // the current track again, from the new source
+    break;
+  case MI_MUSPACK:
+#ifdef __ANDROID__
+    request_music_file();
+#else
+    show_toast("Copia el pack como musica.zip en la carpeta de datos", 3000);
+#endif
+    return;
+  case MI_MUSTEST:
+    if (dir) music_test_sel = (music_test_sel + dir + music_track_count) % music_track_count;
+    return;
   case MI_DIFF: cfg.difficulty = (cfg.difficulty + dir + 3) % 3; apply_game_options(); break;
   case MI_RESPAWN: cfg.respawn = (cfg.respawn + dir + 3) % 3; apply_game_options(); break;
   case MI_DJUMP: cfg.dbl_jump ^= 1; apply_game_options(); break;
@@ -509,9 +570,15 @@ static void menu_activate(void) {
     menu_goto(PAGE_GAME); break;
   case MI_OPTIONS: menu_goto(PAGE_OPTIONS); break;
   case MI_BACK: menu_goto(PAGE_MAIN); break;
-  case MI_RESET: sms_reset(&S); menu_set_open(0); show_toast("Juego reiniciado", 1500); break;
+  case MI_RESET: music_stop(); sms_reset(&S); menu_set_open(0); show_toast("Juego reiniciado", 1500); break;
+  case MI_MUSTEST:
+    if (rom_crc != KNOWN_CRC) break;
+    mod_music_request(&S, music_tracks[music_test_sel].id);
+    menu_set_open(0);
+    show_toast(music_tracks[music_test_sel].name, 2000);
+    break;
   case MI_WARP:
-    sms_reset(&S); warp_pending = 1; menu_set_open(0);
+    music_stop(); sms_reset(&S); warp_pending = 1; menu_set_open(0);
     show_toast("Pulsa START: la partida empezará en esa ronda", 3000);
     break;
   case MI_QUIT: running = 0; break;
@@ -716,6 +783,16 @@ static void handle_event(SDL_Event* e) {
   case SDL_QUIT: running = 0; break;
   case SDL_APP_WILLENTERBACKGROUND: cfg_save(); if (!menu_open) menu_set_open(1); break;
   case SDL_APP_DIDENTERFOREGROUND:
+    if (waiting_music) {
+      waiting_music = 0;
+      load_music_pack();
+      if (music_pack_loaded()) {
+        cfg.music_pack = 1; cfg_save();
+        char t[80]; snprintf(t, sizeof t, "Pack de música cargado: %d pistas", music_pack_tracks());
+        show_toast(t, 2500);
+        if (music_current > 0) mod_music_request(&S, music_current);
+      } else show_toast("Ese archivo no tiene pistas de música válidas", 3000);
+    }
     if (waiting_patch) {
       waiting_patch = 0;
       uint32_t old = patch_data ? patch_crc : 0;
@@ -924,6 +1001,8 @@ int main(int argc, char** argv) {
   mod_enhance_attach(&S, &E);
   mod_enhance_set_wide(&E, cfg.widescreen, MOD_WIDE_EXT);
   apply_game_options();
+  load_music_pack();
+  E.music_has = music_enabled_has;
   if (rom_crc != KNOWN_CRC) show_toast("ROM no reconocida: algunas mejoras pueden fallar", 4000);
   else show_toast("Pulsa SELECT o ATRÁS para abrir el menú", 4000);
 
@@ -1002,10 +1081,18 @@ int main(int argc, char** argv) {
           cheats_frame();
           sms_run_frame(&S);
           mod_enhance_frame(&S, &E);
+          for (int ev; (ev = mod_music_poll(&E)); ) {
+            int kind = ev & 0xF00, id = ev & 0xFF;
+            if (kind == MOD_MUSIC_PLAY) { music_current = id; music_play(id); }
+            else if (kind == MOD_MUSIC_STOP) { if (id) music_current = id; music_stop(); }
+            else if (kind == MOD_MUSIC_FADE) music_fade();
+          }
           if (cfg.triggers && (++rw_tick & 1) == 0) rw_push();
         }
+        music_set_paused(mod_music_paused(&S));
         if (audio_dev && queued < 8 && !fast_forward) {
           for (int i = 0; i < SMS_SAMPLES_PER_FRAME; i++) mixbuf[i] = (int16_t)(S.audio[i] * cfg.volume / 10);
+          music_mix(mixbuf, SMS_SAMPLES_PER_FRAME, cfg.volume);
           SDL_QueueAudio(audio_dev, mixbuf, sizeof mixbuf);
         }
       }
