@@ -185,6 +185,20 @@ static bool on_hook(sms_t* s, uint16_t pc) {
   z80* z = &s->st.cpu;
   switch (pc) {
   case 0x51B6:  // start of the sprite pass
+    // status bar redraw requested by a cheat: call the game's own routine (the one used
+    // when an item is picked up) and come back here
+    if (g->hud_pending && mod_is_gameplay(s)) {
+      uint16_t target = 0;
+      if (g->hud_pending & MOD_HUD_WEAPON) { g->hud_pending &= ~MOD_HUD_WEAPON; target = 0x4A07; }
+      else if (g->hud_pending & MOD_HUD_SUBWEAPON) { g->hud_pending &= ~MOD_HUD_SUBWEAPON; target = 0x4A10; }
+      else { g->hud_pending &= ~MOD_HUD_LIVES; target = 0x4A2C; }
+      z->sp -= 2;
+      ram_w(s, z->sp, 0xB6);
+      ram_w(s, z->sp + 1, 0x51);
+      z->pc = target;
+      z->cyc += 17;
+      return true;
+    }
     g->n_building = 0;
     g->passes++;
     for (int i = 0; i < 46; i++) if (!ram8(s, 0xCA40 + i * 0x20)) g->seen_in[i] = 0;
@@ -232,7 +246,10 @@ static const struct { uint16_t addr; uint8_t b[4]; } signature[] = {
   {0x5305, {0xDD, 0x36, 0x05, 0x00}}, {0x52D5, {0xF1, 0x32, 0xFF, 0xFF}}, {0x51E5, {0x79, 0xCD, 0xD1, 0x0D}},
   {0x51E9, {0x19, 0x10, 0xD5, 0x21}}, {0x5238, {0x36, 0x00, 0xC3, 0xE9}},
   {0x5228, {0x26, 0xC3, 0x69, 0x3E}},
+  {0x4A07, {0xCD, 0x4D, 0x4B, 0x3A}}, {0x4A10, {0xCD, 0x7E, 0x4B, 0x3A}}, {0x4A2C, {0x3A, 0xBA, 0xDF, 0x3D}},
 };
+
+void mod_request_hud(mod_enhance_t* e, int parts) { e->hud_pending |= (uint8_t)parts; }
 
 bool mod_enhance_compatible(const sms_t* s) {
   if (s->rom_size < 0x8000) return false;

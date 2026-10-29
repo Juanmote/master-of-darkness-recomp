@@ -144,3 +144,18 @@ Cabecera TMR SEGA válida, checksum 6FE6 correcto, región SMS Export, mapper Se
   enganchada, las mejoras 16:9 siguen activas con el juego en español.
 - Botón de saltar: se elige pulsándolo (`jump_btn`, cualquiera de A/B/X/Y; los demás atacan). Sustituye a
   `swap_ab` (se migra al cargar la configuración). El menú acepta con A y vuelve con B.
+
+## v0.5.0
+- Parche de traducción elegido por el usuario (Opciones › Parche, selector del sistema como la ROM) y guardado
+  como `patch.ips`; ya no va en el APK ni en el repositorio. Se reconoce el de Traducciones Wave por su CRC
+  (0x1173EA42) para acreditarlo. Android: `SDL_AndroidSendMessage(0x8001)` → `GameActivity` abre el selector.
+- Menú por páginas: principal, Imagen, Opciones, Trucos.
+- Trucos (RAM del juego, los mismos que usa su menú de depuración oficial, título: Arriba+1+2):
+  DFB4 ≠ 0 = sin daño ("HIT CHECK"), DFBA vidas, DFB7 arma (0 cuchillo, 1 pico, 2 estoque, 3 hacha),
+  DFB8 subarma (0 pistola, 1 bumerán, 2 dardos, 3 bombas), DFB9 munición (0 = ninguna), DFC0/DFC1 ronda/escena.
+  El marcador se redibuja llamando a las rutinas del propio juego (4A07 arma, 4A10 subarma, 4A2C vidas), metidas
+  como llamada en el gancho 51B6 (`mod_request_hud`). Empezar en una ronda: reinicio y DFC0/DFC1 fijados hasta
+  que empieza la partida.
+- Rebobinar (L2) y acelerar ×4 (R2): instantánea cada 2 fotogramas, 20 s (≈15 MB), con el estado de apariciones.
+- Color del traje: el núcleo guarda el tile de sprite de cada píxel (`fb_sprtile`); los tiles 0x01-0x1F son del
+  protagonista. Se cambian las entradas 10 (claro) y 11 (oscuro) de la paleta de sprites solo en sus píxeles.

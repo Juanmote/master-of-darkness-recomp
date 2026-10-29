@@ -244,7 +244,7 @@ static void render_line(sms_t* s, int y) {
       if (drawn[x]) { d->status |= 0x20; continue; }
       drawn[x] = 1;
       if (x >= SMS_W) over[x - SMS_W] = 16 + c;
-      else if (!prio[x]) { out[x] = 16 + c; s->fb_spr[y][x] = 1; }
+      else if (!prio[x]) { out[x] = 16 + c; s->fb_spr[y][x] = 1; s->fb_sprtile[y][x] = d->vram[sat + 0x81 + i * 2]; }
     }
   }
   if (d->reg[0] & 0x20) { memset(out, backdrop, 8); memset(s->fb_bg[y], backdrop, 8); memset(s->fb_spr[y], 0, 8); }

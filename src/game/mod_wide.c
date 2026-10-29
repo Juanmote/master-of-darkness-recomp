@@ -229,6 +229,23 @@ static inline int side_wx(const view_t* v, const side_src_t* L, const side_src_t
   return wx;
 }
 
+static bool hero_on;
+static uint8_t hero_map[16];
+
+void mod_set_hero_colors(const uint8_t* map16) {
+  hero_on = map16 != NULL;
+  if (map16) memcpy(hero_map, map16, 16);
+}
+
+static inline bool hero_tile(int t) { return t >= 0x01 && t <= 0x1F; }
+
+// colour of a picture pixel (CRAM index ci); hero sprite pixels may be recoloured
+static inline uint32_t px_color(const sms_t* s, const uint32_t* pal, int y, int x, int ci) {
+  if (hero_on && ci >= 16 && s->fb_spr[y][x] && hero_tile(s->fb_sprtile[y][x]) && hero_map[ci - 16] != 0xFF)
+    return sms_color(hero_map[ci - 16]);
+  return pal[ci];
+}
+
 void mod_render(const sms_t* s, uint32_t* out, int pitch, int ext, mod_wide_info_t* info,
                 const mod_piece_t* pieces, int n_pieces) {
   mod_wide_info_t local;
@@ -299,7 +316,7 @@ void mod_render(const sms_t* s, uint32_t* out, int pitch, int ext, mod_wide_info
       // status bar stays centred, sprites crossing into it follow the playfield
       for (int x = 0; x < SMS_W; x++) row[ext + x] = pal[s->fb_bg[y][x]];
       for (int x = 0; x < SMS_W; x++)
-        if (s->fb_spr[y][x]) row[cx + x] = pal[src[x]];
+        if (s->fb_spr[y][x]) row[cx + x] = px_color(s, pal, y, x, src[x]);
     } else if (fill && from_cache) {
       // The map does not explain the picture (boss effects, dialog boxes): per side, keep
       // the last good side area while the picture next to it is unchanged, otherwise
@@ -325,12 +342,12 @@ void mod_render(const sms_t* s, uint32_t* out, int pitch, int ext, mod_wide_info
         row[X] = keepL ? pal[ci[X]] : perL ? pal[bg[8 + pmod(X - cx - 8, 16)]] : back;
       for (int X = cx + SMS_W; X < W; X++)
         row[X] = keepR ? pal[ci[X]] : perR ? pal[bg[SMS_W - 16 + pmod(X - cx - SMS_W, 16)]] : back;
-      for (int x = left_blank ? 8 : 0; x < SMS_W; x++) row[cx + x] = pal[src[x]];
+      for (int x = left_blank ? 8 : 0; x < SMS_W; x++) row[cx + x] = px_color(s, pal, y, x, src[x]);
       if (left_blank) for (int x = 0; x < 8; x++) row[cx + x] = keepL ? pal[ci[cx + x]] : perL ? pal[bg[8 + pmod(x - 8, 16)]] : back;
       if (keepL) for (int x = 0; x < cache.coverL; x++) if (!s->fb_spr[y][x]) row[cx + x] = pal[ci[cx + x]];
       if (keepR) for (int x = SMS_W - cache.coverR; x < SMS_W; x++) if (!s->fb_spr[y][x]) row[cx + x] = pal[ci[cx + x]];
     } else {
-      for (int x = 0; x < SMS_W; x++) row[off + x] = pal[src[x]];
+      for (int x = 0; x < SMS_W; x++) row[off + x] = px_color(s, pal, y, x, src[x]);
     }
     if (!ext || !valid) continue;
     if (hud) off = cx;
@@ -390,7 +407,7 @@ void mod_render(const sms_t* s, uint32_t* out, int pitch, int ext, mod_wide_info
             int t = o >= 0 ? o : remap[e] >= 0 ? remap[e] : e;
             if (t >= ram8(s, 0xC6A6) && tile_px(vram, 256 + t, sw & 7, wy & 7)) continue;
           }
-          row[X] = pal[16 + c];
+          row[X] = (hero_on && hero_tile(pc->tile) && hero_map[c] != 0xFF) ? sms_color(hero_map[c]) : pal[16 + c];
         }
       }
     } else if (fill) {

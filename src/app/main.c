@@ -8,9 +8,8 @@
 #include "../game/mod_wide.h"
 #include "../game/mod_enhance.h"
 #include "font_data.h"
-#include "patch_es.h"
 
-#define APP_VERSION "0.4.0"
+#define APP_VERSION "0.5.0"
 #define KNOWN_CRC 0x96FB4D4Bu
 #define UI_W 640
 #define UI_H 360
@@ -28,10 +27,14 @@ typedef struct {
   int volume;      // 0..10
   int jump_btn;    // SDL controller button that jumps (the other face buttons attack)
   int turbo;       // double CPU speed: removes the original slowdowns
-  int lang;        // 0: original (English), 1: Spanish translation patch
+  int lang;        // 0: original (English), 1: translation patch chosen by the user
+  int suit;        // hero colours (0 = original)
+  int cheat_inv;   // official "hit check" cheat: no damage
+  int cheat_lives; // lives never run out
+  int triggers;    // L2 rewinds, R2 fast-forwards
 } config_t;
 
-static config_t cfg = {1, 0, SCALE_FIT, FILTER_SHARP_SMOOTH, 8, SDL_CONTROLLER_BUTTON_A, 1, 0};
+static config_t cfg = {1, 0, SCALE_FIT, FILTER_SHARP_SMOOTH, 8, SDL_CONTROLLER_BUTTON_A, 1, 0, 0, 0, 0, 1};
 static char pref_path[1024];
 
 static void cfg_path(char* out, size_t n, const char* name) { snprintf(out, n, "%s%s", pref_path, name); }
@@ -53,6 +56,10 @@ static void cfg_load(void) {
     else if (sscanf(line, "jump_btn=%d", &v) == 1 && v >= SDL_CONTROLLER_BUTTON_A && v <= SDL_CONTROLLER_BUTTON_Y) { cfg.jump_btn = v; jump_seen = 1; }
     else if (sscanf(line, "turbo=%d", &v) == 1) cfg.turbo = v ? 1 : 0;
     else if (sscanf(line, "lang=%d", &v) == 1) cfg.lang = v ? 1 : 0;
+    else if (sscanf(line, "suit=%d", &v) == 1 && v >= 0 && v < 16) cfg.suit = v;
+    else if (sscanf(line, "cheat_inv=%d", &v) == 1) cfg.cheat_inv = v ? 1 : 0;
+    else if (sscanf(line, "cheat_lives=%d", &v) == 1) cfg.cheat_lives = v ? 1 : 0;
+    else if (sscanf(line, "triggers=%d", &v) == 1) cfg.triggers = v ? 1 : 0;
   }
   fclose(f);
 }
@@ -61,8 +68,10 @@ static void cfg_save(void) {
   char p[1100]; cfg_path(p, sizeof p, "config.ini");
   FILE* f = fopen(p, "w");
   if (!f) return;
-  fprintf(f, "widescreen=%d\ncrt=%d\nscale=%d\nfilter=%d\nvolume=%d\njump_btn=%d\nturbo=%d\nlang=%d\n",
-          cfg.widescreen, cfg.crt, cfg.scale, cfg.filter, cfg.volume, cfg.jump_btn, cfg.turbo, cfg.lang);
+  fprintf(f, "widescreen=%d\ncrt=%d\nscale=%d\nfilter=%d\nvolume=%d\njump_btn=%d\nturbo=%d\nlang=%d\n"
+             "suit=%d\ncheat_inv=%d\ncheat_lives=%d\ntriggers=%d\n",
+          cfg.widescreen, cfg.crt, cfg.scale, cfg.filter, cfg.volume, cfg.jump_btn, cfg.turbo, cfg.lang,
+          cfg.suit, cfg.cheat_inv, cfg.cheat_lives, cfg.triggers);
   fclose(f);
 }
 
@@ -177,11 +186,46 @@ static int ips_apply(uint8_t* dst, size_t size, const uint8_t* p, size_t n) {
   return 1;
 }
 
+// Translation patch: an IPS file chosen by the user (like the ROM), kept as patch.ips.
+#define WAVE_PATCH_CRC 0x1173EA42u   // Spanish translation v1.2 (C) 2018 Traducciones Wave
+static uint8_t* patch_data;
+static size_t patch_size;
+static uint32_t patch_crc;
+
+static void patch_path(char* out, size_t n) {
+#ifdef __ANDROID__
+  snprintf(out, n, "%s/patch.ips", SDL_AndroidGetInternalStoragePath());
+#else
+  cfg_path(out, n, "patch.ips");
+#endif
+}
+
+static int load_patch(void) {
+  char p[1100]; patch_path(p, sizeof p);
+  size_t n = 0;
+  uint8_t* d = load_file(p, &n);
+  if (!d || n < 8 || memcmp(d, "PATCH", 5)) { free(d); return 0; }
+  free(patch_data);
+  patch_data = d; patch_size = n; patch_crc = crc32_buf(d, n);
+  return 1;
+}
+
 static void apply_language(void) {
   if (!rom || !rom_orig) return;
   memcpy(rom, rom_orig, rom_size);
-  if (cfg.lang && rom_crc == KNOWN_CRC && !ips_apply(rom, rom_size, patch_es, sizeof patch_es))
+  if (cfg.lang && patch_data && rom_crc == KNOWN_CRC && !ips_apply(rom, rom_size, patch_data, patch_size))
     memcpy(rom, rom_orig, rom_size);
+}
+
+static int lang_active(void) { return cfg.lang && patch_data && rom_crc == KNOWN_CRC; }
+
+// Opens the system file picker (Android): the result is copied to patch.ips by GameActivity.
+static int waiting_patch;
+static void request_patch_file(void) {
+#ifdef __ANDROID__
+  waiting_patch = 1;
+  SDL_AndroidSendMessage(0x8001, 0);
+#endif
 }
 
 static int menu_open, menu_sel;
@@ -196,7 +240,75 @@ static void show_toast(const char* msg, Uint32 ms) {
   toast_until = SDL_GetTicks() + ms;
 }
 
-enum { MI_RESUME, MI_FORMAT, MI_SCALE, MI_FILTER, MI_VOLUME, MI_BUTTONS, MI_TURBO, MI_LANG, MI_SAVE, MI_LOAD, MI_RESET, MI_QUIT, MI_COUNT };
+// ---------------------------------------------------------------- hero colours
+// light and dark shade of the suit (sprite palette entries 10 and 11), SMS colours %00BBGGRR
+static const struct { const char* name; uint8_t light, dark; } suits[] = {
+  {"Original", 0xFF, 0xFF}, {"Rojo", 0x17, 0x02}, {"Verde", 0x1D, 0x08}, {"Morado", 0x37, 0x21},
+  {"Marrón", 0x1B, 0x06}, {"Negro", 0x2A, 0x15}, {"Blanco", 0x3F, 0x2A}, {"Dorado", 0x0F, 0x0A},
+};
+#define SUIT_COUNT (int)(sizeof suits / sizeof suits[0])
+
+static void apply_suit(void) {
+  if (cfg.suit <= 0 || cfg.suit >= SUIT_COUNT) { mod_set_hero_colors(NULL); return; }
+  uint8_t m[16];
+  memset(m, 0xFF, sizeof m);
+  m[10] = suits[cfg.suit].light;
+  m[11] = suits[cfg.suit].dark;
+  mod_set_hero_colors(m);
+}
+
+// ---------------------------------------------------------------- cheats (game RAM, see docs)
+#define RAM_INVINCIBLE 0xDFB4   // official debug menu "HIT CHECK": non-zero = no damage
+#define RAM_LIVES      0xDFBA
+#define RAM_WEAPON     0xDFB7   // 0 knife, 1 pick, 2 rapier, 3 axe
+#define RAM_SUBWEAPON  0xDFB8   // 0 pistol, 1 boomerang, 2 darts, 3 bombs
+#define RAM_AMMO       0xDFB9   // 0 = no subweapon
+#define RAM_ROUND      0xDFC0
+#define RAM_STAGE      0xDFC1
+static inline uint8_t gram(uint16_t a) { return S.st.ram[a & 0x1FFF]; }
+static inline void gram_w(uint16_t a, uint8_t v) { S.st.ram[a & 0x1FFF] = v; }
+
+static const char* weapon_names[4] = {"Cuchillo", "Pico", "Estoque", "Hacha"};
+static const char* sub_names[5] = {"Ninguna", "Pistola", "Bumerán", "Dardos", "Bombas"};
+static const uint8_t start_points[][2] = {{0,0},{0,1},{0,2},{1,0},{1,1},{1,2},{2,0},{2,1},{2,2},{3,0},{3,1},{3,2},{4,0}};
+#define START_COUNT (int)(sizeof start_points / sizeof start_points[0])
+static int start_sel;
+static int warp_pending;   // keep the chosen round in RAM until the level is running
+
+static int cheats_ok(void) { return E.hud_pending == 0 && rom_crc == KNOWN_CRC && mod_is_gameplay(&S); }
+
+static void cheats_frame(void) {
+  if (rom_crc != KNOWN_CRC) return;
+  if (warp_pending) {
+    gram_w(RAM_ROUND, start_points[start_sel][0]);
+    gram_w(RAM_STAGE, start_points[start_sel][1]);
+    if (mod_is_gameplay(&S)) warp_pending = 0;
+  }
+  if (!mod_is_gameplay(&S)) return;
+  if (cfg.cheat_inv) gram_w(RAM_INVINCIBLE, 0xFF);
+  if (cfg.cheat_lives && gram(RAM_LIVES) < 3) { gram_w(RAM_LIVES, 3); mod_request_hud(&E, MOD_HUD_LIVES); }
+}
+
+// ---------------------------------------------------------------- menu
+enum {
+  MI_RESUME, MI_SAVE, MI_LOAD, MI_CHEATS, MI_VIDEO, MI_OPTIONS, MI_RESET, MI_QUIT,
+  MI_FORMAT, MI_SCALE, MI_FILTER, MI_SUIT,
+  MI_VOLUME, MI_BUTTONS, MI_TURBO, MI_TRIGGERS, MI_LANG, MI_PATCH,
+  MI_INV, MI_LIVES, MI_WEAPON, MI_SUB, MI_START, MI_WARP,
+  MI_BACK
+};
+enum { PAGE_MAIN, PAGE_VIDEO, PAGE_OPTIONS, PAGE_CHEATS };
+static const int page_items[4][10] = {
+  {MI_RESUME, MI_SAVE, MI_LOAD, MI_CHEATS, MI_VIDEO, MI_OPTIONS, MI_RESET, MI_QUIT, -1},
+  {MI_FORMAT, MI_SCALE, MI_FILTER, MI_SUIT, MI_BACK, -1},
+  {MI_VOLUME, MI_BUTTONS, MI_TURBO, MI_TRIGGERS, MI_LANG, MI_PATCH, MI_BACK, -1},
+  {MI_INV, MI_LIVES, MI_WEAPON, MI_SUB, MI_START, MI_WARP, MI_BACK, -1},
+};
+static const char* page_titles[4] = {"MASTER OF DARKNESS", "IMAGEN", "OPCIONES", "TRUCOS"};
+static int menu_page;
+
+static int page_count(int p) { int n = 0; while (n < 10 && page_items[p][n] >= 0) n++; return n; }
+static int cur_item(void) { return page_items[menu_page][menu_sel]; }
 
 static void menu_set_open(int open);
 static int capture_jump;   // waiting for the player to press the jump button
@@ -214,23 +326,41 @@ static const char* button_name(int b) {
 static const char* scale_names[SCALE_COUNT] = {"Ajustar a pantalla", "Escala entera", "Estirar"};
 static const char* filter_names[FILTER_COUNT] = {"Nítido", "Nítido suavizado", "Suave", "Scanlines"};
 
+static const char* patch_name(void) {
+  if (!patch_data) return "ninguno (elegir archivo)";
+  return patch_crc == WAVE_PATCH_CRC ? "Español, Traducciones Wave" : "parche propio";
+}
+
 static void menu_label(int i, char* out, size_t n) {
   switch (i) {
   case MI_RESUME: snprintf(out, n, "Continuar"); break;
+  case MI_SAVE: snprintf(out, n, "Guardar estado"); break;
+  case MI_LOAD: snprintf(out, n, "Cargar estado"); break;
+  case MI_CHEATS: snprintf(out, n, "Trucos  ›"); break;
+  case MI_VIDEO: snprintf(out, n, "Imagen  ›"); break;
+  case MI_OPTIONS: snprintf(out, n, "Opciones  ›"); break;
+  case MI_RESET: snprintf(out, n, "Reiniciar juego"); break;
+  case MI_QUIT: snprintf(out, n, "Salir"); break;
+  case MI_BACK: snprintf(out, n, "‹  Volver"); break;
   case MI_FORMAT: snprintf(out, n, "Formato:  ← %s →", cfg.widescreen ? "16:9 panorámico" : cfg.crt ? "Tele de tubo (8:7)" : "4:3 píxel cuadrado"); break;
   case MI_SCALE: snprintf(out, n, "Escalado: ← %s →", scale_names[cfg.scale]); break;
   case MI_FILTER: snprintf(out, n, "Filtro:   ← %s →", filter_names[cfg.filter]); break;
+  case MI_SUIT: snprintf(out, n, "Traje del Dr. Social: ← %s →", suits[cfg.suit].name); break;
   case MI_VOLUME: snprintf(out, n, "Volumen:  ← %d%% →", cfg.volume * 10); break;
   case MI_BUTTONS:
     if (capture_jump) snprintf(out, n, "Saltar:   pulsa el botón que quieras...");
     else snprintf(out, n, "Saltar:   botón %s", button_name(cfg.jump_btn));
     break;
-  case MI_LANG: snprintf(out, n, "Idioma:   ← %s →", cfg.lang ? "Español (Traducciones Wave)" : "Inglés (original)"); break;
   case MI_TURBO: snprintf(out, n, "Ralentizaciones: ← %s →", cfg.turbo ? "Eliminadas" : "Originales"); break;
-  case MI_SAVE: snprintf(out, n, "Guardar estado"); break;
-  case MI_LOAD: snprintf(out, n, "Cargar estado"); break;
-  case MI_RESET: snprintf(out, n, "Reiniciar juego"); break;
-  case MI_QUIT: snprintf(out, n, "Salir"); break;
+  case MI_TRIGGERS: snprintf(out, n, "Gatillos (L2 rebobinar, R2 acelerar): ← %s →", cfg.triggers ? "Sí" : "No"); break;
+  case MI_LANG: snprintf(out, n, "Idioma:   ← %s →", lang_active() ? "Traducido (parche)" : "Inglés (original)"); break;
+  case MI_PATCH: snprintf(out, n, "Parche:   %s", patch_name()); break;
+  case MI_INV: snprintf(out, n, "Invencible:      ← %s →", cfg.cheat_inv ? "Sí" : "No"); break;
+  case MI_LIVES: snprintf(out, n, "Vidas infinitas: ← %s →", cfg.cheat_lives ? "Sí" : "No"); break;
+  case MI_WEAPON: snprintf(out, n, "Arma:     ← %s →", weapon_names[gram(RAM_WEAPON) & 3]); break;
+  case MI_SUB: snprintf(out, n, "Subarma:  ← %s →", gram(RAM_AMMO) ? sub_names[1 + (gram(RAM_SUBWEAPON) & 3)] : sub_names[0]); break;
+  case MI_START: snprintf(out, n, "Ronda:    ← %d-%d →", start_points[start_sel][0] + 1, start_points[start_sel][1] + 1); break;
+  case MI_WARP: snprintf(out, n, "Empezar partida en la ronda %d-%d", start_points[start_sel][0] + 1, start_points[start_sel][1] + 1); break;
   }
 }
 
@@ -256,8 +386,26 @@ static void do_load_state(void) {
   free(buf);
 }
 
+static void set_language(int lang) {
+  if (lang && rom_crc != KNOWN_CRC) { show_toast("La traducción necesita la ROM original sin modificar", 3000); return; }
+  if (lang && !patch_data) {
+#ifdef __ANDROID__
+    show_toast("Elige el archivo del parche (.ips)", 2500);
+    request_patch_file();
+#else
+    show_toast("Copia el parche como patch.ips en la carpeta de datos", 3000);
+#endif
+    return;
+  }
+  cfg.lang = lang;
+  apply_language();
+  sms_reset(&S);
+  menu_set_open(0);
+  show_toast(lang ? "Juego traducido (reiniciado)" : "Juego en inglés (reiniciado)", 2500);
+}
+
 static void menu_change(int dir) {
-  switch (menu_sel) {
+  switch (cur_item()) {
   case MI_FORMAT: {
     // cycle 16:9 -> 4:3 -> CRT 8:7
     int f = cfg.widescreen ? 0 : cfg.crt ? 2 : 1;
@@ -269,17 +417,39 @@ static void menu_change(int dir) {
   }
   case MI_SCALE: cfg.scale = (cfg.scale + dir + SCALE_COUNT) % SCALE_COUNT; break;
   case MI_FILTER: cfg.filter = (cfg.filter + dir + FILTER_COUNT) % FILTER_COUNT; break;
+  case MI_SUIT: cfg.suit = (cfg.suit + dir + SUIT_COUNT) % SUIT_COUNT; apply_suit(); break;
   case MI_VOLUME: cfg.volume += dir; if (cfg.volume < 0) cfg.volume = 0; if (cfg.volume > 10) cfg.volume = 10; break;
   case MI_BUTTONS: capture_jump = 1; return;
   case MI_TURBO: cfg.turbo ^= 1; break;
-  case MI_LANG:
-    if (rom_crc != KNOWN_CRC) { show_toast("La traducción necesita la ROM original sin modificar", 3000); return; }
-    cfg.lang ^= 1;
-    apply_language();
-    sms_reset(&S);
-    menu_set_open(0);
-    show_toast(cfg.lang ? "Juego en español (reiniciado)" : "Juego en inglés (reiniciado)", 2500);
+  case MI_TRIGGERS: cfg.triggers ^= 1; break;
+  case MI_LANG: set_language(!lang_active()); break;
+  case MI_PATCH:
+#ifdef __ANDROID__
+    request_patch_file();
+#else
+    show_toast("Copia el parche como patch.ips en la carpeta de datos", 3000);
+#endif
+    return;
+  case MI_INV:
+    cfg.cheat_inv ^= 1;
+    if (!cfg.cheat_inv && rom_crc == KNOWN_CRC) gram_w(RAM_INVINCIBLE, 0);
     break;
+  case MI_LIVES: cfg.cheat_lives ^= 1; break;
+  case MI_WEAPON:
+    if (!cheats_ok()) { show_toast("Solo durante la partida", 1500); return; }
+    gram_w(RAM_WEAPON, (uint8_t)((gram(RAM_WEAPON) + dir + 4) & 3));
+    mod_request_hud(&E, MOD_HUD_WEAPON);
+    return;
+  case MI_SUB: {
+    if (!cheats_ok()) { show_toast("Solo durante la partida", 1500); return; }
+    int k = gram(RAM_AMMO) ? 1 + (gram(RAM_SUBWEAPON) & 3) : 0;
+    k = (k + dir + 5) % 5;
+    if (k == 0) gram_w(RAM_AMMO, 0);
+    else { gram_w(RAM_SUBWEAPON, (uint8_t)(k - 1)); gram_w(RAM_AMMO, 99); }
+    mod_request_hud(&E, MOD_HUD_SUBWEAPON);
+    return;
+  }
+  case MI_START: start_sel = (start_sel + dir + START_COUNT) % START_COUNT; return;
   default: return;
   }
   cfg_save();
@@ -288,45 +458,67 @@ static void menu_change(int dir) {
 static void menu_set_open(int open) {
   menu_open = open;
   capture_jump = 0;
-  if (open) { menu_sel = 0; SDL_ClearQueuedAudio(audio_dev); }
+  if (open) { menu_page = PAGE_MAIN; menu_sel = 0; SDL_ClearQueuedAudio(audio_dev); }
 }
 
+static void menu_goto(int page) { menu_page = page; menu_sel = 0; capture_jump = 0; }
+
 static void menu_activate(void) {
-  switch (menu_sel) {
+  switch (cur_item()) {
   case MI_RESUME: menu_set_open(0); break;
   case MI_SAVE: do_save_state(); menu_set_open(0); break;
   case MI_LOAD: do_load_state(); menu_set_open(0); break;
+  case MI_CHEATS:
+    if (rom_crc != KNOWN_CRC) { show_toast("Los trucos necesitan la ROM original", 2000); break; }
+    menu_goto(PAGE_CHEATS); break;
+  case MI_VIDEO: menu_goto(PAGE_VIDEO); break;
+  case MI_OPTIONS: menu_goto(PAGE_OPTIONS); break;
+  case MI_BACK: menu_goto(PAGE_MAIN); break;
   case MI_RESET: sms_reset(&S); menu_set_open(0); show_toast("Juego reiniciado", 1500); break;
+  case MI_WARP:
+    sms_reset(&S); warp_pending = 1; menu_set_open(0);
+    show_toast("Pulsa START: la partida empezará en esa ronda", 3000);
+    break;
   case MI_QUIT: running = 0; break;
   default: menu_change(1); break;
   }
 }
 
 static void menu_nav(int dy, int dx, int ok, int back) {
-  if (dy) menu_sel = (menu_sel + dy + MI_COUNT) % MI_COUNT;
+  int n = page_count(menu_page);
+  if (dy) { menu_sel = (menu_sel + dy + n) % n; capture_jump = 0; }
   if (dx) menu_change(dx);
   if (ok) menu_activate();
-  if (back) menu_set_open(0);
+  if (back) { if (menu_page != PAGE_MAIN) menu_goto(PAGE_MAIN); else menu_set_open(0); }
 }
+
+static int rewinding, fast_forward;
 
 static void draw_ui(void) {
   ui_clear();
   if (menu_open) {
+    int n = page_count(menu_page);
     ui_rect(0, 0, UI_W, UI_H, 0xA0000000);
-    int bw = 520, bh = 40 + MI_COUNT * 24 + 30;
+    int bw = 560, bh = 40 + n * 26 + 34;
     int bx = (UI_W - bw) / 2, by = (UI_H - bh) / 2;
     ui_rect(bx, by, bw, bh, 0xE0140C18);
     ui_rect(bx, by, bw, 2, 0xFFB0302A);
     ui_rect(bx, by + bh - 2, bw, 2, 0xFFB0302A);
-    ui_text_center(by + 10, "MASTER OF DARKNESS", 0xE8C060);
-    for (int i = 0; i < MI_COUNT; i++) {
-      char l[128]; menu_label(i, l, sizeof l);
-      int y = by + 40 + i * 24;
-      if (i == menu_sel) ui_rect(bx + 10, y - 3, bw - 20, 22, 0xFF5A1A1A);
+    ui_text_center(by + 10, page_titles[menu_page], 0xE8C060);
+    for (int i = 0; i < n; i++) {
+      char l[160]; menu_label(page_items[menu_page][i], l, sizeof l);
+      int y = by + 40 + i * 26;
+      if (i == menu_sel) ui_rect(bx + 10, y - 3, bw - 20, 24, 0xFF5A1A1A);
       ui_text(bx + 24, y, l, i == menu_sel ? 0xFFFFFF : 0xB8B0A8);
     }
-    ui_text_center(by + bh - 26, cfg.lang ? "v" APP_VERSION " · Recomp por Juanmote · Traducción: Wave"
-                                          : "v" APP_VERSION "  ·  Recomp por Juanmote", 0x807870);
+    const char* foot = "v" APP_VERSION "  ·  Recomp por Juanmote";
+    if (lang_active() && patch_crc == WAVE_PATCH_CRC) foot = "v" APP_VERSION " · Recomp por Juanmote · Traducción: Wave";
+    if (menu_page == PAGE_CHEATS) foot = "Trucos oficiales del juego y selector de armas";
+    ui_text_center(by + bh - 26, foot, 0x807870);
+  } else if (rewinding || fast_forward) {
+    const char* t = rewinding ? "◄◄" : "►►";
+    ui_rect(UI_W - 64, 10, 52, 26, 0xA0000000);
+    ui_text(UI_W - 56, 14, t, 0xFFFFFF);
   }
   if (toast[0] && SDL_GetTicks() < toast_until) {
     int w = text_width(toast) + 24;
@@ -444,6 +636,9 @@ static uint8_t padmap(int b) {
 }
 
 static uint8_t pad_buttons_held;
+static int key_rewind, key_ff;
+static uint8_t trig_l[8], trig_r[8];
+static int any_trigger(const uint8_t* t) { for (int i = 0; i < 8; i++) if (t[i]) return 1; return 0; }
 static uint8_t stick_dirs(void) {
   uint8_t b = 0;
   for (int i = 0; i < 8; i++) {
@@ -473,6 +668,13 @@ static void handle_event(SDL_Event* e) {
   switch (e->type) {
   case SDL_QUIT: running = 0; break;
   case SDL_APP_WILLENTERBACKGROUND: cfg_save(); if (!menu_open) menu_set_open(1); break;
+  case SDL_APP_DIDENTERFOREGROUND:
+    if (waiting_patch) {
+      waiting_patch = 0;
+      uint32_t old = patch_data ? patch_crc : 0;
+      if (load_patch() && patch_crc != old) set_language(1);
+    }
+    break;
   case SDL_KEYDOWN:
     if (e->key.repeat && !menu_open) break;
     if (e->key.keysym.sym == SDLK_ESCAPE || e->key.keysym.sym == SDLK_AC_BACK || e->key.keysym.sym == SDLK_TAB) {
@@ -484,15 +686,21 @@ static void handle_event(SDL_Event* e) {
                k == SDLK_RETURN || k == SDLK_z || k == SDLK_SPACE, k == SDLK_x || k == SDLK_BACKSPACE);
       break;
     }
+    if (e->key.keysym.sym == SDLK_q) { key_rewind = 1; break; }
+    if (e->key.keysym.sym == SDLK_e) { key_ff = 1; break; }
     if (e->key.keysym.sym == SDLK_F5) { do_save_state(); break; }
     if (e->key.keysym.sym == SDLK_F8) { do_load_state(); break; }
     kb_input |= keymap(e->key.keysym.sym);
     break;
-  case SDL_KEYUP: kb_input &= ~keymap(e->key.keysym.sym); break;
+  case SDL_KEYUP:
+    if (e->key.keysym.sym == SDLK_q) key_rewind = 0;
+    if (e->key.keysym.sym == SDLK_e) key_ff = 0;
+    kb_input &= ~keymap(e->key.keysym.sym);
+    break;
   case SDL_CONTROLLERDEVICEADDED: open_pad(e->cdevice.which); break;
   case SDL_CONTROLLERDEVICEREMOVED: {
     int s = pad_slot(e->cdevice.which);
-    if (s >= 0) { SDL_GameControllerClose(pads[s]); pads[s] = NULL; stick_x[s] = stick_y[s] = 0; }
+    if (s >= 0) { SDL_GameControllerClose(pads[s]); pads[s] = NULL; stick_x[s] = stick_y[s] = 0; trig_l[s] = trig_r[s] = 0; }
     break;
   }
   case SDL_CONTROLLERBUTTONDOWN: {
@@ -522,6 +730,8 @@ static void handle_event(SDL_Event* e) {
     if (s < 0) break;
     if (e->caxis.axis == SDL_CONTROLLER_AXIS_LEFTX) stick_x[s] = e->caxis.value;
     if (e->caxis.axis == SDL_CONTROLLER_AXIS_LEFTY) stick_y[s] = e->caxis.value;
+    if (e->caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERLEFT) trig_l[s] = e->caxis.value > 12000;
+    if (e->caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERRIGHT) trig_r[s] = e->caxis.value > 12000;
     break;
   }
   }
@@ -585,6 +795,35 @@ static void error_screen(void) {
   }
 }
 
+// ---------------------------------------------------------------- rewind
+// A snapshot every 2 frames, the last 20 seconds. The enhancement state that decides
+// spawning goes with it, so rewinding does not create or lose enemies.
+#define RW_SLOTS 600
+typedef struct { typeof(E.spawn) spawn; uint8_t seen_in[46]; } rw_extra_t;
+static uint8_t* rw_buf;
+static rw_extra_t rw_extra[RW_SLOTS];
+static int rw_head, rw_count, rw_tick;
+static size_t rw_size;
+
+static void rw_push(void) {
+  if (!rw_buf) { rw_size = sms_state_size(); rw_buf = malloc(rw_size * RW_SLOTS); if (!rw_buf) return; }
+  rw_head = (rw_head + 1) % RW_SLOTS;
+  sms_save_state(&S, rw_buf + rw_size * rw_head);
+  memcpy(rw_extra[rw_head].spawn, E.spawn, sizeof E.spawn);
+  memcpy(rw_extra[rw_head].seen_in, E.seen_in, sizeof E.seen_in);
+  if (rw_count < RW_SLOTS) rw_count++;
+}
+
+static int rw_pop(void) {
+  if (!rw_buf || rw_count == 0) return 0;
+  sms_load_state(&S, rw_buf + rw_size * rw_head, rw_size);
+  memcpy(E.spawn, rw_extra[rw_head].spawn, sizeof E.spawn);
+  memcpy(E.seen_in, rw_extra[rw_head].seen_in, sizeof E.seen_in);
+  rw_head = (rw_head - 1 + RW_SLOTS) % RW_SLOTS;
+  rw_count--;
+  return 1;
+}
+
 // ---------------------------------------------------------------- main
 int main(int argc, char** argv) {
   SDL_SetHint(SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1");
@@ -618,7 +857,9 @@ int main(int argc, char** argv) {
   audio_dev = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
   if (audio_dev) SDL_PauseAudioDevice(audio_dev, 0);
 
+  load_patch();
   apply_language();
+  apply_suit();
   sms_init(&S, rom, (int)rom_size);
   mod_enhance_attach(&S, &E);
   mod_enhance_set_wide(&E, cfg.widescreen, MOD_WIDE_EXT);
@@ -655,7 +896,7 @@ int main(int argc, char** argv) {
       sms_run_frame(&S);
       mod_enhance_frame(&S, &E);
     }
-    if (getenv("MOD_MENU")) { menu_open = 1; menu_sel = atoi(getenv("MOD_MENU")); }
+    if (getenv("MOD_MENU")) { menu_open = 1; menu_sel = atoi(getenv("MOD_MENU")); if (getenv("MOD_PAGE")) menu_page = atoi(getenv("MOD_PAGE")); }
     toast_until = 0;
     present();
     int ww, wh; SDL_GetRendererOutputSize(ren, &ww, &wh);
@@ -673,12 +914,15 @@ int main(int argc, char** argv) {
     double dt = (now - last) / freq;
     last = now;
     if (dt > 0.1) dt = 0.1;
+    rewinding = !menu_open && cfg.triggers && (any_trigger(trig_l) || key_rewind);
+    fast_forward = !menu_open && !rewinding && cfg.triggers && (any_trigger(trig_r) || key_ff);
     if (!menu_open) {
       // keep the audio queue around 3 frames by nudging the emulation speed slightly
       double queued = audio_dev ? SDL_GetQueuedAudioSize(audio_dev) / 2.0 / SMS_SAMPLES_PER_FRAME : 3.0;
       double speed = 1.0 + 0.01 * (3.0 - queued);
       if (speed < 0.98) speed = 0.98;
       if (speed > 1.02) speed = 1.02;
+      if (rewinding || fast_forward) speed = 1.0;
       acc += dt * speed;
       int frames = 0;
       while (acc >= frame_time && frames < 4) {
@@ -687,9 +931,19 @@ int main(int argc, char** argv) {
         S.input = kb_input | pad_buttons_held | stick_dirs();
         // faster CPU only while playing: menus and story screens time themselves with CPU loops
         S.cpu_mult = (cfg.turbo && mod_is_gameplay(&S)) ? 2 : 1;
-        sms_run_frame(&S);
-        mod_enhance_frame(&S, &E);
-        if (audio_dev && queued < 8) {
+        if (rewinding) {
+          // one snapshot back (2 frames) per frame shown, then one frame to get the picture
+          if (rw_pop()) { S.input = 0; sms_run_frame(&S); mod_enhance_frame(&S, &E); }
+          continue;
+        }
+        int steps = fast_forward ? 4 : 1;
+        for (int k = 0; k < steps; k++) {
+          cheats_frame();
+          sms_run_frame(&S);
+          mod_enhance_frame(&S, &E);
+          if (cfg.triggers && (++rw_tick & 1) == 0) rw_push();
+        }
+        if (audio_dev && queued < 8 && !fast_forward) {
           for (int i = 0; i < SMS_SAMPLES_PER_FRAME; i++) mixbuf[i] = (int16_t)(S.audio[i] * cfg.volume / 10);
           SDL_QueueAudio(audio_dev, mixbuf, sizeof mixbuf);
         }

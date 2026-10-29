@@ -26,6 +26,10 @@ bool mod_is_gameplay(const sms_t* s);
 // on each side right now (depends on where the view is held at section edges).
 bool mod_visible_margins(const sms_t* s, int ext, int* left_px, int* right_px);
 
+// Colours for the hero's sprite (sprite tiles 1..0x1F): new SMS colour (6 bits) for each of the
+// 16 sprite palette entries, or 0xFF to keep it. NULL: original colours.
+void mod_set_hero_colors(const uint8_t* map16);
+
 void mod_render(const sms_t* s, uint32_t* out, int pitch, int ext, mod_wide_info_t* info,
                 const mod_piece_t* pieces, int n_pieces);
 

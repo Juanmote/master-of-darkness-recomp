@@ -36,10 +36,17 @@ typedef struct {
   struct { int next, last, step; bool active; uint16_t list_base;
            int edge_r, edge_l, edge_cam; bool edge_ok_r, edge_ok_l; } spawn[2];
   uint8_t seen_in[46];       // object slot has been inside the original picture
+  uint8_t hud_pending;       // MOD_HUD_* parts of the status bar to redraw (done by the game's own code)
   int margin_l, margin_r;    // playable pixels visible beyond the original picture (per side)
 } mod_enhance_t;
 
+#define MOD_HUD_WEAPON 1
+#define MOD_HUD_SUBWEAPON 2
+#define MOD_HUD_LIVES 4
+
 bool mod_enhance_compatible(const sms_t* s);
+// Asks the game to redraw parts of the status bar (after a cheat changed weapons or lives).
+void mod_request_hud(mod_enhance_t* e, int parts);
 void mod_enhance_attach(sms_t* s, mod_enhance_t* e);
 void mod_enhance_set_wide(mod_enhance_t* e, bool wide, int ext);
 // Call once per frame after sms_run_frame: selects e->shown / e->n_shown.
