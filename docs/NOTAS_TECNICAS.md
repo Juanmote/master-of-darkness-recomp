@@ -159,3 +159,10 @@ Cabecera TMR SEGA válida, checksum 6FE6 correcto, región SMS Export, mapper Se
 - Rebobinar (L2) y acelerar ×4 (R2): instantánea cada 2 fotogramas, 20 s (≈15 MB), con el estado de apariciones.
 - Color del traje: el núcleo guarda el tile de sprite de cada píxel (`fb_sprtile`); los tiles 0x01-0x1F son del
   protagonista. Se cambian las entradas 10 (claro) y 11 (oscuro) de la paleta de sprites solo en sus píxeles.
+
+## v0.5.1
+- Arma/subarma: se pueden cambiar varias veces seguidas en el menú (el redibujado del marcador se acumula y se
+  hace al volver al juego).
+- Nombres de botones sin dirección (A/B/X/Y).
+- Botón de subarma configurable (`sub_btn`, por defecto Y): envía arriba + ataque, como pide el juego.
+  El estado del mando se guarda como máscara de botones pulsados y la entrada se calcula cada fotograma.

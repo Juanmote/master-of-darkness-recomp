@@ -9,7 +9,7 @@
 #include "../game/mod_enhance.h"
 #include "font_data.h"
 
-#define APP_VERSION "0.5.0"
+#define APP_VERSION "0.5.1"
 #define KNOWN_CRC 0x96FB4D4Bu
 #define UI_W 640
 #define UI_H 360
@@ -26,6 +26,7 @@ typedef struct {
   int filter;
   int volume;      // 0..10
   int jump_btn;    // SDL controller button that jumps (the other face buttons attack)
+  int sub_btn;     // button that throws the subweapon (up + attack), -1 none
   int turbo;       // double CPU speed: removes the original slowdowns
   int lang;        // 0: original (English), 1: translation patch chosen by the user
   int suit;        // hero colours (0 = original)
@@ -34,7 +35,7 @@ typedef struct {
   int triggers;    // L2 rewinds, R2 fast-forwards
 } config_t;
 
-static config_t cfg = {1, 0, SCALE_FIT, FILTER_SHARP_SMOOTH, 8, SDL_CONTROLLER_BUTTON_A, 1, 0, 0, 0, 0, 1};
+static config_t cfg = {1, 0, SCALE_FIT, FILTER_SHARP_SMOOTH, 8, SDL_CONTROLLER_BUTTON_A, SDL_CONTROLLER_BUTTON_Y, 1, 0, 0, 0, 0, 1};
 static char pref_path[1024];
 
 static void cfg_path(char* out, size_t n, const char* name) { snprintf(out, n, "%s%s", pref_path, name); }
@@ -54,6 +55,7 @@ static void cfg_load(void) {
     else if (sscanf(line, "volume=%d", &v) == 1 && v >= 0 && v <= 10) cfg.volume = v;
     else if (sscanf(line, "swap_ab=%d", &v) == 1 && !jump_seen) cfg.jump_btn = v ? SDL_CONTROLLER_BUTTON_B : SDL_CONTROLLER_BUTTON_A;
     else if (sscanf(line, "jump_btn=%d", &v) == 1 && v >= SDL_CONTROLLER_BUTTON_A && v <= SDL_CONTROLLER_BUTTON_Y) { cfg.jump_btn = v; jump_seen = 1; }
+    else if (sscanf(line, "sub_btn=%d", &v) == 1 && v >= -1 && v <= SDL_CONTROLLER_BUTTON_Y) cfg.sub_btn = v;
     else if (sscanf(line, "turbo=%d", &v) == 1) cfg.turbo = v ? 1 : 0;
     else if (sscanf(line, "lang=%d", &v) == 1) cfg.lang = v ? 1 : 0;
     else if (sscanf(line, "suit=%d", &v) == 1 && v >= 0 && v < 16) cfg.suit = v;
@@ -62,15 +64,16 @@ static void cfg_load(void) {
     else if (sscanf(line, "triggers=%d", &v) == 1) cfg.triggers = v ? 1 : 0;
   }
   fclose(f);
+  if (cfg.sub_btn == cfg.jump_btn) cfg.sub_btn = cfg.jump_btn == SDL_CONTROLLER_BUTTON_Y ? SDL_CONTROLLER_BUTTON_X : SDL_CONTROLLER_BUTTON_Y;
 }
 
 static void cfg_save(void) {
   char p[1100]; cfg_path(p, sizeof p, "config.ini");
   FILE* f = fopen(p, "w");
   if (!f) return;
-  fprintf(f, "widescreen=%d\ncrt=%d\nscale=%d\nfilter=%d\nvolume=%d\njump_btn=%d\nturbo=%d\nlang=%d\n"
+  fprintf(f, "widescreen=%d\ncrt=%d\nscale=%d\nfilter=%d\nvolume=%d\njump_btn=%d\nsub_btn=%d\nturbo=%d\nlang=%d\n"
              "suit=%d\ncheat_inv=%d\ncheat_lives=%d\ntriggers=%d\n",
-          cfg.widescreen, cfg.crt, cfg.scale, cfg.filter, cfg.volume, cfg.jump_btn, cfg.turbo, cfg.lang,
+          cfg.widescreen, cfg.crt, cfg.scale, cfg.filter, cfg.volume, cfg.jump_btn, cfg.sub_btn, cfg.turbo, cfg.lang,
           cfg.suit, cfg.cheat_inv, cfg.cheat_lives, cfg.triggers);
   fclose(f);
 }
@@ -275,7 +278,7 @@ static const uint8_t start_points[][2] = {{0,0},{0,1},{0,2},{1,0},{1,1},{1,2},{2
 static int start_sel;
 static int warp_pending;   // keep the chosen round in RAM until the level is running
 
-static int cheats_ok(void) { return E.hud_pending == 0 && rom_crc == KNOWN_CRC && mod_is_gameplay(&S); }
+static int cheats_ok(void) { return rom_crc == KNOWN_CRC && mod_is_gameplay(&S); }
 
 static void cheats_frame(void) {
   if (rom_crc != KNOWN_CRC) return;
@@ -293,7 +296,7 @@ static void cheats_frame(void) {
 enum {
   MI_RESUME, MI_SAVE, MI_LOAD, MI_CHEATS, MI_VIDEO, MI_OPTIONS, MI_RESET, MI_QUIT,
   MI_FORMAT, MI_SCALE, MI_FILTER, MI_SUIT,
-  MI_VOLUME, MI_BUTTONS, MI_TURBO, MI_TRIGGERS, MI_LANG, MI_PATCH,
+  MI_VOLUME, MI_BUTTONS, MI_SUBBTN, MI_TURBO, MI_TRIGGERS, MI_LANG, MI_PATCH,
   MI_INV, MI_LIVES, MI_WEAPON, MI_SUB, MI_START, MI_WARP,
   MI_BACK
 };
@@ -301,7 +304,7 @@ enum { PAGE_MAIN, PAGE_VIDEO, PAGE_OPTIONS, PAGE_CHEATS };
 static const int page_items[4][10] = {
   {MI_RESUME, MI_SAVE, MI_LOAD, MI_CHEATS, MI_VIDEO, MI_OPTIONS, MI_RESET, MI_QUIT, -1},
   {MI_FORMAT, MI_SCALE, MI_FILTER, MI_SUIT, MI_BACK, -1},
-  {MI_VOLUME, MI_BUTTONS, MI_TURBO, MI_TRIGGERS, MI_LANG, MI_PATCH, MI_BACK, -1},
+  {MI_VOLUME, MI_BUTTONS, MI_SUBBTN, MI_TURBO, MI_TRIGGERS, MI_LANG, MI_PATCH, MI_BACK, -1},
   {MI_INV, MI_LIVES, MI_WEAPON, MI_SUB, MI_START, MI_WARP, MI_BACK, -1},
 };
 static const char* page_titles[4] = {"MASTER OF DARKNESS", "IMAGEN", "OPCIONES", "TRUCOS"};
@@ -311,14 +314,14 @@ static int page_count(int p) { int n = 0; while (n < 10 && page_items[p][n] >= 0
 static int cur_item(void) { return page_items[menu_page][menu_sel]; }
 
 static void menu_set_open(int open);
-static int capture_jump;   // waiting for the player to press the jump button
+static int capture_jump;   // waiting for the player to press a button: 1 jump, 2 subweapon
 
 static const char* button_name(int b) {
   switch (b) {
-  case SDL_CONTROLLER_BUTTON_A: return "A (abajo)";
-  case SDL_CONTROLLER_BUTTON_B: return "B (derecha)";
-  case SDL_CONTROLLER_BUTTON_X: return "X (izquierda)";
-  case SDL_CONTROLLER_BUTTON_Y: return "Y (arriba)";
+  case SDL_CONTROLLER_BUTTON_A: return "A";
+  case SDL_CONTROLLER_BUTTON_B: return "B";
+  case SDL_CONTROLLER_BUTTON_X: return "X";
+  case SDL_CONTROLLER_BUTTON_Y: return "Y";
   }
   return "?";
 }
@@ -348,8 +351,13 @@ static void menu_label(int i, char* out, size_t n) {
   case MI_SUIT: snprintf(out, n, "Traje del Dr. Social: ← %s →", suits[cfg.suit].name); break;
   case MI_VOLUME: snprintf(out, n, "Volumen:  ← %d%% →", cfg.volume * 10); break;
   case MI_BUTTONS:
-    if (capture_jump) snprintf(out, n, "Saltar:   pulsa el botón que quieras...");
+    if (capture_jump == 1) snprintf(out, n, "Saltar:   pulsa el botón que quieras...");
     else snprintf(out, n, "Saltar:   botón %s", button_name(cfg.jump_btn));
+    break;
+  case MI_SUBBTN:
+    if (capture_jump == 2) snprintf(out, n, "Subarma:  pulsa el botón que quieras...");
+    else if (cfg.sub_btn < 0) snprintf(out, n, "Subarma:  sin botón (arriba + ataque)");
+    else snprintf(out, n, "Subarma:  botón %s (o arriba + ataque)", button_name(cfg.sub_btn));
     break;
   case MI_TURBO: snprintf(out, n, "Ralentizaciones: ← %s →", cfg.turbo ? "Eliminadas" : "Originales"); break;
   case MI_TRIGGERS: snprintf(out, n, "Gatillos (L2 rebobinar, R2 acelerar): ← %s →", cfg.triggers ? "Sí" : "No"); break;
@@ -420,6 +428,7 @@ static void menu_change(int dir) {
   case MI_SUIT: cfg.suit = (cfg.suit + dir + SUIT_COUNT) % SUIT_COUNT; apply_suit(); break;
   case MI_VOLUME: cfg.volume += dir; if (cfg.volume < 0) cfg.volume = 0; if (cfg.volume > 10) cfg.volume = 10; break;
   case MI_BUTTONS: capture_jump = 1; return;
+  case MI_SUBBTN: capture_jump = 2; return;
   case MI_TURBO: cfg.turbo ^= 1; break;
   case MI_TRIGGERS: cfg.triggers ^= 1; break;
   case MI_LANG: set_language(!lang_active()); break;
@@ -624,6 +633,7 @@ static int is_face(int b) { return b >= SDL_CONTROLLER_BUTTON_A && b <= SDL_CONT
 
 static uint8_t padmap(int b) {
   if (b == cfg.jump_btn) return BTN_2;
+  if (b == cfg.sub_btn) return BTN_UP | BTN_1;   // the game throws the subweapon with up + attack
   if (is_face(b)) return BTN_1;   // every other face button attacks
   switch (b) {
   case SDL_CONTROLLER_BUTTON_DPAD_UP: return BTN_UP;
@@ -635,7 +645,12 @@ static uint8_t padmap(int b) {
   return 0;
 }
 
-static uint8_t pad_buttons_held;
+static uint32_t pad_held_mask;   // SDL controller buttons held (any pad)
+static uint8_t pad_buttons(void) {
+  uint8_t r = 0;
+  for (int b = 0; b < 32; b++) if (pad_held_mask & (1u << b)) r |= padmap(b);
+  return r;
+}
 static int key_rewind, key_ff;
 static uint8_t trig_l[8], trig_r[8];
 static int any_trigger(const uint8_t* t) { for (int i = 0; i < 8; i++) if (t[i]) return 1; return 0; }
@@ -709,7 +724,18 @@ static void handle_event(SDL_Event* e) {
       menu_set_open(!menu_open); break;
     }
     if (menu_open && capture_jump) {
-      if (is_face(b)) { cfg.jump_btn = b; cfg_save(); capture_jump = 0; show_toast("Botón de saltar guardado", 1500); }
+      if (is_face(b)) {
+        if (capture_jump == 1) {
+          if (b == cfg.sub_btn) cfg.sub_btn = cfg.jump_btn;   // swap them
+          cfg.jump_btn = b;
+          show_toast("Botón de saltar guardado", 1500);
+        } else {
+          if (b == cfg.jump_btn) { show_toast("Ese botón ya es el de saltar", 1500); break; }
+          cfg.sub_btn = b;
+          show_toast("Botón de subarma guardado", 1500);
+        }
+        cfg_save(); capture_jump = 0;
+      }
       else if (b == SDL_CONTROLLER_BUTTON_START) capture_jump = 0;
       break;
     }
@@ -721,10 +747,12 @@ static void handle_event(SDL_Event* e) {
                b == ok_btn || b == SDL_CONTROLLER_BUTTON_START, b == back_btn);
       break;
     }
-    pad_buttons_held |= padmap(b);
+    if (b >= 0 && b < 32) pad_held_mask |= 1u << b;
     break;
   }
-  case SDL_CONTROLLERBUTTONUP: pad_buttons_held &= ~padmap(e->cbutton.button); break;
+  case SDL_CONTROLLERBUTTONUP:
+    if (e->cbutton.button < 32) pad_held_mask &= ~(1u << e->cbutton.button);
+    break;
   case SDL_CONTROLLERAXISMOTION: {
     int s = pad_slot(e->caxis.which);
     if (s < 0) break;
@@ -928,7 +956,7 @@ int main(int argc, char** argv) {
       while (acc >= frame_time && frames < 4) {
         acc -= frame_time;
         frames++;
-        S.input = kb_input | pad_buttons_held | stick_dirs();
+        S.input = kb_input | pad_buttons() | stick_dirs();
         // faster CPU only while playing: menus and story screens time themselves with CPU loops
         S.cpu_mult = (cfg.turbo && mod_is_gameplay(&S)) ? 2 : 1;
         if (rewinding) {
