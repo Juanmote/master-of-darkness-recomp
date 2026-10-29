@@ -166,3 +166,17 @@ Cabecera TMR SEGA válida, checksum 6FE6 correcto, región SMS Export, mapper Se
 - Nombres de botones sin dirección (A/B/X/Y).
 - Botón de subarma configurable (`sub_btn`, por defecto Y): envía arriba + ataque, como pide el juego.
   El estado del mando se guarda como máscara de botones pulsados y la entrada se calcula cada fotograma.
+
+## v0.6.0 — página "Juego"
+- Nombres: armas Cuchillo, Estoque, Espada, Hacha; subarmas Pistola, Bumerán, Estacas, Bombas.
+- Reaparición de enemigos (`respawn`): cada entrada de las listas de aparición nombra el slot que usa
+  (3CC9/52E0: DE = slot, se crea si el slot está libre). Se anota qué entrada creó cada slot (3CDD/52F4) y, al
+  empezar cada pasada de sprites, los slots que se han vaciado: si no fue la limpieza fuera de pantalla
+  (5238/523D) y el objeto estaba a la vista, cuenta como muerto. En 3CD0/52E7 (OR A tras leer el slot) una
+  entrada muerta ve el slot "ocupado". "No": hasta cambiar de tramo o perder una vida. "Al volver a la zona":
+  hasta que la cámara se aleja más de 342 px del punto de aparición.
+- Dificultad: daño al jugador en 46F1 (B), a jefes en 6198 (B), a enemigos en 3DD6 (SUB (IY+1), se cambia el
+  byte solo para esa instrucción y se restaura en 3DD9). Mitad con acumulador (un golpe de 1 alterna 0/1).
+- Doble salto: estados del protagonista CA31 (0 suelo, 3 subiendo, 2 cayendo), CA2B fotograma del arco,
+  C701 botones pulsados en el fotograma. Al pulsar saltar en el aire: estado 3, arco a 0, velocidad 0 e Y
+  alineada a 8 (la comprobación de suelo necesita la misma alineación que un salto desde el suelo).

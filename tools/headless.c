@@ -124,6 +124,9 @@ int main(int argc, char** argv) {
 #else
   if (use_recomp) { fprintf(stderr, "built without recompiled code (run tools/recomp/recomp.py first)\n"); return 1; }
 #endif
+  if (getenv("DJ")) E.double_jump = true;
+  if (getenv("DIFF")) E.difficulty = atoi(getenv("DIFF")); else E.difficulty = 1;
+  if (getenv("RESPAWN")) E.respawn = atoi(getenv("RESPAWN"));
   if (getenv("HERO")) { static uint8_t hm[16]; memset(hm, 0xFF, 16); const char* h = getenv("HERO"); int i, c, n; while (sscanf(h, "%x:%x%n", &i, &c, &n) == 2) { hm[i & 15] = c; h += n; if (*h == ',') h++; else break; } mod_set_hero_colors(hm); }
   if (getenv("TRACE")) { sscanf(getenv("TRACE"), "%lu-%lu", &tr_from, &tr_to); S.hooks.on_exec = h_exec; }
   if (getenv("SATLINES")) { satlines = 1; S.hooks.on_vram_write = h_vramw; }

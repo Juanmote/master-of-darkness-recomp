@@ -9,7 +9,7 @@
 #include "../game/mod_enhance.h"
 #include "font_data.h"
 
-#define APP_VERSION "0.5.1"
+#define APP_VERSION "0.6.0"
 #define KNOWN_CRC 0x96FB4D4Bu
 #define UI_W 640
 #define UI_H 360
@@ -33,9 +33,12 @@ typedef struct {
   int cheat_inv;   // official "hit check" cheat: no damage
   int cheat_lives; // lives never run out
   int triggers;    // L2 rewinds, R2 fast-forwards
+  int difficulty;  // MOD_DIFF_*
+  int respawn;     // MOD_RESPAWN_*
+  int dbl_jump;
 } config_t;
 
-static config_t cfg = {1, 0, SCALE_FIT, FILTER_SHARP_SMOOTH, 8, SDL_CONTROLLER_BUTTON_A, SDL_CONTROLLER_BUTTON_Y, 1, 0, 0, 0, 0, 1};
+static config_t cfg = {1, 0, SCALE_FIT, FILTER_SHARP_SMOOTH, 8, SDL_CONTROLLER_BUTTON_A, SDL_CONTROLLER_BUTTON_Y, 1, 0, 0, 0, 0, 1, MOD_DIFF_NORMAL, MOD_RESPAWN_ON, 0};
 static char pref_path[1024];
 
 static void cfg_path(char* out, size_t n, const char* name) { snprintf(out, n, "%s%s", pref_path, name); }
@@ -62,6 +65,9 @@ static void cfg_load(void) {
     else if (sscanf(line, "cheat_inv=%d", &v) == 1) cfg.cheat_inv = v ? 1 : 0;
     else if (sscanf(line, "cheat_lives=%d", &v) == 1) cfg.cheat_lives = v ? 1 : 0;
     else if (sscanf(line, "triggers=%d", &v) == 1) cfg.triggers = v ? 1 : 0;
+    else if (sscanf(line, "difficulty=%d", &v) == 1 && v >= 0 && v <= 2) cfg.difficulty = v;
+    else if (sscanf(line, "respawn=%d", &v) == 1 && v >= 0 && v <= 2) cfg.respawn = v;
+    else if (sscanf(line, "dbl_jump=%d", &v) == 1) cfg.dbl_jump = v ? 1 : 0;
   }
   fclose(f);
   if (cfg.sub_btn == cfg.jump_btn) cfg.sub_btn = cfg.jump_btn == SDL_CONTROLLER_BUTTON_Y ? SDL_CONTROLLER_BUTTON_X : SDL_CONTROLLER_BUTTON_Y;
@@ -72,9 +78,9 @@ static void cfg_save(void) {
   FILE* f = fopen(p, "w");
   if (!f) return;
   fprintf(f, "widescreen=%d\ncrt=%d\nscale=%d\nfilter=%d\nvolume=%d\njump_btn=%d\nsub_btn=%d\nturbo=%d\nlang=%d\n"
-             "suit=%d\ncheat_inv=%d\ncheat_lives=%d\ntriggers=%d\n",
+             "suit=%d\ncheat_inv=%d\ncheat_lives=%d\ntriggers=%d\ndifficulty=%d\nrespawn=%d\ndbl_jump=%d\n",
           cfg.widescreen, cfg.crt, cfg.scale, cfg.filter, cfg.volume, cfg.jump_btn, cfg.sub_btn, cfg.turbo, cfg.lang,
-          cfg.suit, cfg.cheat_inv, cfg.cheat_lives, cfg.triggers);
+          cfg.suit, cfg.cheat_inv, cfg.cheat_lives, cfg.triggers, cfg.difficulty, cfg.respawn, cfg.dbl_jump);
   fclose(f);
 }
 
@@ -271,8 +277,8 @@ static void apply_suit(void) {
 static inline uint8_t gram(uint16_t a) { return S.st.ram[a & 0x1FFF]; }
 static inline void gram_w(uint16_t a, uint8_t v) { S.st.ram[a & 0x1FFF] = v; }
 
-static const char* weapon_names[4] = {"Cuchillo", "Pico", "Estoque", "Hacha"};
-static const char* sub_names[5] = {"Ninguna", "Pistola", "Bumerán", "Dardos", "Bombas"};
+static const char* weapon_names[4] = {"Cuchillo", "Estoque", "Espada", "Hacha"};
+static const char* sub_names[5] = {"Ninguna", "Pistola", "Bumerán", "Estacas", "Bombas"};
 static const uint8_t start_points[][2] = {{0,0},{0,1},{0,2},{1,0},{1,1},{1,2},{2,0},{2,1},{2,2},{3,0},{3,1},{3,2},{4,0}};
 #define START_COUNT (int)(sizeof start_points / sizeof start_points[0])
 static int start_sel;
@@ -294,20 +300,30 @@ static void cheats_frame(void) {
 
 // ---------------------------------------------------------------- menu
 enum {
-  MI_RESUME, MI_SAVE, MI_LOAD, MI_CHEATS, MI_VIDEO, MI_OPTIONS, MI_RESET, MI_QUIT,
+  MI_RESUME, MI_SAVE, MI_LOAD, MI_GAME, MI_CHEATS, MI_VIDEO, MI_OPTIONS, MI_RESET, MI_QUIT,
+  MI_DIFF, MI_RESPAWN, MI_DJUMP,
   MI_FORMAT, MI_SCALE, MI_FILTER, MI_SUIT,
   MI_VOLUME, MI_BUTTONS, MI_SUBBTN, MI_TURBO, MI_TRIGGERS, MI_LANG, MI_PATCH,
   MI_INV, MI_LIVES, MI_WEAPON, MI_SUB, MI_START, MI_WARP,
   MI_BACK
 };
-enum { PAGE_MAIN, PAGE_VIDEO, PAGE_OPTIONS, PAGE_CHEATS };
-static const int page_items[4][10] = {
-  {MI_RESUME, MI_SAVE, MI_LOAD, MI_CHEATS, MI_VIDEO, MI_OPTIONS, MI_RESET, MI_QUIT, -1},
+enum { PAGE_MAIN, PAGE_VIDEO, PAGE_OPTIONS, PAGE_CHEATS, PAGE_GAME };
+static const int page_items[5][10] = {
+  {MI_RESUME, MI_SAVE, MI_LOAD, MI_GAME, MI_CHEATS, MI_VIDEO, MI_OPTIONS, MI_RESET, MI_QUIT, -1},
   {MI_FORMAT, MI_SCALE, MI_FILTER, MI_SUIT, MI_BACK, -1},
-  {MI_VOLUME, MI_BUTTONS, MI_SUBBTN, MI_TURBO, MI_TRIGGERS, MI_LANG, MI_PATCH, MI_BACK, -1},
+  {MI_VOLUME, MI_BUTTONS, MI_SUBBTN, MI_TRIGGERS, MI_LANG, MI_PATCH, MI_BACK, -1},
   {MI_INV, MI_LIVES, MI_WEAPON, MI_SUB, MI_START, MI_WARP, MI_BACK, -1},
+  {MI_DIFF, MI_RESPAWN, MI_DJUMP, MI_TURBO, MI_BACK, -1},
 };
-static const char* page_titles[4] = {"MASTER OF DARKNESS", "IMAGEN", "OPCIONES", "TRUCOS"};
+static const char* page_titles[5] = {"MASTER OF DARKNESS", "IMAGEN", "OPCIONES", "TRUCOS", "JUEGO"};
+static const char* diff_names[3] = {"Fácil", "Normal", "Difícil"};
+static const char* respawn_names[3] = {"Sí (original)", "No", "Al volver a la zona"};
+
+static void apply_game_options(void) {
+  E.difficulty = cfg.difficulty;
+  E.respawn = cfg.respawn;
+  E.double_jump = cfg.dbl_jump != 0;
+}
 static int menu_page;
 
 static int page_count(int p) { int n = 0; while (n < 10 && page_items[p][n] >= 0) n++; return n; }
@@ -340,6 +356,10 @@ static void menu_label(int i, char* out, size_t n) {
   case MI_SAVE: snprintf(out, n, "Guardar estado"); break;
   case MI_LOAD: snprintf(out, n, "Cargar estado"); break;
   case MI_CHEATS: snprintf(out, n, "Trucos  ›"); break;
+  case MI_GAME: snprintf(out, n, "Juego  ›"); break;
+  case MI_DIFF: snprintf(out, n, "Dificultad:  ← %s →", diff_names[cfg.difficulty]); break;
+  case MI_RESPAWN: snprintf(out, n, "Reaparición de enemigos: ← %s →", respawn_names[cfg.respawn]); break;
+  case MI_DJUMP: snprintf(out, n, "Doble salto: ← %s →", cfg.dbl_jump ? "Sí" : "No"); break;
   case MI_VIDEO: snprintf(out, n, "Imagen  ›"); break;
   case MI_OPTIONS: snprintf(out, n, "Opciones  ›"); break;
   case MI_RESET: snprintf(out, n, "Reiniciar juego"); break;
@@ -431,6 +451,9 @@ static void menu_change(int dir) {
   case MI_SUBBTN: capture_jump = 2; return;
   case MI_TURBO: cfg.turbo ^= 1; break;
   case MI_TRIGGERS: cfg.triggers ^= 1; break;
+  case MI_DIFF: cfg.difficulty = (cfg.difficulty + dir + 3) % 3; apply_game_options(); break;
+  case MI_RESPAWN: cfg.respawn = (cfg.respawn + dir + 3) % 3; apply_game_options(); break;
+  case MI_DJUMP: cfg.dbl_jump ^= 1; apply_game_options(); break;
   case MI_LANG: set_language(!lang_active()); break;
   case MI_PATCH:
 #ifdef __ANDROID__
@@ -481,6 +504,9 @@ static void menu_activate(void) {
     if (rom_crc != KNOWN_CRC) { show_toast("Los trucos necesitan la ROM original", 2000); break; }
     menu_goto(PAGE_CHEATS); break;
   case MI_VIDEO: menu_goto(PAGE_VIDEO); break;
+  case MI_GAME:
+    if (rom_crc != KNOWN_CRC) { show_toast("Estas opciones necesitan la ROM original", 2000); break; }
+    menu_goto(PAGE_GAME); break;
   case MI_OPTIONS: menu_goto(PAGE_OPTIONS); break;
   case MI_BACK: menu_goto(PAGE_MAIN); break;
   case MI_RESET: sms_reset(&S); menu_set_open(0); show_toast("Juego reiniciado", 1500); break;
@@ -523,6 +549,12 @@ static void draw_ui(void) {
     const char* foot = "v" APP_VERSION "  ·  Recomp por Juanmote";
     if (lang_active() && patch_crc == WAVE_PATCH_CRC) foot = "v" APP_VERSION " · Recomp por Juanmote · Traducción: Wave";
     if (menu_page == PAGE_CHEATS) foot = "Trucos oficiales del juego y selector de armas";
+    if (menu_page == PAGE_GAME) {
+      int it = cur_item();
+      foot = it == MI_DIFF ? "Fácil: recibes la mitad, pegas el doble" :
+             it == MI_RESPAWN ? "Si los enemigos que matas vuelven a salir" :
+             it == MI_DJUMP ? "Pulsa saltar otra vez en el aire" : "Juego";
+    }
     ui_text_center(by + bh - 26, foot, 0x807870);
   } else if (rewinding || fast_forward) {
     const char* t = rewinding ? "◄◄" : "►►";
@@ -891,6 +923,7 @@ int main(int argc, char** argv) {
   sms_init(&S, rom, (int)rom_size);
   mod_enhance_attach(&S, &E);
   mod_enhance_set_wide(&E, cfg.widescreen, MOD_WIDE_EXT);
+  apply_game_options();
   if (rom_crc != KNOWN_CRC) show_toast("ROM no reconocida: algunas mejoras pueden fallar", 4000);
   else show_toast("Pulsa SELECT o ATRÁS para abrir el menú", 4000);
 

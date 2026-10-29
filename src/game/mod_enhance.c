@@ -180,10 +180,112 @@ static bool spawn_hook(sms_t* s, int k, uint16_t pc) {
   return false;
 }
 
+// ---------------------------------------------------------------- respawn option
+// Each spawn-list entry names the object slot it uses: the game creates the enemy when the
+// camera reaches the entry and that slot is free. An enemy killed (freed while visible, not by
+// the off-screen clean-up) is remembered so its entry does not fill the slot again:
+// "off" until the section changes or the player dies, "mixed" until its spot has been left behind.
+static uint32_t kill_section_key(sms_t* s) {
+  return ((uint32_t)ram8(s, 0xDFC0) << 16) | ((uint32_t)ram8(s, 0xDFC1) << 8) | ram8(s, 0xC6A2);
+}
+
+static bool entry_blocked(uint32_t id) {
+  if (g->respawn == MOD_RESPAWN_ON) return false;
+  for (int i = 0; i < g->n_killed; i++) if (g->killed[i].id == id) return true;
+  return false;
+}
+
+static void note_spawn(sms_t* s, int k, uint16_t slot_addr, uint16_t entry) {
+  int slot = slot_of(slot_addr);
+  if (slot < 0) return;
+  g->slot_entry[slot] = ((uint32_t)s->st.bank[2] << 16) | entry | 0x80000000u;
+  g->slot_trigger[slot] = g->spawn[k].active ? g->spawn[k].next : cam16(s);
+  g->slot_culled[slot] = 0;
+}
+
+// called at the start of every sprite pass: which objects disappeared since the last one
+static void scan_slots(sms_t* s) {
+  uint32_t key = kill_section_key(s);
+  int lives = ram8(s, 0xDFBA);
+  if (key != g->kill_key || lives < g->last_lives) {
+    g->kill_key = key;
+    g->n_killed = 0;
+    memset(g->slot_entry, 0, sizeof g->slot_entry);
+    memset(g->slot_active, 0, sizeof g->slot_active);
+  }
+  g->last_lives = lives;
+  for (int i = 0; i < 46; i++) {
+    uint16_t a = 0xCA40 + i * 0x20;
+    bool act = ram8(s, a) != 0;
+    if (g->slot_active[i] && !act && g->slot_entry[i]) {
+      int x = g->slot_x[i];
+      bool visible = x >= -16 - g->margin_l && x <= 255 + g->margin_r;
+      if (!g->slot_culled[i] && visible && g->n_killed < 64) {
+        g->killed[g->n_killed].id = g->slot_entry[i];
+        g->killed[g->n_killed].trigger = g->slot_trigger[i];
+        g->n_killed++;
+      }
+      g->slot_entry[i] = 0;
+    }
+    g->slot_active[i] = act;
+    if (act) g->slot_x[i] = (int16_t)(ram8(s, a + 4) | (ram8(s, a + 5) << 8));
+    g->slot_culled[i] = 0;
+  }
+  // mixed: an enemy can come back once its spot has been left well behind
+  if (g->respawn == MOD_RESPAWN_MIXED) {
+    int cam = cam16(s);
+    for (int i = 0; i < g->n_killed; ) {
+      int d = g->killed[i].trigger - cam;
+      if (d < -(256 + 2 * MOD_WIDE_EXT) || d > 256 + 2 * MOD_WIDE_EXT) g->killed[i] = g->killed[--g->n_killed];
+      else i++;
+    }
+  }
+}
+
+// ---------------------------------------------------------------- difficulty
+static int scale_damage(int d, int* frac, bool taken) {
+  int mode = g->difficulty;
+  bool half = (taken && mode == MOD_DIFF_EASY) || (!taken && mode == MOD_DIFF_HARD);
+  bool twice = (taken && mode == MOD_DIFF_HARD) || (!taken && mode == MOD_DIFF_EASY);
+  if (twice) return d * 2 > 255 ? 255 : d * 2;
+  if (half) { int t = d + *frac; *frac = t & 1; return t >> 1; }
+  return d;
+}
+
 // ---------------------------------------------------------------- hook entry
 static bool on_hook(sms_t* s, uint16_t pc) {
   z80* z = &s->st.cpu;
   switch (pc) {
+  case 0x3CD0: case 0x52E7: {  // spawn-list entry: is its slot free? (A = slot byte, HL = entry + 3)
+    if (z->a == 0 && entry_blocked(((uint32_t)s->st.bank[2] << 16) | (uint16_t)(((z->h << 8) | z->l) - 3) | 0x80000000u))
+      z->a = 1;   // treat the slot as busy: the enemy is not created
+    return false;
+  }
+  case 0x3CDD: case 0x52F4:  // object created from a spawn-list entry (DE = slot, HL = entry + 3)
+    note_spawn(s, pc == 0x3CDD ? 0 : 1, (z->d << 8) | z->e, (uint16_t)(((z->h << 8) | z->l) - 3));
+    return false;
+  case 0x5238: case 0x523D: {  // the game removes an object that went off screen (HL = slot)
+    int slot = slot_of((z->h << 8) | z->l);
+    if (slot >= 0) g->slot_culled[slot] = 1;
+    return false;
+  }
+  case 0x46F1:  // damage to the player (B)
+    if (g->difficulty != MOD_DIFF_NORMAL) z->b = (uint8_t)scale_damage(z->b, &g->frac_taken, true);
+    return false;
+  case 0x6198:  // damage to a boss (B)
+    if (g->difficulty != MOD_DIFF_NORMAL) z->b = (uint8_t)scale_damage(z->b, &g->frac_dealt, false);
+    return false;
+  case 0x3DD6:  // damage to an enemy: SUB (IY+1), adjusted for this instruction only
+    if (g->difficulty != MOD_DIFF_NORMAL) {
+      uint16_t a = z->iy + 1;
+      g->saved_dmg_addr = a;
+      g->saved_dmg = ram8(s, a);
+      ram_w(s, a, (uint8_t)scale_damage(g->saved_dmg, &g->frac_dealt, false));
+    }
+    return false;
+  case 0x3DD9:
+    if (g->saved_dmg_addr) { ram_w(s, (uint16_t)g->saved_dmg_addr, g->saved_dmg); g->saved_dmg_addr = 0; }
+    return false;
   case 0x51B6:  // start of the sprite pass
     // status bar redraw requested by a cheat: call the game's own routine (the one used
     // when an item is picked up) and come back here
@@ -199,6 +301,7 @@ static bool on_hook(sms_t* s, uint16_t pc) {
       z->cyc += 17;
       return true;
     }
+    scan_slots(s);
     g->n_building = 0;
     g->passes++;
     for (int i = 0; i < 46; i++) if (!ram8(s, 0xCA40 + i * 0x20)) g->seen_in[i] = 0;
@@ -224,7 +327,7 @@ static bool on_hook(sms_t* s, uint16_t pc) {
     if (x16 >= 0 && x16 <= 255) { z->a = 0; z->pc = 0x51E5; z->cyc += 35; }
     else if (x16 >= -17 && x16 < 0) { z->a = (0x11 + (x16 & 0xFF)) & 0xFF; z->pc = 0x51E5; z->cyc += 74; }
     else if (in_wide_range(z->ix, x16)) { capture(s, z->ix, false); z->pc = 0x51E9; z->cyc += 35; }
-    else { z->pc = 0x5238; z->cyc += 35; }
+    else { int sl = slot_of(z->ix); if (sl >= 0) g->slot_culled[sl] = 1; z->pc = 0x5238; z->cyc += 35; }
     return true;
   }
   }
@@ -246,6 +349,9 @@ static const struct { uint16_t addr; uint8_t b[4]; } signature[] = {
   {0x5305, {0xDD, 0x36, 0x05, 0x00}}, {0x52D5, {0xF1, 0x32, 0xFF, 0xFF}}, {0x51E5, {0x79, 0xCD, 0xD1, 0x0D}},
   {0x51E9, {0x19, 0x10, 0xD5, 0x21}}, {0x5238, {0x36, 0x00, 0xC3, 0xE9}},
   {0x5228, {0x26, 0xC3, 0x69, 0x3E}},
+  {0x3CCF, {0x1A, 0xB7, 0xCC, 0xDD}}, {0x52E6, {0x1A, 0xB7, 0xCC, 0xF4}}, {0x3CDD, {0xD5, 0xDD, 0xE1, 0x7E}},
+  {0x52F4, {0xD5, 0xDD, 0xE1, 0x7E}}, {0x523D, {0x36, 0x00, 0xC3, 0x25}}, {0x46F1, {0x3A, 0x3A, 0xCA, 0x90}},
+  {0x6198, {0x3A, 0x3A, 0xCB, 0x90}}, {0x3DD3, {0xDD, 0x7E, 0x1A, 0xFD}}, {0x3DD9, {0xDD, 0x77, 0x1A, 0xDD}},
   {0x4A07, {0xCD, 0x4D, 0x4B, 0x3A}}, {0x4A10, {0xCD, 0x7E, 0x4B, 0x3A}}, {0x4A2C, {0x3A, 0xBA, 0xDF, 0x3D}},
 };
 
@@ -262,7 +368,8 @@ void mod_enhance_attach(sms_t* s, mod_enhance_t* e) {
   g = e;
   if (!mod_enhance_compatible(s)) { s->hook_map = NULL; return; }
   memset(hook_map, 0, sizeof hook_map);
-  static const uint16_t addrs[] = {0x51B6, 0x5228, 0x0DD1, 0x520E, 0x51D5};
+  static const uint16_t addrs[] = {0x51B6, 0x5228, 0x0DD1, 0x520E, 0x51D5, 0x3CD0, 0x52E7, 0x3CDD, 0x52F4,
+                                   0x5238, 0x523D, 0x46F1, 0x6198, 0x3DD6, 0x3DD9};
   for (unsigned i = 0; i < sizeof addrs / sizeof addrs[0]; i++) hook_map[addrs[i]] = 1;
   for (int k = 0; k < 2; k++) {
     const spawn_addr_t* a = &spawn_addrs[k];
@@ -270,6 +377,10 @@ void mod_enhance_attach(sms_t* s, mod_enhance_t* e) {
     e->spawn[k].active = false;
   }
   for (int k = 0; k < 2; k++) e->spawn[k].edge_ok_r = e->spawn[k].edge_ok_l = false;
+  e->n_killed = 0; e->kill_key = 0xFFFFFFFFu; e->saved_dmg_addr = 0;
+  e->difficulty = MOD_DIFF_NORMAL; e->respawn = MOD_RESPAWN_ON;
+  memset(e->slot_entry, 0, sizeof e->slot_entry);
+  memset(e->slot_active, 0, sizeof e->slot_active);
   memset(e->seen_in, 0, sizeof e->seen_in);
   s->hook_map = hook_map;
   s->pc_hook = on_hook;
@@ -300,7 +411,29 @@ static int pass_matches(const sms_t* s, const mod_piece_t* p, int n, int* total)
   return ok;
 }
 
+// Double jump: pressing jump again in the air restarts the jump arc (state 3 = rising,
+// 2 = falling, 0 = on the ground; CA2B = frame of the arc; C701 = buttons pressed this frame).
+static void double_jump(sms_t* s, mod_enhance_t* e) {
+  if (!s->hook_map) return;   // other ROM: enhancements off
+  int st = s->st.ram[0x0A31];
+  if (st == 0) e->air_jump_used = false;
+  bool in_air = st == 2 || st == 3;
+  bool was_in_air = e->prev_state == 2 || e->prev_state == 3;
+  if (e->double_jump && in_air && was_in_air && !e->air_jump_used && (s->st.ram[0x0701] & 0x20) &&
+      mod_is_gameplay(s)) {
+    s->st.ram[0x0A31] = 3;
+    s->st.ram[0x0A2B] = 0;
+    // the arc moves in steps of 8 and the landing check needs the same alignment as a jump
+    // from the ground: start the new arc on a multiple of 8
+    s->st.ram[0x0A22] &= 0xF8;
+    s->st.ram[0x0A32] = s->st.ram[0x0A33] = 0;   // no leftover falling speed
+    e->air_jump_used = true;
+  }
+  e->prev_state = st;
+}
+
 void mod_enhance_frame(const sms_t* s, mod_enhance_t* e) {
+  double_jump((sms_t*)s, e);
   // margins for the next frame's game logic
   if (!e->wide || !mod_visible_margins(s, e->ext, &e->margin_l, &e->margin_r)) {
     e->margin_l = e->margin_r = e->wide ? e->ext : 0;

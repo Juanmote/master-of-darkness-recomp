@@ -37,12 +37,33 @@ typedef struct {
            int edge_r, edge_l, edge_cam; bool edge_ok_r, edge_ok_l; } spawn[2];
   uint8_t seen_in[46];       // object slot has been inside the original picture
   uint8_t hud_pending;       // MOD_HUD_* parts of the status bar to redraw (done by the game's own code)
+  // enemy respawn option and the enemies killed that must not come back yet
+  int respawn;               // MOD_RESPAWN_*
+  uint32_t slot_entry[46];   // spawn-list entry that created the object in each slot (0 = none)
+  int slot_trigger[46];      // camera value of that entry
+  uint8_t slot_active[46], slot_culled[46];
+  int16_t slot_x[46];
+  struct { uint32_t id; int trigger; } killed[64];
+  int n_killed;
+  uint32_t kill_key;         // section the list belongs to
+  int last_lives;
+  // difficulty
+  int difficulty;            // MOD_DIFF_*
+  int frac_taken, frac_dealt;
+  int saved_dmg_addr; uint8_t saved_dmg;
+  // double jump
+  bool double_jump;
+  bool air_jump_used;
+  int prev_state;
   int margin_l, margin_r;    // playable pixels visible beyond the original picture (per side)
 } mod_enhance_t;
 
 #define MOD_HUD_WEAPON 1
 #define MOD_HUD_SUBWEAPON 2
 #define MOD_HUD_LIVES 4
+
+enum { MOD_RESPAWN_ON, MOD_RESPAWN_OFF, MOD_RESPAWN_MIXED };
+enum { MOD_DIFF_EASY, MOD_DIFF_NORMAL, MOD_DIFF_HARD };
 
 bool mod_enhance_compatible(const sms_t* s);
 // Asks the game to redraw parts of the status bar (after a cheat changed weapons or lives).
