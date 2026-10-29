@@ -292,7 +292,11 @@ static bool on_hook(sms_t* s, uint16_t pc) {
       int ev = 0;
       if (id >= 0x81 && id <= 0x8F) {
         if (g->music_has && g->music_has(id)) {
-          ram_w(s, 0xC103, 0xC1);   // the driver stops everything instead (as before a new track)
+          // no new sound starts (0x80 = idle) and the music channels go quiet: the driver's own
+          // "stop all" (C1) cannot be used here, it breaks the game's frame wait
+          ram_w(s, 0xC103, 0x80);
+          for (int c = 0; c < 4; c++) ram_w(s, 0xC140 + c * 0x30, 0);
+          for (int c = 0; c < 4; c++) s->st.psg.vol[c] = 0x0F;
           ev = MOD_MUSIC_PLAY | id;
         } else ev = MOD_MUSIC_STOP | id;
       } else if (id == 0xC0) ev = MOD_MUSIC_FADE;

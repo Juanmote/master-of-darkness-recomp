@@ -190,3 +190,14 @@ Cabecera TMR SEGA válida, checksum 6FE6 correcto, región SMS Export, mapper Se
 - `src/app/music.c`: zip con miniz, Ogg con stb_vorbis decodificado sobre la marcha, remuestreo lineal a 44100 Hz
   mono, intro + bucle, fundido de 1 s. Formato documentado en docs/PACK_MUSICA.md.
 - Pistas que no se repiten (medido con la salida del PSG): 81, 85, 86, 8A.
+
+## v0.8.0 — pantalla de inicio y controles táctiles
+- Arte del usuario (fondo y botones) en `android/app/src/main/assets/launcher/`, recortado del PNG original
+  (fondo transparente por segmentación). Se carga con stb_image desde los assets del APK.
+- Pantalla de inicio: JUGAR (empieza o continúa), OPCIONES, CONTROLES, CRÉDITOS, SALIR; mando, teclado y táctil.
+  Menú del juego con "Pantalla de inicio". Página nueva "Controles" (saltar, subarma, gatillos, táctiles).
+- Controles táctiles (No / Sí / Solo sin mando, tres tamaños): cruceta de 8 direcciones, 1 ataque, 2 salto,
+  START abre el menú, PAUSE pausa el juego. Los menús también responden a toques.
+- Corrección del pack de música: sustituir la petición por C1 (parar todo) dejaba al juego esperando en el inicio
+  de ronda (la espera de fotograma no terminaba). Ahora la petición pasa a 0x80 (nada) y se apagan los cuatro
+  canales de música (C140/C170/C1A0/C1D0) y sus volúmenes en el PSG.

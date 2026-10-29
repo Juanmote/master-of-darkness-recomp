@@ -57,6 +57,7 @@ static void h_vramw(sms_t* s, uint16_t a, uint8_t v) {
   if (satlines && a >= 0x3F00 && a < 0x3F40) { static int lastf = -1; if ((int)s->st.frame != lastf) { lastf = s->st.frame; printf("SATW frame %u line %d\n", s->st.frame, s->st.vdp.line); } }
 }
 static int objlog;
+static void h_vdpreg(sms_t* s, int r, uint8_t v) { if (r == 1) printf("REG1=%02X frame %u pc %04X bank %02X\n", v, s->st.frame, s->st.cpu.pc, s->st.bank[2]); }
 static void h_ramw(sms_t* s, uint16_t a, uint8_t v) {
   if (objlog && a >= 0xCA40 && a < 0xCF20 && (a & 0x1F) == 0) {
     uint8_t* sl = &s->st.ram[(a & 0x1FFF)];
@@ -126,6 +127,7 @@ int main(int argc, char** argv) {
   if (use_recomp) { fprintf(stderr, "built without recompiled code (run tools/recomp/recomp.py first)\n"); return 1; }
 #endif
   if (getenv("DJ")) E.double_jump = true;
+  if (getenv("VDPREG")) S.hooks.on_vdp_reg = h_vdpreg;
   if (getenv("MUSHOOK")) E.music_has = mus_has_test;
   if (getenv("DIFF")) E.difficulty = atoi(getenv("DIFF")); else E.difficulty = 1;
   if (getenv("RESPAWN")) E.respawn = atoi(getenv("RESPAWN"));
@@ -240,7 +242,7 @@ int main(int argc, char** argv) {
       for (int k = 0; k < W * SMS_H; k++) { uint8_t c[3] = {pix[k] >> 16, pix[k] >> 8, pix[k]}; fwrite(c, 1, 3, o); }
       fclose(o);
       if (getenv("SATDUMP")) { printf("SAT %u:", fr); for (int j = 0; j < 64; j++) printf(" %02X/%02X/%02X", S.sat_mid[j], S.sat_mid[0x80 + j*2], S.sat_mid[0x81 + j*2]); printf("\n"); }
-      printf("shot %u valid=%d cam=%d limits=%d..%d\n", fr, info.map_valid, info.cam, info.left_limit, info.right_limit);
+      printf("shot %u valid=%d cam=%d limits=%d..%d reg1=%02X disp100=%d\n", fr, info.map_valid, info.cam, info.left_limit, info.right_limit, S.st.vdp.reg[1], S.line_display[100]);
     }
     if ((int)fr == save_frame) { sms_save_state(&S, sbuf); f = fopen(save_path, "wb"); fwrite(sbuf, 1, ssz, f); fclose(f); }
   }

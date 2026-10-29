@@ -9,8 +9,13 @@
 #include "../game/mod_enhance.h"
 #include "font_data.h"
 #include "music.h"
+#define STB_IMAGE_IMPLEMENTATION
+#define STBI_ONLY_PNG
+#define STBI_ONLY_JPEG
+#define STBI_NO_STDIO
+#include "stb_image.h"
 
-#define APP_VERSION "0.7.0"
+#define APP_VERSION "0.8.0"
 #define KNOWN_CRC 0x96FB4D4Bu
 #define UI_W 640
 #define UI_H 360
@@ -38,9 +43,11 @@ typedef struct {
   int respawn;     // MOD_RESPAWN_*
   int dbl_jump;
   int music_pack;  // play the user's music pack instead of the original tracks
+  int touch;       // on-screen controls: 0 no, 1 yes, 2 only without a gamepad
+  int touch_size;  // 0 small, 1 normal, 2 big
 } config_t;
 
-static config_t cfg = {1, 0, SCALE_FIT, FILTER_SHARP_SMOOTH, 8, SDL_CONTROLLER_BUTTON_A, SDL_CONTROLLER_BUTTON_Y, 1, 0, 0, 0, 0, 1, MOD_DIFF_NORMAL, MOD_RESPAWN_ON, 0, 1};
+static config_t cfg = {1, 0, SCALE_FIT, FILTER_SHARP_SMOOTH, 8, SDL_CONTROLLER_BUTTON_A, SDL_CONTROLLER_BUTTON_Y, 1, 0, 0, 0, 0, 1, MOD_DIFF_NORMAL, MOD_RESPAWN_ON, 0, 1, 2, 1};
 static char pref_path[1024];
 
 static void cfg_path(char* out, size_t n, const char* name) { snprintf(out, n, "%s%s", pref_path, name); }
@@ -71,6 +78,8 @@ static void cfg_load(void) {
     else if (sscanf(line, "respawn=%d", &v) == 1 && v >= 0 && v <= 2) cfg.respawn = v;
     else if (sscanf(line, "dbl_jump=%d", &v) == 1) cfg.dbl_jump = v ? 1 : 0;
     else if (sscanf(line, "music_pack=%d", &v) == 1) cfg.music_pack = v ? 1 : 0;
+    else if (sscanf(line, "touch=%d", &v) == 1 && v >= 0 && v <= 2) cfg.touch = v;
+    else if (sscanf(line, "touch_size=%d", &v) == 1 && v >= 0 && v <= 2) cfg.touch_size = v;
   }
   fclose(f);
   if (cfg.sub_btn == cfg.jump_btn) cfg.sub_btn = cfg.jump_btn == SDL_CONTROLLER_BUTTON_Y ? SDL_CONTROLLER_BUTTON_X : SDL_CONTROLLER_BUTTON_Y;
@@ -81,9 +90,9 @@ static void cfg_save(void) {
   FILE* f = fopen(p, "w");
   if (!f) return;
   fprintf(f, "widescreen=%d\ncrt=%d\nscale=%d\nfilter=%d\nvolume=%d\njump_btn=%d\nsub_btn=%d\nturbo=%d\nlang=%d\n"
-             "suit=%d\ncheat_inv=%d\ncheat_lives=%d\ntriggers=%d\ndifficulty=%d\nrespawn=%d\ndbl_jump=%d\nmusic_pack=%d\n",
+             "suit=%d\ncheat_inv=%d\ncheat_lives=%d\ntriggers=%d\ndifficulty=%d\nrespawn=%d\ndbl_jump=%d\nmusic_pack=%d\ntouch=%d\ntouch_size=%d\n",
           cfg.widescreen, cfg.crt, cfg.scale, cfg.filter, cfg.volume, cfg.jump_btn, cfg.sub_btn, cfg.turbo, cfg.lang,
-          cfg.suit, cfg.cheat_inv, cfg.cheat_lives, cfg.triggers, cfg.difficulty, cfg.respawn, cfg.dbl_jump, cfg.music_pack);
+          cfg.suit, cfg.cheat_inv, cfg.cheat_lives, cfg.triggers, cfg.difficulty, cfg.respawn, cfg.dbl_jump, cfg.music_pack, cfg.touch, cfg.touch_size);
   fclose(f);
 }
 
@@ -330,21 +339,29 @@ static void cheats_frame(void) {
 // ---------------------------------------------------------------- menu
 enum {
   MI_RESUME, MI_SAVE, MI_LOAD, MI_GAME, MI_CHEATS, MI_VIDEO, MI_OPTIONS, MI_RESET, MI_QUIT,
+  MI_CONTROLS, MI_HOME, MI_TOUCH, MI_TOUCHSIZE,
   MI_DIFF, MI_RESPAWN, MI_DJUMP,
   MI_FORMAT, MI_SCALE, MI_FILTER, MI_SUIT,
   MI_VOLUME, MI_BUTTONS, MI_SUBBTN, MI_TURBO, MI_TRIGGERS, MI_LANG, MI_PATCH, MI_MUSIC, MI_MUSPACK, MI_MUSTEST,
   MI_INV, MI_LIVES, MI_WEAPON, MI_SUB, MI_START, MI_WARP,
   MI_BACK
 };
-enum { PAGE_MAIN, PAGE_VIDEO, PAGE_OPTIONS, PAGE_CHEATS, PAGE_GAME };
-static const int page_items[5][11] = {
-  {MI_RESUME, MI_SAVE, MI_LOAD, MI_GAME, MI_CHEATS, MI_VIDEO, MI_OPTIONS, MI_RESET, MI_QUIT, -1},
+enum { PAGE_MAIN, PAGE_VIDEO, PAGE_OPTIONS, PAGE_CHEATS, PAGE_GAME, PAGE_CONTROLS, PAGE_HOME, PAGE_COUNT };
+#define PAGE_MAX 12
+static const int page_items[PAGE_COUNT][PAGE_MAX] = {
+  {MI_RESUME, MI_SAVE, MI_LOAD, MI_GAME, MI_CHEATS, MI_VIDEO, MI_OPTIONS, MI_CONTROLS, MI_RESET, MI_HOME, -1},
   {MI_FORMAT, MI_SCALE, MI_FILTER, MI_SUIT, MI_BACK, -1},
-  {MI_VOLUME, MI_BUTTONS, MI_SUBBTN, MI_TRIGGERS, MI_LANG, MI_PATCH, MI_MUSIC, MI_MUSPACK, MI_MUSTEST, MI_BACK, -1},
+  {MI_VOLUME, MI_LANG, MI_PATCH, MI_MUSIC, MI_MUSPACK, MI_MUSTEST, MI_BACK, -1},
   {MI_INV, MI_LIVES, MI_WEAPON, MI_SUB, MI_START, MI_WARP, MI_BACK, -1},
   {MI_DIFF, MI_RESPAWN, MI_DJUMP, MI_TURBO, MI_BACK, -1},
+  {MI_BUTTONS, MI_SUBBTN, MI_TRIGGERS, MI_TOUCH, MI_TOUCHSIZE, MI_BACK, -1},
+  {MI_GAME, MI_CHEATS, MI_VIDEO, MI_OPTIONS, MI_BACK, -1},
 };
-static const char* page_titles[5] = {"MASTER OF DARKNESS", "IMAGEN", "OPCIONES", "TRUCOS", "JUEGO"};
+static const char* page_titles[PAGE_COUNT] = {"MASTER OF DARKNESS", "IMAGEN", "SONIDO E IDIOMA", "TRUCOS", "JUEGO", "CONTROLES", "OPCIONES"};
+static const char* touch_names[3] = {"No", "Sí", "Solo sin mando"};
+static const char* touch_size_names[3] = {"Pequeños", "Normales", "Grandes"};
+static int in_launcher = 1;   // the start screen is shown (the game waits)
+static int menu_root;         // page the menu was opened on (Volver goes back to it)
 static const char* diff_names[3] = {"Fácil", "Normal", "Difícil"};
 static const char* respawn_names[3] = {"Sí (original)", "No", "Al volver a la zona"};
 
@@ -355,7 +372,7 @@ static void apply_game_options(void) {
 }
 static int menu_page;
 
-static int page_count(int p) { int n = 0; while (n < 11 && page_items[p][n] >= 0) n++; return n; }
+static int page_count(int p) { int n = 0; while (n < PAGE_MAX && page_items[p][n] >= 0) n++; return n; }
 static int cur_item(void) { return page_items[menu_page][menu_sel]; }
 
 static void menu_set_open(int open);
@@ -392,7 +409,11 @@ static void menu_label(int i, char* out, size_t n) {
   case MI_RESPAWN: snprintf(out, n, "Reaparición de enemigos: ← %s →", respawn_names[cfg.respawn]); break;
   case MI_DJUMP: snprintf(out, n, "Doble salto: ← %s →", cfg.dbl_jump ? "Sí" : "No"); break;
   case MI_VIDEO: snprintf(out, n, "Imagen  ›"); break;
-  case MI_OPTIONS: snprintf(out, n, "Opciones  ›"); break;
+  case MI_OPTIONS: snprintf(out, n, "Sonido e idioma  ›"); break;
+  case MI_CONTROLS: snprintf(out, n, "Controles  ›"); break;
+  case MI_HOME: snprintf(out, n, "Pantalla de inicio"); break;
+  case MI_TOUCH: snprintf(out, n, "Controles táctiles: ← %s →", touch_names[cfg.touch]); break;
+  case MI_TOUCHSIZE: snprintf(out, n, "Tamaño táctil: ← %s →", touch_size_names[cfg.touch_size]); break;
   case MI_RESET: snprintf(out, n, "Reiniciar juego"); break;
   case MI_QUIT: snprintf(out, n, "Salir"); break;
   case MI_BACK: snprintf(out, n, "‹  Volver"); break;
@@ -496,6 +517,8 @@ static void menu_change(int dir) {
   case MI_SUBBTN: capture_jump = 2; return;
   case MI_TURBO: cfg.turbo ^= 1; break;
   case MI_TRIGGERS: cfg.triggers ^= 1; break;
+  case MI_TOUCH: cfg.touch = (cfg.touch + dir + 3) % 3; break;
+  case MI_TOUCHSIZE: cfg.touch_size = (cfg.touch_size + dir + 3) % 3; break;
   case MI_MUSIC:
     if (!music_pack_loaded()) { show_toast("Primero elige un pack de música", 2000); return; }
     cfg.music_pack ^= 1;
@@ -529,12 +552,12 @@ static void menu_change(int dir) {
     break;
   case MI_LIVES: cfg.cheat_lives ^= 1; break;
   case MI_WEAPON:
-    if (!cheats_ok()) { show_toast("Solo durante la partida", 1500); return; }
+    if (in_launcher || !cheats_ok()) { show_toast("Solo durante la partida", 1500); return; }
     gram_w(RAM_WEAPON, (uint8_t)((gram(RAM_WEAPON) + dir + 4) & 3));
     mod_request_hud(&E, MOD_HUD_WEAPON);
     return;
   case MI_SUB: {
-    if (!cheats_ok()) { show_toast("Solo durante la partida", 1500); return; }
+    if (in_launcher || !cheats_ok()) { show_toast("Solo durante la partida", 1500); return; }
     int k = gram(RAM_AMMO) ? 1 + (gram(RAM_SUBWEAPON) & 3) : 0;
     k = (k + dir + 5) % 5;
     if (k == 0) gram_w(RAM_AMMO, 0);
@@ -548,10 +571,18 @@ static void menu_change(int dir) {
   cfg_save();
 }
 
-static void menu_set_open(int open) {
-  menu_open = open;
+static void menu_open_at(int page) {
+  menu_open = 1;
   capture_jump = 0;
-  if (open) { menu_page = PAGE_MAIN; menu_sel = 0; SDL_ClearQueuedAudio(audio_dev); }
+  menu_root = menu_page = page;
+  menu_sel = 0;
+  SDL_ClearQueuedAudio(audio_dev);
+}
+
+static void menu_set_open(int open) {
+  if (open) { menu_open_at(in_launcher ? PAGE_HOME : PAGE_MAIN); return; }
+  menu_open = 0;
+  capture_jump = 0;
 }
 
 static void menu_goto(int page) { menu_page = page; menu_sel = 0; capture_jump = 0; }
@@ -569,16 +600,19 @@ static void menu_activate(void) {
     if (rom_crc != KNOWN_CRC) { show_toast("Estas opciones necesitan la ROM original", 2000); break; }
     menu_goto(PAGE_GAME); break;
   case MI_OPTIONS: menu_goto(PAGE_OPTIONS); break;
-  case MI_BACK: menu_goto(PAGE_MAIN); break;
+  case MI_BACK: if (menu_page == menu_root) menu_set_open(0); else menu_goto(menu_root); break;
+  case MI_CONTROLS: menu_goto(PAGE_CONTROLS); break;
+  case MI_HOME: menu_set_open(0); in_launcher = 1; music_set_paused(true); SDL_ClearQueuedAudio(audio_dev); break;
   case MI_RESET: music_stop(); sms_reset(&S); menu_set_open(0); show_toast("Juego reiniciado", 1500); break;
   case MI_MUSTEST:
     if (rom_crc != KNOWN_CRC) break;
+    if (in_launcher) { show_toast("Prueba la música durante la partida", 2000); break; }
     mod_music_request(&S, music_tracks[music_test_sel].id);
     menu_set_open(0);
     show_toast(music_tracks[music_test_sel].name, 2000);
     break;
   case MI_WARP:
-    music_stop(); sms_reset(&S); warp_pending = 1; menu_set_open(0);
+    music_stop(); sms_reset(&S); warp_pending = 1; menu_set_open(0); in_launcher = 0;
     show_toast("Pulsa START: la partida empezará en esa ronda", 3000);
     break;
   case MI_QUIT: running = 0; break;
@@ -591,14 +625,31 @@ static void menu_nav(int dy, int dx, int ok, int back) {
   if (dy) { menu_sel = (menu_sel + dy + n) % n; capture_jump = 0; }
   if (dx) menu_change(dx);
   if (ok) menu_activate();
-  if (back) { if (menu_page != PAGE_MAIN) menu_goto(PAGE_MAIN); else menu_set_open(0); }
+  if (back) { if (menu_page != menu_root) menu_goto(menu_root); else menu_set_open(0); }
 }
 
 static int rewinding, fast_forward;
+static int show_credits;
+
+static void draw_credits(void) {
+  ui_rect(0, 0, UI_W, UI_H, 0xC8000000);
+  int y = 34;
+  ui_text_center(y, "RE-MASTER-ED OF DARKNESS", 0xE8C060); y += 22;
+  ui_text_center(y, "A RECOMP PROJECT  ·  v" APP_VERSION, 0xB8B0A8); y += 40;
+  ui_text_center(y, "Recomp y launcher por Juanmote", 0xFFFFFF); y += 26;
+  if (patch_data && patch_crc == WAVE_PATCH_CRC) { ui_text_center(y, "Traducción al español: Traducciones Wave", 0xFFFFFF); y += 26; }
+  y += 8;
+  ui_text_center(y, "Master of Darkness © 1992 Sega / SIMS", 0xB8B0A8); y += 22;
+  ui_text_center(y, "La app no incluye el juego: usa tu propia ROM", 0xB8B0A8); y += 34;
+  ui_text_center(y, "SDL2 (zlib) · stb (dominio público) · miniz (MIT)", 0x807870); y += 22;
+  ui_text_center(y, "Fuente DejaVu (licencia libre)", 0x807870);
+  ui_text_center(UI_H - 34, "Pulsa cualquier botón para volver", 0x807870);
+}
 
 static void draw_ui(void) {
   ui_clear();
-  if (menu_open) {
+  if (show_credits) draw_credits();
+  else if (menu_open) {
     int n = page_count(menu_page);
     ui_rect(0, 0, UI_W, UI_H, 0xA0000000);
     int bw = 560, bh = 40 + n * 26 + 34;
@@ -616,6 +667,12 @@ static void draw_ui(void) {
     const char* foot = "v" APP_VERSION "  ·  Recomp por Juanmote";
     if (lang_active() && patch_crc == WAVE_PATCH_CRC) foot = "v" APP_VERSION " · Recomp por Juanmote · Traducción: Wave";
     if (menu_page == PAGE_CHEATS) foot = "Trucos oficiales del juego y selector de armas";
+    if (menu_page == PAGE_CONTROLS) {
+      int it = cur_item();
+      foot = it == MI_TRIGGERS ? "L2 rebobina hasta 20 s, R2 acelera" :
+             it == MI_TOUCH ? "En pantalla: cruceta, 1 ataque, 2 salto, START menú, PAUSE pausa" :
+             "SELECT o ATRÁS abre el menú durante la partida";
+    }
     if (menu_page == PAGE_GAME) {
       int it = cur_item();
       foot = it == MI_DIFF ? "Fácil: recibes la mitad, pegas el doble" :
@@ -671,7 +728,275 @@ static SDL_Rect dest_rect(int ww, int wh, int gw) {
   return r;
 }
 
+// ---------------------------------------------------------------- start screen and touch controls
+enum { ART_BG, ART_PLAY, ART_OPTIONS, ART_CONTROLS, ART_CREDITS, ART_QUIT, ART_DPAD, ART_B1, ART_B2, ART_START, ART_PAUSE, ART_COUNT };
+static const char* art_files[ART_COUNT] = {"fondo.jpg", "jugar.png", "opciones.png", "controles.png", "creditos.png",
+                                           "salir.png", "dpad.png", "b1.png", "b2.png", "start.png", "pause.png"};
+static SDL_Texture* art[ART_COUNT];
+static int art_w[ART_COUNT], art_h[ART_COUNT];
+static int art_ok;
+
+static uint8_t* read_asset(const char* name, size_t* n) {
+  char p[1200];
+  const char* env = getenv("MOD_ASSETS");
+#ifdef __ANDROID__
+  snprintf(p, sizeof p, "launcher/%s", name);   // inside the APK (assets/launcher)
+  uint8_t* d = load_file(p, n);
+  if (d) return d;
+#endif
+  if (env) { snprintf(p, sizeof p, "%s/%s", env, name); uint8_t* d2 = load_file(p, n); if (d2) return d2; }
+  char* base = SDL_GetBasePath();
+  if (base) {
+    snprintf(p, sizeof p, "%sassets/launcher/%s", base, name);
+    SDL_free(base);
+    return load_file(p, n);
+  }
+  return NULL;
+}
+
+static void load_art(void) {
+  art_ok = 1;
+  for (int i = 0; i < ART_COUNT; i++) {
+    size_t n = 0;
+    uint8_t* d = read_asset(art_files[i], &n);
+    int w, h, c;
+    uint8_t* px = d ? stbi_load_from_memory(d, (int)n, &w, &h, &c, 4) : NULL;
+    free(d);
+    if (!px) { art_ok = 0; continue; }
+    art[i] = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STATIC, w, h);
+    if (art[i]) {
+      SDL_UpdateTexture(art[i], NULL, px, w * 4);
+      SDL_SetTextureBlendMode(art[i], SDL_BLENDMODE_BLEND);
+      SDL_SetTextureScaleMode(art[i], SDL_ScaleModeLinear);
+    } else art_ok = 0;
+    art_w[i] = w; art_h[i] = h;
+    stbi_image_free(px);
+  }
+}
+
+// start screen buttons, left to right
+static const int launch_art[5] = {ART_OPTIONS, ART_CONTROLS, ART_PLAY, ART_CREDITS, ART_QUIT};
+static int launch_sel = 2;
+static SDL_Rect launch_rect[5];
+
+static void layout_launcher(int ww, int wh) {
+  // widths relative to a 1920-wide screen, in a row at the bottom
+  static const int base_w[5] = {300, 300, 420, 300, 330};
+  double k = ww / 1920.0 < wh / 1080.0 ? ww / 1920.0 : wh / 1080.0;
+  int total = 0;
+  for (int i = 0; i < 5; i++) total += (int)(base_w[i] * k);
+  int gap = (int)(20 * k), x = (ww - total - 4 * gap) / 2, cy = wh - (int)(110 * k);
+  for (int i = 0; i < 5; i++) {
+    int a = launch_art[i], w = (int)(base_w[i] * k), h = art_w[a] ? w * art_h[a] / art_w[a] : 0;
+    launch_rect[i] = (SDL_Rect){x, cy - h / 2 - (a == ART_PLAY ? (int)(20 * k) : 0), w, h};
+    x += w + gap;
+  }
+}
+
+static void draw_art(int a, SDL_Rect r, int highlight, int dim) {
+  if (!art[a]) return;
+  if (highlight) {   // a little bigger, with a glow
+    int dx = r.w / 20, dy = r.h / 20;
+    r.x -= dx; r.y -= dy; r.w += 2 * dx; r.h += 2 * dy;
+  }
+  SDL_SetTextureColorMod(art[a], dim ? 170 : 255, dim ? 170 : 255, dim ? 170 : 255);
+  SDL_SetTextureBlendMode(art[a], SDL_BLENDMODE_BLEND);
+  SDL_RenderCopy(ren, art[a], NULL, &r);
+  if (highlight) {
+    SDL_SetTextureBlendMode(art[a], SDL_BLENDMODE_ADD);
+    SDL_SetTextureAlphaMod(art[a], 70);
+    SDL_RenderCopy(ren, art[a], NULL, &r);
+    SDL_SetTextureAlphaMod(art[a], 255);
+    SDL_SetTextureBlendMode(art[a], SDL_BLENDMODE_BLEND);
+  }
+}
+
+static void draw_launcher(int ww, int wh) {
+  // background covers the screen keeping its proportions
+  SDL_Rect bg;
+  double k = (double)ww / art_w[ART_BG] > (double)wh / art_h[ART_BG] ? (double)ww / art_w[ART_BG] : (double)wh / art_h[ART_BG];
+  bg.w = (int)(art_w[ART_BG] * k); bg.h = (int)(art_h[ART_BG] * k);
+  bg.x = (ww - bg.w) / 2; bg.y = (wh - bg.h) / 2;
+  SDL_RenderCopy(ren, art[ART_BG], NULL, &bg);
+  layout_launcher(ww, wh);
+  for (int i = 0; i < 5; i++)
+    if (i != launch_sel) draw_art(launch_art[i], launch_rect[i], 0, !menu_open && !show_credits);
+  draw_art(launch_art[launch_sel], launch_rect[launch_sel], !menu_open && !show_credits, 0);
+}
+
+static void launcher_activate(int i) {
+  switch (launch_art[i]) {
+  case ART_PLAY:
+    in_launcher = 0;
+    music_set_paused(false);
+    show_toast("Pulsa SELECT o ATRÁS para abrir el menú", 3000);
+    break;
+  case ART_OPTIONS: menu_open_at(PAGE_HOME); break;
+  case ART_CONTROLS: menu_open_at(PAGE_CONTROLS); break;
+  case ART_CREDITS: show_credits = 1; break;
+  case ART_QUIT: running = 0; break;
+  }
+}
+
+// --- touch controls
+enum { TZ_NONE, TZ_DPAD, TZ_B1, TZ_B2, TZ_START, TZ_PAUSE };
+static struct { SDL_FingerID id; int zone; float x, y; int used; } fingers[10];
+static SDL_Rect tz_rect[6];
+static uint8_t touch_input;
+static int touch_seen;   // a finger has touched the screen (for "only without a gamepad")
+
+static int any_pad(void) { for (int i = 0; i < 8; i++) if (pads[i]) return 1; return 0; }
+static int touch_visible(void) {
+  if (in_launcher || menu_open) return 0;
+  return cfg.touch == 1 || (cfg.touch == 2 && !any_pad());
+}
+
+static void layout_touch(int ww, int wh) {
+  double sz = cfg.touch_size == 0 ? 0.8 : cfg.touch_size == 2 ? 1.2 : 1.0;
+  int m = wh / 30;
+  int d = (int)(wh * 0.40 * sz), b = (int)(wh * 0.21 * sz);
+  tz_rect[TZ_DPAD] = (SDL_Rect){m, wh - m - d, d, d};
+  tz_rect[TZ_B2] = (SDL_Rect){ww - m - b, wh - m - b - b / 3, b, b};
+  tz_rect[TZ_B1] = (SDL_Rect){ww - m - 2 * b - m / 2, wh - m - b + b / 8, b, b};
+  int sw = (int)(wh * 0.17 * sz), sh = art_w[ART_START] ? sw * art_h[ART_START] / art_w[ART_START] : sw / 3;
+  tz_rect[TZ_START] = (SDL_Rect){ww / 2 + m / 2, wh - m - sh, sw, sh};
+  tz_rect[TZ_PAUSE] = (SDL_Rect){ww / 2 - m / 2 - sw, wh - m - sh, sw, sh};
+}
+
+static int in_rect(SDL_Rect r, float x, float y) { return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h; }
+
+static int touch_zone(float x, float y) {
+  if (in_rect(tz_rect[TZ_DPAD], x, y)) return TZ_DPAD;
+  for (int z = TZ_B1; z <= TZ_PAUSE; z++) {
+    SDL_Rect r = tz_rect[z];
+    r.x -= r.w / 8; r.y -= r.h / 8; r.w += r.w / 4; r.h += r.h / 4;   // a bit of margin around
+    if (in_rect(r, x, y)) return z;
+  }
+  return TZ_NONE;
+}
+
+static uint8_t dpad_dirs(float x, float y) {
+  SDL_Rect r = tz_rect[TZ_DPAD];
+  float dx = (x - (r.x + r.w / 2.0f)) / (r.w / 2.0f), dy = (y - (r.y + r.h / 2.0f)) / (r.h / 2.0f);
+  uint8_t b = 0;
+  if (dx * dx + dy * dy < 0.04f) return 0;
+  float ax = dx < 0 ? -dx : dx, ay = dy < 0 ? -dy : dy;
+  // 8 directions: diagonals when both axes are close
+  if (ax > ay * 0.45f) b |= dx < 0 ? BTN_LEFT : BTN_RIGHT;
+  if (ay > ax * 0.45f) b |= dy < 0 ? BTN_UP : BTN_DOWN;
+  return b;
+}
+
+static void update_touch_input(void) {
+  touch_input = 0;
+  for (int i = 0; i < 10; i++) {
+    if (!fingers[i].used) continue;
+    switch (fingers[i].zone) {
+    case TZ_DPAD: touch_input |= dpad_dirs(fingers[i].x, fingers[i].y); break;
+    case TZ_B1: touch_input |= BTN_1; break;
+    case TZ_B2: touch_input |= BTN_2; break;
+    case TZ_PAUSE: touch_input |= BTN_PAUSE; break;
+    }
+  }
+}
+
+static void draw_touch(int ww, int wh) {
+  layout_touch(ww, wh);
+  int held[6] = {0};
+  for (int i = 0; i < 10; i++) if (fingers[i].used) held[fingers[i].zone] = 1;
+  static const int za[6] = {0, ART_DPAD, ART_B1, ART_B2, ART_START, ART_PAUSE};
+  for (int z = TZ_DPAD; z <= TZ_PAUSE; z++) {
+    int a = za[z];
+    if (!art[a]) continue;
+    SDL_SetTextureColorMod(art[a], 255, 255, 255);
+    SDL_SetTextureAlphaMod(art[a], held[z] ? 230 : 140);
+    SDL_RenderCopy(ren, art[a], NULL, &tz_rect[z]);
+    SDL_SetTextureAlphaMod(art[a], 255);
+  }
+}
+
+// menu rows on the UI layer (for taps): returns the row under (x, y) in window pixels or -1
+static int ui_scale_xy(float x, float y, int ww, int wh, float* ux, float* uy) {
+  double us = (double)ww / UI_W < (double)wh / UI_H ? (double)ww / UI_W : (double)wh / UI_H;
+  *ux = (float)((x - (ww - UI_W * us) / 2) / us);
+  *uy = (float)((y - (wh - UI_H * us) / 2) / us);
+  return 1;
+}
+
+static int menu_row_at(float x, float y, int ww, int wh) {
+  float ux, uy;
+  ui_scale_xy(x, y, ww, wh, &ux, &uy);
+  int n = page_count(menu_page), bh = 40 + n * 26 + 34, by = (UI_H - bh) / 2, bx = (UI_W - 560) / 2;
+  if (ux < bx || ux > bx + 560) return -1;
+  int row = (int)floorf((uy - (by + 37)) / 26.0f);
+  return row >= 0 && row < n ? row : -1;
+}
+
+static void handle_touch(SDL_Event* e) {
+  int ww, wh;
+  SDL_GetRendererOutputSize(ren, &ww, &wh);
+  float x = e->tfinger.x * ww, y = e->tfinger.y * wh;
+  if (e->type == SDL_FINGERDOWN) {
+    touch_seen = 1;
+    if (show_credits) { show_credits = 0; return; }
+    if (menu_open) {
+      int row = menu_row_at(x, y, ww, wh);
+      if (row < 0) return;
+      float ux, uy;
+      ui_scale_xy(x, y, ww, wh, &ux, &uy);
+      menu_sel = row;
+      // value rows: left half goes back, right half forward; other rows activate
+      int it = cur_item();
+      int value_row = it == MI_FORMAT || it == MI_SCALE || it == MI_FILTER || it == MI_SUIT || it == MI_VOLUME ||
+                      it == MI_TURBO || it == MI_TRIGGERS || it == MI_DIFF || it == MI_RESPAWN || it == MI_DJUMP ||
+                      it == MI_TOUCH || it == MI_TOUCHSIZE || it == MI_INV || it == MI_LIVES || it == MI_WEAPON ||
+                      it == MI_SUB || it == MI_START || it == MI_MUSTEST;
+      if (value_row) menu_change(ux < UI_W / 2 ? -1 : 1);
+      else menu_activate();
+      return;
+    }
+    if (in_launcher) {
+      layout_launcher(ww, wh);
+      for (int i = 0; i < 5; i++) if (in_rect(launch_rect[i], x, y)) { launch_sel = i; launcher_activate(i); }
+      return;
+    }
+    if (!touch_visible()) return;
+    layout_touch(ww, wh);
+    int z = touch_zone(x, y);
+    if (z == TZ_START) { menu_set_open(1); return; }
+    for (int i = 0; i < 10; i++)
+      if (!fingers[i].used) { fingers[i].used = 1; fingers[i].id = e->tfinger.fingerId; fingers[i].zone = z; fingers[i].x = x; fingers[i].y = y; break; }
+  } else {
+    for (int i = 0; i < 10; i++) {
+      if (!fingers[i].used || fingers[i].id != e->tfinger.fingerId) continue;
+      if (e->type == SDL_FINGERUP) fingers[i].used = 0;
+      else {
+        fingers[i].x = x; fingers[i].y = y;
+        // sliding between the two buttons or out of the cross keeps working
+        int z = touch_zone(x, y);
+        if (z == TZ_B1 || z == TZ_B2 || z == TZ_DPAD) fingers[i].zone = z;
+      }
+    }
+  }
+  update_touch_input();
+}
+
 static void present(void) {
+  if (in_launcher && art_ok) {
+    int ww, wh;
+    SDL_GetRendererOutputSize(ren, &ww, &wh);
+    ensure_textures(SMS_W);
+    SDL_SetRenderDrawColor(ren, 0, 0, 0, 255);
+    SDL_RenderClear(ren);
+    draw_launcher(ww, wh);
+    draw_ui();
+    SDL_UpdateTexture(tex_ui, NULL, ui, UI_W * 4);
+    double us = (double)ww / UI_W < (double)wh / UI_H ? (double)ww / UI_W : (double)wh / UI_H;
+    SDL_Rect udst = {(int)((ww - UI_W * us) / 2), (int)((wh - UI_H * us) / 2), (int)(UI_W * us), (int)(UI_H * us)};
+    SDL_RenderCopy(ren, tex_ui, NULL, &udst);
+    SDL_RenderPresent(ren);
+    return;
+  }
   int gw = cfg.widescreen ? WIDE_W : SMS_W;
   ensure_textures(gw);
   mod_render(&S, pix, gw, cfg.widescreen ? MOD_WIDE_EXT : 0, NULL, E.wide ? E.shown : NULL, E.wide ? E.n_shown : 0);
@@ -706,6 +1031,7 @@ static void present(void) {
     SDL_RenderCopy(ren, tex_game, NULL, &dst);
     if (cfg.filter == FILTER_SCANLINES) SDL_RenderCopy(ren, tex_scan, NULL, &dst);
   }
+  if (touch_visible()) draw_touch(ww, wh);
   draw_ui();
   SDL_UpdateTexture(tex_ui, NULL, ui, UI_W * 4);
   SDL_Rect udst = {0, 0, ww, wh};
@@ -779,7 +1105,32 @@ static int pad_slot(SDL_JoystickID id) {
 }
 
 static void handle_event(SDL_Event* e) {
+  // start screen: any button closes the credits, directions move between buttons
+  if (in_launcher && !menu_open && art_ok) {
+    int act = 0, dx = 0, quit = 0;
+    if (e->type == SDL_KEYDOWN && !e->key.repeat) {
+      SDL_Keycode k = e->key.keysym.sym;
+      dx = k == SDLK_LEFT ? -1 : k == SDLK_RIGHT ? 1 : 0;
+      act = k == SDLK_RETURN || k == SDLK_z || k == SDLK_SPACE;
+      quit = k == SDLK_ESCAPE || k == SDLK_AC_BACK;
+      if (show_credits) { show_credits = 0; return; }
+    } else if (e->type == SDL_CONTROLLERBUTTONDOWN) {
+      int b = e->cbutton.button;
+      if (show_credits) { show_credits = 0; return; }
+      dx = b == SDL_CONTROLLER_BUTTON_DPAD_LEFT ? -1 : b == SDL_CONTROLLER_BUTTON_DPAD_RIGHT ? 1 : 0;
+      act = b == SDL_CONTROLLER_BUTTON_A || b == SDL_CONTROLLER_BUTTON_START;
+    } else if (e->type == SDL_CONTROLLERAXISMOTION && e->caxis.axis == SDL_CONTROLLER_AXIS_LEFTX) {
+      static int held;
+      int d = e->caxis.value < -20000 ? -1 : e->caxis.value > 20000 ? 1 : 0;
+      if (d && !held) dx = d;
+      held = d;
+    }
+    if (dx) { launch_sel = (launch_sel + dx + 5) % 5; return; }
+    if (act) { launcher_activate(launch_sel); return; }
+    if (quit) { launch_sel = 4; return; }
+  }
   switch (e->type) {
+  case SDL_FINGERDOWN: case SDL_FINGERUP: case SDL_FINGERMOTION: handle_touch(e); break;
   case SDL_QUIT: running = 0; break;
   case SDL_APP_WILLENTERBACKGROUND: cfg_save(); if (!menu_open) menu_set_open(1); break;
   case SDL_APP_DIDENTERFOREGROUND:
@@ -983,6 +1334,7 @@ int main(int argc, char** argv) {
   ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_TARGETTEXTURE);
   if (!ren) ren = SDL_CreateRenderer(win, -1, 0);
   pix = malloc(sizeof(uint32_t) * WIDE_W * SMS_H);
+  load_art();
 
   for (int i = 0; i < SDL_NumJoysticks(); i++) open_pad(i);
 
@@ -1004,7 +1356,7 @@ int main(int argc, char** argv) {
   load_music_pack();
   E.music_has = music_enabled_has;
   if (rom_crc != KNOWN_CRC) show_toast("ROM no reconocida: algunas mejoras pueden fallar", 4000);
-  else show_toast("Pulsa SELECT o ATRÁS para abrir el menú", 4000);
+  else if (!art_ok) show_toast("Pulsa SELECT o ATRÁS para abrir el menú", 4000);
 
   const double frame_time = 1.0 / 60.0;
   double acc = 0;
@@ -1015,6 +1367,8 @@ int main(int argc, char** argv) {
   // Automated test mode (desktop only): MOD_AUTOTEST="frames:out.bmp" MOD_INPUT=script MOD_MENU=1
   const char* autotest = getenv("MOD_AUTOTEST");
   if (autotest) {
+    in_launcher = getenv("MOD_LAUNCHER") != NULL;
+    if (getenv("MOD_CREDITS")) show_credits = 1;
     int total = 0; char out[512] = "";
     sscanf(autotest, "%d:%511s", &total, out);
     struct { int a, b; uint8_t btn; } spans[256]; int ns = 0;
@@ -1054,9 +1408,10 @@ int main(int argc, char** argv) {
     double dt = (now - last) / freq;
     last = now;
     if (dt > 0.1) dt = 0.1;
-    rewinding = !menu_open && cfg.triggers && (any_trigger(trig_l) || key_rewind);
+    if (in_launcher && !art_ok) in_launcher = 0;   // no start screen art: straight to the game
+    rewinding = !menu_open && !in_launcher && cfg.triggers && (any_trigger(trig_l) || key_rewind);
     fast_forward = !menu_open && !rewinding && cfg.triggers && (any_trigger(trig_r) || key_ff);
-    if (!menu_open) {
+    if (!menu_open && !in_launcher) {
       // keep the audio queue around 3 frames by nudging the emulation speed slightly
       double queued = audio_dev ? SDL_GetQueuedAudioSize(audio_dev) / 2.0 / SMS_SAMPLES_PER_FRAME : 3.0;
       double speed = 1.0 + 0.01 * (3.0 - queued);
@@ -1068,7 +1423,7 @@ int main(int argc, char** argv) {
       while (acc >= frame_time && frames < 4) {
         acc -= frame_time;
         frames++;
-        S.input = kb_input | pad_buttons() | stick_dirs();
+        S.input = kb_input | pad_buttons() | stick_dirs() | touch_input;
         // faster CPU only while playing: menus and story screens time themselves with CPU loops
         S.cpu_mult = (cfg.turbo && mod_is_gameplay(&S)) ? 2 : 1;
         if (rewinding) {
@@ -1099,7 +1454,7 @@ int main(int argc, char** argv) {
       if (frames == 4) acc = 0;
     }
     present();
-    if (menu_open) SDL_Delay(1);
+    if (menu_open || in_launcher) SDL_Delay(1);
   }
   cfg_save();
   SDL_Quit();
