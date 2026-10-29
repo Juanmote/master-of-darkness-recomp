@@ -212,6 +212,7 @@ int main(int argc, char** argv) {
       }
       if (tot) printf("SAT frame %u pieces %d missing %d\n", fr, tot, miss);
     }
+    if (getenv("VRAMDUMP") && fr % 8 == 0) { static FILE* vd; if (!vd) vd = fopen(getenv("VRAMDUMP"), "wb"); fwrite(S.st.vdp.vram, 1, 0x4000, vd); fwrite(S.st.vdp.cram, 1, 32, vd); fwrite(&S.st.vdp.reg[6], 1, 1, vd); }
     if (getenv("RAMDUMP")) { static FILE* rd; if (!rd) rd = fopen(getenv("RAMDUMP"), "wb"); fwrite(S.st.ram, 1, 0x2000, rd); }
     if (hf) {
       uint32_t h = 2166136261u;
