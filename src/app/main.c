@@ -15,7 +15,7 @@
 #define STBI_NO_STDIO
 #include "stb_image.h"
 
-#define APP_VERSION "0.9.3"
+#define APP_VERSION "0.9.4"
 #define KNOWN_CRC 0x96FB4D4Bu
 #define UI_W 640
 #define UI_H 360
@@ -50,9 +50,10 @@ typedef struct {
   int lock_weapon; // cheat: pickups do not change the weapon / subweapon
   int multi_shot;  // cheat: no limit of two subweapons on screen
   int margin;      // empty border around the picture: 0 none, 1 small, 2 medium (rounded corners, notches)
+  int btn_c, btn_z; // action of the extra C and Z buttons (six-button pads such as the Retroid Pocket Classic)
 } config_t;
 
-static config_t cfg = {1, 0, SCALE_FIT, FILTER_SHARP_SMOOTH, 8, SDL_CONTROLLER_BUTTON_A, SDL_CONTROLLER_BUTTON_Y, 1, 0, 0, 0, 0, 1, MOD_DIFF_NORMAL, MOD_RESPAWN_ON, 0, 1, 2, 1, -1, 0, 0, 0, 0};
+static config_t cfg = {1, 0, SCALE_FIT, FILTER_SHARP_SMOOTH, 8, SDL_CONTROLLER_BUTTON_A, SDL_CONTROLLER_BUTTON_Y, 1, 0, 0, 0, 0, 1, MOD_DIFF_NORMAL, MOD_RESPAWN_ON, 0, 1, 2, 1, -1, 0, 0, 0, 0, 3, 0};
 static char pref_path[1024];
 
 static void cfg_path(char* out, size_t n, const char* name) { snprintf(out, n, "%s%s", pref_path, name); }
@@ -90,6 +91,8 @@ static void cfg_load(void) {
     else if (sscanf(line, "lock_weapon=%d", &v) == 1) cfg.lock_weapon = v ? 1 : 0;
     else if (sscanf(line, "multi_shot=%d", &v) == 1) cfg.multi_shot = v ? 1 : 0;
     else if (sscanf(line, "margin=%d", &v) == 1 && v >= 0 && v <= 2) cfg.margin = v;
+    else if (sscanf(line, "btn_c=%d", &v) == 1 && v >= 0 && v < 10) cfg.btn_c = v;
+    else if (sscanf(line, "btn_z=%d", &v) == 1 && v >= 0 && v < 10) cfg.btn_z = v;
   }
   fclose(f);
   if (cfg.sub_btn == cfg.jump_btn) cfg.sub_btn = cfg.jump_btn == SDL_CONTROLLER_BUTTON_Y ? SDL_CONTROLLER_BUTTON_X : SDL_CONTROLLER_BUTTON_Y;
@@ -101,10 +104,10 @@ static void cfg_save(void) {
   if (!f) return;
   fprintf(f, "widescreen=%d\ncrt=%d\nscale=%d\nfilter=%d\nvolume=%d\njump_btn=%d\nsub_btn=%d\nturbo=%d\nlang=%d\n"
              "suit=%d\ncheat_inv=%d\ncheat_lives=%d\ntriggers=%d\ndifficulty=%d\nrespawn=%d\ndbl_jump=%d\nmusic_pack=%d\ntouch=%d\ntouch_size=%d\n"
-             "ui_lang=%d\nammo_inf=%d\nlock_weapon=%d\nmulti_shot=%d\nmargin=%d\n",
+             "ui_lang=%d\nammo_inf=%d\nlock_weapon=%d\nmulti_shot=%d\nmargin=%d\nbtn_c=%d\nbtn_z=%d\n",
           cfg.widescreen, cfg.crt, cfg.scale, cfg.filter, cfg.volume, cfg.jump_btn, cfg.sub_btn, cfg.turbo, cfg.lang,
           cfg.suit, cfg.cheat_inv, cfg.cheat_lives, cfg.triggers, cfg.difficulty, cfg.respawn, cfg.dbl_jump, cfg.music_pack, cfg.touch, cfg.touch_size,
-          cfg.ui_lang, cfg.ammo_inf, cfg.lock_weapon, cfg.multi_shot, cfg.margin);
+          cfg.ui_lang, cfg.ammo_inf, cfg.lock_weapon, cfg.multi_shot, cfg.margin, cfg.btn_c, cfg.btn_z);
   fclose(f);
 }
 
@@ -410,7 +413,7 @@ enum {
   MI_RESUME, MI_SAVE, MI_LOAD, MI_GAME, MI_CHEATS, MI_VIDEO, MI_OPTIONS, MI_RESET, MI_QUIT,
   MI_CONTROLS, MI_HOME, MI_TOUCH, MI_TOUCHSIZE,
   MI_DIFF, MI_RESPAWN, MI_DJUMP,
-  MI_FORMAT, MI_SCALE, MI_FILTER, MI_SUIT, MI_MARGIN,
+  MI_FORMAT, MI_SCALE, MI_FILTER, MI_SUIT, MI_MARGIN, MI_BTNC, MI_BTNZ,
   MI_VOLUME, MI_BUTTONS, MI_SUBBTN, MI_TURBO, MI_TRIGGERS, MI_LANG, MI_PATCH, MI_MUSIC, MI_MUSPACK, MI_MUSTEST,
   MI_INV, MI_LIVES, MI_WEAPON, MI_SUB, MI_AMMO, MI_MULTI, MI_LOCK, MI_START, MI_WARP, MI_UILANG,
   MI_BACK
@@ -423,7 +426,7 @@ static const int page_items[PAGE_COUNT][PAGE_MAX] = {
   {MI_UILANG, MI_VOLUME, MI_LANG, MI_PATCH, MI_MUSIC, MI_MUSPACK, MI_MUSTEST, MI_BACK, -1},
   {MI_INV, MI_LIVES, MI_WEAPON, MI_SUB, MI_AMMO, MI_MULTI, MI_LOCK, MI_START, MI_WARP, MI_BACK, -1},
   {MI_DIFF, MI_RESPAWN, MI_DJUMP, MI_TURBO, MI_BACK, -1},
-  {MI_BUTTONS, MI_SUBBTN, MI_TRIGGERS, MI_TOUCH, MI_TOUCHSIZE, MI_BACK, -1},
+  {MI_BUTTONS, MI_SUBBTN, MI_BTNC, MI_BTNZ, MI_TRIGGERS, MI_TOUCH, MI_TOUCHSIZE, MI_BACK, -1},
   {MI_GAME, MI_CHEATS, MI_VIDEO, MI_OPTIONS, MI_BACK, -1},
 };
 static const char* page_titles[2][PAGE_COUNT] = {
@@ -460,6 +463,10 @@ static const char* button_name(int b) {
   return "?";
 }
 
+enum { ACT_NONE, ACT_ATTACK, ACT_JUMP, ACT_SUB, ACT_PAUSE, ACT_MENU, ACT_REWIND, ACT_FF, ACT_SAVE, ACT_LOAD, ACT_COUNT };
+static const char* act_names[2][ACT_COUNT] = {
+  {"Nothing", "Attack", "Jump", "Subweapon", "Pause", "Open menu", "Rewind", "Fast forward", "Save state", "Load state"},
+  {"Nada", "Atacar", "Saltar", "Subarma", "Pausa", "Abrir menú", "Rebobinar", "Acelerar", "Guardar estado", "Cargar estado"}};
 static const char* scale_names[2][SCALE_COUNT] = {{"Fit to screen", "Integer scale", "Stretch"},
                                                   {"Ajustar a pantalla", "Escala entera", "Estirar"}};
 static const char* filter_names[2][FILTER_COUNT] = {{"Sharp", "Sharp smoothed", "Smooth", "Scanlines"},
@@ -500,6 +507,8 @@ static void menu_label(int i, char* out, size_t n) {
     break;
   case MI_SCALE: snprintf(out, n, "%s ← %s →", T("Scaling:", "Escalado:"), scale_names[L][cfg.scale]); break;
   case MI_FILTER: snprintf(out, n, "%s   ← %s →", T("Filter:", "Filtro:"), filter_names[L][cfg.filter]); break;
+  case MI_BTNC: snprintf(out, n, "%s ← %s →", T("C button:", "Botón C:"), act_names[L][cfg.btn_c]); break;
+  case MI_BTNZ: snprintf(out, n, "%s ← %s →", T("Z button:", "Botón Z:"), act_names[L][cfg.btn_z]); break;
   case MI_MARGIN: {
     static const char* mn[2][3] = {{"None", "Small", "Medium"}, {"No", "Pequeño", "Mediano"}};
     snprintf(out, n, "%s ← %s →", T("Screen margin:", "Margen de pantalla:"), mn[L][cfg.margin]);
@@ -601,6 +610,8 @@ static void menu_change(int dir) {
   case MI_FILTER: cfg.filter = (cfg.filter + dir + FILTER_COUNT) % FILTER_COUNT; break;
   case MI_SUIT: cfg.suit = (cfg.suit + dir + SUIT_COUNT) % SUIT_COUNT; apply_suit(); break;
   case MI_MARGIN: cfg.margin = (cfg.margin + dir + 3) % 3; break;
+  case MI_BTNC: cfg.btn_c = (cfg.btn_c + dir + ACT_COUNT) % ACT_COUNT; break;
+  case MI_BTNZ: cfg.btn_z = (cfg.btn_z + dir + ACT_COUNT) % ACT_COUNT; break;
   case MI_VOLUME: cfg.volume += dir; if (cfg.volume < 0) cfg.volume = 0; if (cfg.volume > 10) cfg.volume = 10; break;
   case MI_BUTTONS: capture_jump = 1; return;
   case MI_SUBBTN: capture_jump = 2; return;
@@ -770,7 +781,8 @@ static void draw_ui(void) {
     if (menu_page == PAGE_CONTROLS) {
       int it = cur_item();
       foot = it == MI_TRIGGERS ? T("L2 rewinds up to 20 s, R2 fast forwards", "L2 rebobina hasta 20 s, R2 acelera") :
-             it == MI_TOUCH ? T("On screen: d-pad, 1 attack, 2 jump, START menu, PAUSE pause", "En pantalla: cruceta, 1 ataque, 2 salto, START menú, PAUSE pausa") :
+             it == MI_TOUCH ? T("On screen: d-pad, 1 attack, 2 jump, dagger subweapon, START menu, PAUSE pause", "En pantalla: cruceta, 1 ataque, 2 salto, puñal subarma, START menú, PAUSE pausa") :
+             (it == MI_BTNC || it == MI_BTNZ) ? T("Extra buttons of 6-button pads (Retroid Classic...)", "Botones extra de mandos de 6 botones (Retroid Classic)") :
              T("SELECT or BACK opens the menu while playing", "SELECT o ATRÁS abre el menú durante la partida");
     }
     if (menu_page == PAGE_GAME) {
@@ -834,9 +846,9 @@ static SDL_Rect dest_rect(int ww, int wh, int gw) {
 
 // ---------------------------------------------------------------- start screen and touch controls
 enum { ART_BG, ART_PLAY, ART_OPTIONS, ART_CONTROLS, ART_CREDITS, ART_QUIT, ART_DPAD, ART_B1, ART_B2, ART_START, ART_PAUSE,
-       ART_EN_PLAY, ART_COUNT = ART_EN_PLAY + 5 };
+       ART_B3, ART_EN_PLAY, ART_COUNT = ART_EN_PLAY + 5 };
 static const char* art_files[ART_COUNT] = {"fondo.jpg", "jugar.png", "opciones.png", "controles.png", "creditos.png",
-                                           "salir.png", "dpad.png", "b1.png", "b2.png", "start.png", "pause.png",
+                                           "salir.png", "dpad.png", "b1.png", "b2.png", "start.png", "pause.png", "b3.png",
                                            "en_jugar.png", "en_opciones.png", "en_controles.png", "en_creditos.png", "en_salir.png"};
 static SDL_Texture* art[ART_COUNT];
 static int art_w[ART_COUNT], art_h[ART_COUNT];
@@ -868,7 +880,7 @@ static void load_art(void) {
     int w, h, c;
     uint8_t* px = d ? stbi_load_from_memory(d, (int)n, &w, &h, &c, 4) : NULL;
     free(d);
-    if (!px) { if (i < ART_EN_PLAY) art_ok = 0; continue; }
+    if (!px) { if (i < ART_B3) art_ok = 0; continue; }   // the subweapon button and English art are optional
     art[i] = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STATIC, w, h);
     if (art[i]) {
       SDL_UpdateTexture(art[i], NULL, px, w * 4);
@@ -952,9 +964,9 @@ static void launcher_activate(int i) {
 }
 
 // --- touch controls
-enum { TZ_NONE, TZ_DPAD, TZ_B1, TZ_B2, TZ_START, TZ_PAUSE };
+enum { TZ_NONE, TZ_DPAD, TZ_B1, TZ_B2, TZ_START, TZ_PAUSE, TZ_B3, TZ_COUNT };
 static struct { SDL_FingerID id; int zone; float x, y; int used; } fingers[10];
-static SDL_Rect tz_rect[6];
+static SDL_Rect tz_rect[TZ_COUNT];
 static uint8_t touch_input;
 static int touch_seen;   // a finger has touched the screen (for "only without a gamepad")
 
@@ -971,6 +983,9 @@ static void layout_touch(int ww, int wh) {
   tz_rect[TZ_DPAD] = (SDL_Rect){m, wh - m - d, d, d};
   tz_rect[TZ_B2] = (SDL_Rect){ww - m - b, wh - m - b - b / 3, b, b};
   tz_rect[TZ_B1] = (SDL_Rect){ww - m - 2 * b - m / 2, wh - m - b + b / 8, b, b};
+  // subweapon button, a little smaller, above the attack button
+  int b3 = b * 4 / 5;
+  tz_rect[TZ_B3] = (SDL_Rect){tz_rect[TZ_B1].x - b / 3, tz_rect[TZ_B1].y - b3 - m / 3, b3, b3};
   int sw = (int)(wh * 0.17 * sz), sh = art_w[ART_START] ? sw * art_h[ART_START] / art_w[ART_START] : sw / 3;
   tz_rect[TZ_START] = (SDL_Rect){ww / 2 + m / 2, wh - m - sh, sw, sh};
   tz_rect[TZ_PAUSE] = (SDL_Rect){ww / 2 - m / 2 - sw, wh - m - sh, sw, sh};
@@ -980,7 +995,8 @@ static int in_rect(SDL_Rect r, float x, float y) { return x >= r.x && x < r.x + 
 
 static int touch_zone(float x, float y) {
   if (in_rect(tz_rect[TZ_DPAD], x, y)) return TZ_DPAD;
-  for (int z = TZ_B1; z <= TZ_PAUSE; z++) {
+  for (int z = TZ_B1; z < TZ_COUNT; z++) {
+    if (z == TZ_B3 && !art[ART_B3]) continue;
     SDL_Rect r = tz_rect[z];
     r.x -= r.w / 8; r.y -= r.h / 8; r.w += r.w / 4; r.h += r.h / 4;   // a bit of margin around
     if (in_rect(r, x, y)) return z;
@@ -1009,16 +1025,17 @@ static void update_touch_input(void) {
     case TZ_B1: touch_input |= BTN_1; break;
     case TZ_B2: touch_input |= BTN_2; break;
     case TZ_PAUSE: touch_input |= BTN_PAUSE; break;
+    case TZ_B3: touch_input |= BTN_UP | BTN_1; break;   // the game throws the subweapon with up + attack
     }
   }
 }
 
 static void draw_touch(int ww, int wh) {
   layout_touch(ww, wh);
-  int held[6] = {0};
+  int held[TZ_COUNT] = {0};
   for (int i = 0; i < 10; i++) if (fingers[i].used) held[fingers[i].zone] = 1;
-  static const int za[6] = {0, ART_DPAD, ART_B1, ART_B2, ART_START, ART_PAUSE};
-  for (int z = TZ_DPAD; z <= TZ_PAUSE; z++) {
+  static const int za[TZ_COUNT] = {0, ART_DPAD, ART_B1, ART_B2, ART_START, ART_PAUSE, ART_B3};
+  for (int z = TZ_DPAD; z < TZ_COUNT; z++) {
     int a = za[z];
     if (!art[a]) continue;
     SDL_SetTextureColorMod(art[a], 255, 255, 255);
@@ -1084,6 +1101,7 @@ static void handle_touch(SDL_Event* e) {
       // value rows: left half goes back, right half forward; other rows activate
       int it = cur_item();
       int value_row = it == MI_FORMAT || it == MI_SCALE || it == MI_FILTER || it == MI_SUIT || it == MI_MARGIN || it == MI_VOLUME ||
+                      it == MI_BTNC || it == MI_BTNZ ||
                       it == MI_TURBO || it == MI_TRIGGERS || it == MI_DIFF || it == MI_RESPAWN || it == MI_DJUMP ||
                       it == MI_TOUCH || it == MI_TOUCHSIZE || it == MI_INV || it == MI_LIVES || it == MI_WEAPON ||
                       it == MI_SUB || it == MI_START || it == MI_MUSTEST || it == MI_AMMO || it == MI_LOCK || it == MI_UILANG || it == MI_MULTI;
@@ -1111,7 +1129,7 @@ static void handle_touch(SDL_Event* e) {
         fingers[i].x = x; fingers[i].y = y;
         // sliding between the two buttons or out of the cross keeps working
         int z = touch_zone(x, y);
-        if (z == TZ_B1 || z == TZ_B2 || z == TZ_DPAD) fingers[i].zone = z;
+        if (z == TZ_B1 || z == TZ_B2 || z == TZ_B3 || z == TZ_DPAD) fingers[i].zone = z;
       }
     }
   }
@@ -1209,6 +1227,23 @@ static uint8_t padmap(int b) {
 }
 
 static uint32_t pad_held_mask;   // SDL controller buttons held (any pad)
+static uint8_t extra_held[2];    // C and Z held (Android joystick buttons 17 and 18)
+static int extra_action_held(int act) {
+  return (extra_held[0] && cfg.btn_c == act) || (extra_held[1] && cfg.btn_z == act);
+}
+static uint8_t extra_buttons(void) {
+  uint8_t r = 0;
+  for (int k = 0; k < 2; k++) {
+    if (!extra_held[k]) continue;
+    switch (k ? cfg.btn_z : cfg.btn_c) {
+    case ACT_ATTACK: r |= BTN_1; break;
+    case ACT_JUMP: r |= BTN_2; break;
+    case ACT_SUB: r |= BTN_UP | BTN_1; break;
+    case ACT_PAUSE: r |= BTN_PAUSE; break;
+    }
+  }
+  return r;
+}
 static uint8_t pad_buttons(void) {
   uint8_t r = 0;
   for (int b = 0; b < 32; b++) if (pad_held_mask & (1u << b)) r |= padmap(b);
@@ -1312,6 +1347,22 @@ static void handle_event(SDL_Event* e) {
     if (e->key.keysym.sym == SDLK_RETURN) kb_input &= ~(BTN_1 | BTN_PAUSE);   // what it meant may have changed
     break;
   case SDL_CONTROLLERDEVICEADDED: open_pad(e->cdevice.which); break;
+#ifdef __ANDROID__
+  case SDL_JOYBUTTONDOWN: case SDL_JOYBUTTONUP: {
+    // C and Z (Android KEYCODE_BUTTON_C/Z): SDL has no game-controller button for them
+    int k = e->jbutton.button == 17 ? 0 : e->jbutton.button == 18 ? 1 : -1;
+    if (k < 0) break;
+    int down = e->type == SDL_JOYBUTTONDOWN;
+    extra_held[k] = (uint8_t)down;
+    if (!down) break;
+    int act = k ? cfg.btn_z : cfg.btn_c;
+    if (act == ACT_MENU && !show_credits) { menu_set_open(!menu_open); break; }
+    if (in_launcher || menu_open) break;
+    if (act == ACT_SAVE) do_save_state();
+    else if (act == ACT_LOAD) do_load_state();
+    break;
+  }
+#endif
   case SDL_CONTROLLERDEVICEREMOVED: {
     int s = pad_slot(e->cdevice.which);
     if (s >= 0) { SDL_GameControllerClose(pads[s]); pads[s] = NULL; stick_x[s] = stick_y[s] = 0; trig_l[s] = trig_r[s] = 0; }
@@ -1559,8 +1610,10 @@ int main(int argc, char** argv) {
     last = now;
     if (dt > 0.1) dt = 0.1;
     if (in_launcher && !art_ok) in_launcher = 0;   // no start screen art: straight to the game
-    rewinding = !menu_open && !in_launcher && cfg.triggers && (any_trigger(trig_l) || key_rewind);
-    fast_forward = !menu_open && !rewinding && cfg.triggers && (any_trigger(trig_r) || key_ff);
+    rewinding = !menu_open && !in_launcher &&
+                ((cfg.triggers && (any_trigger(trig_l) || key_rewind)) || extra_action_held(ACT_REWIND));
+    fast_forward = !menu_open && !rewinding && !in_launcher &&
+                   ((cfg.triggers && (any_trigger(trig_r) || key_ff)) || extra_action_held(ACT_FF));
     if (!menu_open && !in_launcher) {
       // keep the audio queue around 3 frames by nudging the emulation speed slightly
       double queued = audio_dev ? SDL_GetQueuedAudioSize(audio_dev) / 2.0 / SMS_SAMPLES_PER_FRAME : 3.0;
@@ -1573,7 +1626,7 @@ int main(int argc, char** argv) {
       while (acc >= frame_time && frames < 4) {
         acc -= frame_time;
         frames++;
-        S.input = kb_input | pad_buttons() | stick_dirs() | touch_input;
+        S.input = kb_input | pad_buttons() | stick_dirs() | touch_input | extra_buttons();
         // faster CPU only while playing: menus and story screens time themselves with CPU loops
         S.cpu_mult = (cfg.turbo && mod_is_gameplay(&S)) ? 2 : 1;
         if (rewinding) {

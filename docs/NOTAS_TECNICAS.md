@@ -247,3 +247,12 @@ Cabecera TMR SEGA válida, checksum 6FE6 correcto, región SMS Export, mapper Se
 - Pantalla de inicio: en pantallas más anchas que el fondo solo se recorta por abajo (el logo queda entero).
 - Imagen → "Margen de pantalla" (no / pequeño / mediano): aparta la imagen de los bordes en móviles con esquinas
   redondeadas o cámara en la pantalla. El marcador del juego empieza en la línea 0 de la imagen original.
+
+## v0.9.4 — botones C y Z, botón táctil de subarma
+- Mandos de seis botones (Retroid Pocket Classic): Android manda KEYCODE_BUTTON_C/Z y SDL los da como botones 17 y
+  18 del joystick, sin botón equivalente en "game controller". Se leen como SDL_JOYBUTTON (solo en Android) y se
+  les asigna una acción en Controles: nada, atacar, saltar, subarma, pausa, abrir menú, rebobinar, acelerar,
+  guardar estado, cargar estado (por defecto C = subarma, Z = nada). Rebobinar/acelerar desde C/Z funcionan
+  aunque la opción de los gatillos esté apagada.
+- Tercer botón táctil (subarma, arriba + ataque) encima del 1. Su dibujo, `launcher/b3.png`, es provisional:
+  sale del botón 1 con la gema en azul y un puñal dorado en lugar del número; se puede sustituir por otro.
