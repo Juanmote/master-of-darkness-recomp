@@ -15,6 +15,7 @@ typedef struct {
   int cam;            // camera X used for the extension
   int left_limit, right_limit;
   int cx;             // x of the original picture inside the playfield lines
+  bool scene;         // the playfield lines were rebuilt (from the map or the last good picture)
 } mod_wide_info_t;
 
 // Writes SMS_H lines of (SMS_W + 2*ext) ARGB pixels into out (pitch in pixels).
@@ -32,6 +33,10 @@ void mod_set_hero_colors(const uint8_t* map16);
 
 void mod_render(const sms_t* s, uint32_t* out, int pitch, int ext, mod_wide_info_t* info,
                 const mod_piece_t* pieces, int n_pieces);
+
+// 4:3 picture (SMS_W wide) with the 8-pixel column the game blanks on the left (to hide its
+// scrolling) filled with the scenery that belongs there.
+void mod_render_full43(const sms_t* s, uint32_t* out, int pitch);
 
 #ifdef __cplusplus
 }

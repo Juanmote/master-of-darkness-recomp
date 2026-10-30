@@ -235,3 +235,15 @@ Cabecera TMR SEGA válida, checksum 6FE6 correcto, región SMS Export, mapper Se
   caja de golpe en C860 un momento, porque ese código tiene la dirección fija.
 - Con el truco apagado y sin proyectiles extra los ganchos no tocan nada (huella idéntica a v0.8.2/v0.9.0).
 - Comprobado: los proyectiles extra dañan a los enemigos (con IY en DCC0..), chocan con las paredes y se borran solos.
+
+## v0.9.3 — columna izquierda, START en el título, margen de pantalla
+- (La v0.9.2 se descartó y se revirtió: el problema de mandos de la Retroid era de la consola.)
+- 4:3 y 8:7: el juego tapa la columna de 8 píxeles de la izquierda (registro 0, bit 5, para ocultar el scroll);
+  en una pantalla 8:7 (Retroid Pocket Classic) se veía como franja negra. `mod_render_full43` dibuja también la
+  imagen con 8 píxeles de lateral y copia solo esa columna en las líneas del escenario: el resto es la imagen
+  original sin tocar.
+- START (mando, Intro y START táctil) hace de botón 1 en las pantallas de título, introducción, historia y
+  continuar (se reconocen por la música pedida: 83, 87, 8D, 82); en la partida sigue siendo la pausa.
+- Pantalla de inicio: en pantallas más anchas que el fondo solo se recorta por abajo (el logo queda entero).
+- Imagen → "Margen de pantalla" (no / pequeño / mediano): aparta la imagen de los bordes en móviles con esquinas
+  redondeadas o cámara en la pantalla. El marcador del juego empieza en la línea 0 de la imagen original.

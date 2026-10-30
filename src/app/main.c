@@ -15,7 +15,7 @@
 #define STBI_NO_STDIO
 #include "stb_image.h"
 
-#define APP_VERSION "0.9.1"
+#define APP_VERSION "0.9.3"
 #define KNOWN_CRC 0x96FB4D4Bu
 #define UI_W 640
 #define UI_H 360
@@ -49,9 +49,10 @@ typedef struct {
   int ammo_inf;    // cheat: the subweapon never runs out
   int lock_weapon; // cheat: pickups do not change the weapon / subweapon
   int multi_shot;  // cheat: no limit of two subweapons on screen
+  int margin;      // empty border around the picture: 0 none, 1 small, 2 medium (rounded corners, notches)
 } config_t;
 
-static config_t cfg = {1, 0, SCALE_FIT, FILTER_SHARP_SMOOTH, 8, SDL_CONTROLLER_BUTTON_A, SDL_CONTROLLER_BUTTON_Y, 1, 0, 0, 0, 0, 1, MOD_DIFF_NORMAL, MOD_RESPAWN_ON, 0, 1, 2, 1, -1, 0, 0, 0};
+static config_t cfg = {1, 0, SCALE_FIT, FILTER_SHARP_SMOOTH, 8, SDL_CONTROLLER_BUTTON_A, SDL_CONTROLLER_BUTTON_Y, 1, 0, 0, 0, 0, 1, MOD_DIFF_NORMAL, MOD_RESPAWN_ON, 0, 1, 2, 1, -1, 0, 0, 0, 0};
 static char pref_path[1024];
 
 static void cfg_path(char* out, size_t n, const char* name) { snprintf(out, n, "%s%s", pref_path, name); }
@@ -88,6 +89,7 @@ static void cfg_load(void) {
     else if (sscanf(line, "ammo_inf=%d", &v) == 1) cfg.ammo_inf = v ? 1 : 0;
     else if (sscanf(line, "lock_weapon=%d", &v) == 1) cfg.lock_weapon = v ? 1 : 0;
     else if (sscanf(line, "multi_shot=%d", &v) == 1) cfg.multi_shot = v ? 1 : 0;
+    else if (sscanf(line, "margin=%d", &v) == 1 && v >= 0 && v <= 2) cfg.margin = v;
   }
   fclose(f);
   if (cfg.sub_btn == cfg.jump_btn) cfg.sub_btn = cfg.jump_btn == SDL_CONTROLLER_BUTTON_Y ? SDL_CONTROLLER_BUTTON_X : SDL_CONTROLLER_BUTTON_Y;
@@ -99,10 +101,10 @@ static void cfg_save(void) {
   if (!f) return;
   fprintf(f, "widescreen=%d\ncrt=%d\nscale=%d\nfilter=%d\nvolume=%d\njump_btn=%d\nsub_btn=%d\nturbo=%d\nlang=%d\n"
              "suit=%d\ncheat_inv=%d\ncheat_lives=%d\ntriggers=%d\ndifficulty=%d\nrespawn=%d\ndbl_jump=%d\nmusic_pack=%d\ntouch=%d\ntouch_size=%d\n"
-             "ui_lang=%d\nammo_inf=%d\nlock_weapon=%d\nmulti_shot=%d\n",
+             "ui_lang=%d\nammo_inf=%d\nlock_weapon=%d\nmulti_shot=%d\nmargin=%d\n",
           cfg.widescreen, cfg.crt, cfg.scale, cfg.filter, cfg.volume, cfg.jump_btn, cfg.sub_btn, cfg.turbo, cfg.lang,
           cfg.suit, cfg.cheat_inv, cfg.cheat_lives, cfg.triggers, cfg.difficulty, cfg.respawn, cfg.dbl_jump, cfg.music_pack, cfg.touch, cfg.touch_size,
-          cfg.ui_lang, cfg.ammo_inf, cfg.lock_weapon, cfg.multi_shot);
+          cfg.ui_lang, cfg.ammo_inf, cfg.lock_weapon, cfg.multi_shot, cfg.margin);
   fclose(f);
 }
 
@@ -269,6 +271,12 @@ static int lang_active(void) { return cfg.lang && patch_data && rom_crc == KNOWN
 
 // ---------------------------------------------------------------- music pack
 static int music_current = -1;   // last track the game asked for
+// Title, intro, story and continue screens (known by their music): there START starts or
+// continues the game like button 1 did on the Master System, instead of pausing.
+static int on_title_screens(void) {
+  return music_current < 0 || music_current == 0x83 || music_current == 0x87 || music_current == 0x8D ||
+         music_current == 0x82;
+}
 static int waiting_music;
 
 static void music_pack_path(char* out, size_t n) {
@@ -402,7 +410,7 @@ enum {
   MI_RESUME, MI_SAVE, MI_LOAD, MI_GAME, MI_CHEATS, MI_VIDEO, MI_OPTIONS, MI_RESET, MI_QUIT,
   MI_CONTROLS, MI_HOME, MI_TOUCH, MI_TOUCHSIZE,
   MI_DIFF, MI_RESPAWN, MI_DJUMP,
-  MI_FORMAT, MI_SCALE, MI_FILTER, MI_SUIT,
+  MI_FORMAT, MI_SCALE, MI_FILTER, MI_SUIT, MI_MARGIN,
   MI_VOLUME, MI_BUTTONS, MI_SUBBTN, MI_TURBO, MI_TRIGGERS, MI_LANG, MI_PATCH, MI_MUSIC, MI_MUSPACK, MI_MUSTEST,
   MI_INV, MI_LIVES, MI_WEAPON, MI_SUB, MI_AMMO, MI_MULTI, MI_LOCK, MI_START, MI_WARP, MI_UILANG,
   MI_BACK
@@ -411,7 +419,7 @@ enum { PAGE_MAIN, PAGE_VIDEO, PAGE_OPTIONS, PAGE_CHEATS, PAGE_GAME, PAGE_CONTROL
 #define PAGE_MAX 12
 static const int page_items[PAGE_COUNT][PAGE_MAX] = {
   {MI_RESUME, MI_SAVE, MI_LOAD, MI_GAME, MI_CHEATS, MI_VIDEO, MI_OPTIONS, MI_CONTROLS, MI_RESET, MI_HOME, MI_QUIT, -1},
-  {MI_FORMAT, MI_SCALE, MI_FILTER, MI_SUIT, MI_BACK, -1},
+  {MI_FORMAT, MI_SCALE, MI_FILTER, MI_MARGIN, MI_SUIT, MI_BACK, -1},
   {MI_UILANG, MI_VOLUME, MI_LANG, MI_PATCH, MI_MUSIC, MI_MUSPACK, MI_MUSTEST, MI_BACK, -1},
   {MI_INV, MI_LIVES, MI_WEAPON, MI_SUB, MI_AMMO, MI_MULTI, MI_LOCK, MI_START, MI_WARP, MI_BACK, -1},
   {MI_DIFF, MI_RESPAWN, MI_DJUMP, MI_TURBO, MI_BACK, -1},
@@ -492,6 +500,11 @@ static void menu_label(int i, char* out, size_t n) {
     break;
   case MI_SCALE: snprintf(out, n, "%s ← %s →", T("Scaling:", "Escalado:"), scale_names[L][cfg.scale]); break;
   case MI_FILTER: snprintf(out, n, "%s   ← %s →", T("Filter:", "Filtro:"), filter_names[L][cfg.filter]); break;
+  case MI_MARGIN: {
+    static const char* mn[2][3] = {{"None", "Small", "Medium"}, {"No", "Pequeño", "Mediano"}};
+    snprintf(out, n, "%s ← %s →", T("Screen margin:", "Margen de pantalla:"), mn[L][cfg.margin]);
+    break;
+  }
   case MI_SUIT: snprintf(out, n, "%s ← %s →", T("Dr. Social's suit:", "Traje del Dr. Social:"), L ? suits[cfg.suit].es : suits[cfg.suit].en); break;
   case MI_VOLUME: snprintf(out, n, "%s  ← %d%% →", T("Volume:", "Volumen:"), cfg.volume * 10); break;
   case MI_BUTTONS:
@@ -587,6 +600,7 @@ static void menu_change(int dir) {
   case MI_SCALE: cfg.scale = (cfg.scale + dir + SCALE_COUNT) % SCALE_COUNT; break;
   case MI_FILTER: cfg.filter = (cfg.filter + dir + FILTER_COUNT) % FILTER_COUNT; break;
   case MI_SUIT: cfg.suit = (cfg.suit + dir + SUIT_COUNT) % SUIT_COUNT; apply_suit(); break;
+  case MI_MARGIN: cfg.margin = (cfg.margin + dir + 3) % 3; break;
   case MI_VOLUME: cfg.volume += dir; if (cfg.volume < 0) cfg.volume = 0; if (cfg.volume > 10) cfg.volume = 10; break;
   case MI_BUTTONS: capture_jump = 1; return;
   case MI_SUBBTN: capture_jump = 2; return;
@@ -804,13 +818,17 @@ static void ensure_textures(int game_w) {
 
 static SDL_Rect dest_rect(int ww, int wh, int gw) {
   SDL_Rect r;
+  // margin: the picture keeps away from the screen edges (phones with rounded corners or a notch)
+  int mx = 0, my = 0;
+  if (cfg.margin) { my = wh * (cfg.margin == 1 ? 3 : 6) / 100; mx = ww * (cfg.margin == 1 ? 2 : 4) / 100; }
+  ww -= 2 * mx; wh -= 2 * my;
   double par = (!cfg.widescreen && cfg.crt) ? 8.0 / 7.0 : 1.0;  // pixel aspect ratio
   double sx = (double)ww / (gw * par), sy = (double)wh / SMS_H;
   double s = sx < sy ? sx : sy;
-  if (cfg.scale == SCALE_STRETCH) { r.x = 0; r.y = 0; r.w = ww; r.h = wh; return r; }
+  if (cfg.scale == SCALE_STRETCH) { r.x = mx; r.y = my; r.w = ww; r.h = wh; return r; }
   if (cfg.scale == SCALE_INT && s >= 1.0) s = floor(s);
   r.w = (int)(gw * par * s + 0.5); r.h = (int)(SMS_H * s + 0.5);
-  r.x = (ww - r.w) / 2; r.y = (wh - r.h) / 2;
+  r.x = mx + (ww - r.w) / 2; r.y = my + (wh - r.h) / 2;
   return r;
 }
 
@@ -910,7 +928,8 @@ static void draw_launcher(int ww, int wh) {
   SDL_Rect bg;
   double k = (double)ww / art_w[ART_BG] > (double)wh / art_h[ART_BG] ? (double)ww / art_w[ART_BG] : (double)wh / art_h[ART_BG];
   bg.w = (int)(art_w[ART_BG] * k); bg.h = (int)(art_h[ART_BG] * k);
-  bg.x = (ww - bg.w) / 2; bg.y = (wh - bg.h) / 2;
+  // on screens wider than the picture only its bottom is cut, so the logo stays whole
+  bg.x = (ww - bg.w) / 2; bg.y = bg.h > wh ? 0 : (wh - bg.h) / 2;
   SDL_RenderCopy(ren, art[ART_BG], NULL, &bg);
   layout_launcher(ww, wh);
   for (int i = 0; i < 5; i++)
@@ -1064,7 +1083,7 @@ static void handle_touch(SDL_Event* e) {
       menu_sel = row;
       // value rows: left half goes back, right half forward; other rows activate
       int it = cur_item();
-      int value_row = it == MI_FORMAT || it == MI_SCALE || it == MI_FILTER || it == MI_SUIT || it == MI_VOLUME ||
+      int value_row = it == MI_FORMAT || it == MI_SCALE || it == MI_FILTER || it == MI_SUIT || it == MI_MARGIN || it == MI_VOLUME ||
                       it == MI_TURBO || it == MI_TRIGGERS || it == MI_DIFF || it == MI_RESPAWN || it == MI_DJUMP ||
                       it == MI_TOUCH || it == MI_TOUCHSIZE || it == MI_INV || it == MI_LIVES || it == MI_WEAPON ||
                       it == MI_SUB || it == MI_START || it == MI_MUSTEST || it == MI_AMMO || it == MI_LOCK || it == MI_UILANG || it == MI_MULTI;
@@ -1080,7 +1099,8 @@ static void handle_touch(SDL_Event* e) {
     if (!touch_visible()) return;
     layout_touch(ww, wh);
     int z = touch_zone(x, y);
-    if (z == TZ_START) { menu_set_open(1); return; }
+    if (z == TZ_START && !on_title_screens()) { menu_set_open(1); return; }
+    if (z == TZ_START) z = TZ_B1;   // on the title screens START starts the game
     for (int i = 0; i < 10; i++)
       if (!fingers[i].used) { fingers[i].used = 1; fingers[i].id = e->tfinger.fingerId; fingers[i].zone = z; fingers[i].x = x; fingers[i].y = y; break; }
   } else {
@@ -1116,7 +1136,8 @@ static void present(void) {
   }
   int gw = cfg.widescreen ? WIDE_W : SMS_W;
   ensure_textures(gw);
-  mod_render(&S, pix, gw, cfg.widescreen ? MOD_WIDE_EXT : 0, NULL, E.wide ? E.shown : NULL, E.wide ? E.n_shown : 0);
+  if (cfg.widescreen) mod_render(&S, pix, gw, MOD_WIDE_EXT, NULL, E.wide ? E.shown : NULL, E.wide ? E.n_shown : 0);
+  else mod_render_full43(&S, pix, gw);   // also fills the column the game blanks on the left
   SDL_UpdateTexture(tex_game, NULL, pix, gw * 4);
   int ww, wh;
   SDL_GetRendererOutputSize(ren, &ww, &wh);
@@ -1166,7 +1187,7 @@ static uint8_t keymap(SDL_Keycode k) {
   case SDLK_LEFT: return BTN_LEFT; case SDLK_RIGHT: return BTN_RIGHT;
   case SDLK_z: case SDLK_j: return BTN_1;
   case SDLK_x: case SDLK_k: case SDLK_SPACE: return BTN_2;
-  case SDLK_RETURN: return BTN_PAUSE;
+  case SDLK_RETURN: return on_title_screens() ? BTN_1 : BTN_PAUSE;
   }
   return 0;
 }
@@ -1182,7 +1203,7 @@ static uint8_t padmap(int b) {
   case SDL_CONTROLLER_BUTTON_DPAD_DOWN: return BTN_DOWN;
   case SDL_CONTROLLER_BUTTON_DPAD_LEFT: return BTN_LEFT;
   case SDL_CONTROLLER_BUTTON_DPAD_RIGHT: return BTN_RIGHT;
-  case SDL_CONTROLLER_BUTTON_START: return BTN_PAUSE;
+  case SDL_CONTROLLER_BUTTON_START: return on_title_screens() ? BTN_1 : BTN_PAUSE;
   }
   return 0;
 }
@@ -1288,6 +1309,7 @@ static void handle_event(SDL_Event* e) {
     if (e->key.keysym.sym == SDLK_q) key_rewind = 0;
     if (e->key.keysym.sym == SDLK_e) key_ff = 0;
     kb_input &= ~keymap(e->key.keysym.sym);
+    if (e->key.keysym.sym == SDLK_RETURN) kb_input &= ~(BTN_1 | BTN_PAUSE);   // what it meant may have changed
     break;
   case SDL_CONTROLLERDEVICEADDED: open_pad(e->cdevice.which); break;
   case SDL_CONTROLLERDEVICEREMOVED: {
@@ -1448,7 +1470,9 @@ int main(int argc, char** argv) {
 #ifdef __ANDROID__
   wflags |= SDL_WINDOW_FULLSCREEN;
 #endif
-  win = SDL_CreateWindow("Master of Darkness", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, WIDE_W * 3, SMS_H * 3, wflags);
+  int win_w = WIDE_W * 3, win_h = SMS_H * 3;
+  if (getenv("MOD_WINSIZE")) sscanf(getenv("MOD_WINSIZE"), "%dx%d", &win_w, &win_h);   // tests: other screen shapes
+  win = SDL_CreateWindow("Master of Darkness", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, win_w, win_h, wflags);
   ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_TARGETTEXTURE);
   if (!ren) ren = SDL_CreateRenderer(win, -1, 0);
   pix = malloc(sizeof(uint32_t) * WIDE_W * SMS_H);

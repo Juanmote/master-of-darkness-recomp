@@ -296,6 +296,7 @@ void mod_render(const sms_t* s, uint32_t* out, int pitch, int ext, mod_wide_info
     v.cx = cache.cx;
   }
   info->cx = v.cx;
+  info->scene = valid || from_cache;
   const int cx = v.cx;
   side_src_t srcL, srcR;
   if (valid) side_sources(s, &m, &v, &srcL, &srcR);
@@ -451,4 +452,18 @@ int mod_debug_compare(const sms_t* s, uint8_t* mask) {
       if (c != v) { mask[y * SMS_W + x] = 1; n++; }
     }
   return n;
+}
+
+void mod_render_full43(const sms_t* s, uint32_t* out, int pitch) {
+  enum { E = 8, TW = SMS_W + 2 * E };
+  static uint32_t tmp[TW * SMS_H];
+  mod_render(s, out, pitch, 0, NULL, NULL, 0);
+  bool any = false;
+  for (int y = 0; y < SMS_H && !any; y++) any = (s->line_reg0[y] & 0x20) != 0;
+  if (!any) return;
+  mod_wide_info_t info;
+  mod_render(s, tmp, TW, E, &info, NULL, 0);
+  if (!info.scene) return;
+  for (int y = GAME_Y0; y < SMS_H; y++)
+    if (s->line_reg0[y] & 0x20) memcpy(out + y * pitch, tmp + y * TW + info.cx, 8 * sizeof(uint32_t));
 }
