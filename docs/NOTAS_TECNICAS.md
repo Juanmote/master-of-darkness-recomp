@@ -256,3 +256,14 @@ Cabecera TMR SEGA válida, checksum 6FE6 correcto, región SMS Export, mapper Se
   aunque la opción de los gatillos esté apagada.
 - Tercer botón táctil (subarma, arriba + ataque) encima del 1. Su dibujo, `launcher/b3.png`, es provisional:
   sale del botón 1 con la gema en azul y un puñal dorado en lugar del número; se puede sustituir por otro.
+
+## v0.9.5 — C y Z como botones normales, icono de subarma, volver al juego original
+- C y Z (botones 17 y 18 del joystick en Android) se tratan como dos botones frontales más (ids 24 y 25): atacan,
+  y se pueden elegir como botón de saltar o de subarma con "pulsa el botón que quieras". Se quitan las opciones
+  "Botón C/Z" de la v0.9.4.
+- Botón táctil de subarma: muestra el dibujo de la subarma que se lleva (`b3_pistola/bumeran/estacas/bombas.png`,
+  arte del usuario), algo más grande que la zona táctil porque el arma sobresale del aro; apagado sin munición.
+  `b3.png` queda para ROMs no reconocidas.
+- Juego → "Volver al juego original" (pide confirmación pulsando dos veces): apaga los trucos y deja dificultad
+  normal, reaparición original, sin doble salto, ralentizaciones originales, traje original y música original.
+  Imagen, controles, volumen e idiomas se mantienen.
