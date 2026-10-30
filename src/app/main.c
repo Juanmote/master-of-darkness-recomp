@@ -15,7 +15,7 @@
 #define STBI_NO_STDIO
 #include "stb_image.h"
 
-#define APP_VERSION "0.9.1"
+#define APP_VERSION "0.9.2"
 #define KNOWN_CRC 0x96FB4D4Bu
 #define UI_W 640
 #define UI_H 360
@@ -939,7 +939,8 @@ static SDL_Rect tz_rect[6];
 static uint8_t touch_input;
 static int touch_seen;   // a finger has touched the screen (for "only without a gamepad")
 
-static int any_pad(void) { for (int i = 0; i < 8; i++) if (pads[i]) return 1; return 0; }
+static SDL_Joystick* joys[8];
+static int any_pad(void) { for (int i = 0; i < 8; i++) if (pads[i] || joys[i]) return 1; return 0; }
 static int touch_visible(void) {
   if (in_launcher || menu_open) return 0;
   return cfg.touch == 1 || (cfg.touch == 2 && !any_pad());
@@ -1166,6 +1167,7 @@ static uint8_t keymap(SDL_Keycode k) {
   case SDLK_LEFT: return BTN_LEFT; case SDLK_RIGHT: return BTN_RIGHT;
   case SDLK_z: case SDLK_j: return BTN_1;
   case SDLK_x: case SDLK_k: case SDLK_SPACE: return BTN_2;
+  case SDLK_c: return BTN_UP | BTN_1;   // subweapon
   case SDLK_RETURN: return BTN_PAUSE;
   }
   return 0;
@@ -1207,12 +1209,39 @@ static uint8_t stick_dirs(void) {
   return b;
 }
 
+// Controllers SDL cannot describe as a "game controller" are read as plain joysticks: on Android
+// their button numbers are already the game-controller ones (SDL builds them from the key codes),
+// hats and the first two axes give the directions.
+static uint8_t joy_dirs[8];   // directions held per joystick (hat or stick), as BTN_*
+
+static void show_pad_name(const char* name, int generic) {
+  char t[128];
+  snprintf(t, sizeof t, "%s %s%s", T("Controller:", "Mando:"), name ? name : "?", generic ? T(" (generic)", " (genérico)") : "");
+  show_toast(t, 2500);
+}
+
 static void open_pad(int idx) {
-  if (!SDL_IsGameController(idx)) return;
+  if (!SDL_IsGameController(idx)) {
+    SDL_JoystickID id = SDL_JoystickGetDeviceInstanceID(idx);
+    for (int i = 0; i < 8; i++) if (joys[i] && SDL_JoystickInstanceID(joys[i]) == id) return;
+    SDL_Joystick* j = SDL_JoystickOpen(idx);
+    if (!j) return;
+    for (int i = 0; i < 8; i++) if (!joys[i]) { joys[i] = j; joy_dirs[i] = 0; show_pad_name(SDL_JoystickName(j), 1); return; }
+    SDL_JoystickClose(j);
+    return;
+  }
+  SDL_JoystickID id = SDL_JoystickGetDeviceInstanceID(idx);
+  for (int i = 0; i < 8; i++)
+    if (pads[i] && SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(pads[i])) == id) return;
   SDL_GameController* c = SDL_GameControllerOpen(idx);
   if (!c) return;
-  for (int i = 0; i < 8; i++) if (!pads[i]) { pads[i] = c; return; }
+  for (int i = 0; i < 8; i++) if (!pads[i]) { pads[i] = c; show_pad_name(SDL_GameControllerName(c), 0); return; }
   SDL_GameControllerClose(c);
+}
+
+static int joy_slot(SDL_JoystickID id) {
+  for (int i = 0; i < 8; i++) if (joys[i] && SDL_JoystickInstanceID(joys[i]) == id) return i;
+  return -1;
 }
 
 static int pad_slot(SDL_JoystickID id) {
@@ -1275,7 +1304,7 @@ static void handle_event(SDL_Event* e) {
     if (menu_open) {
       SDL_Keycode k = e->key.keysym.sym;
       menu_nav(k == SDLK_UP ? -1 : k == SDLK_DOWN ? 1 : 0, k == SDLK_LEFT ? -1 : k == SDLK_RIGHT ? 1 : 0,
-               k == SDLK_RETURN || k == SDLK_z || k == SDLK_SPACE, k == SDLK_x || k == SDLK_BACKSPACE);
+               k == SDLK_RETURN || k == SDLK_z || k == SDLK_SPACE, k == SDLK_x || k == SDLK_BACKSPACE || k == SDLK_j);
       break;
     }
     if (e->key.keysym.sym == SDLK_q) { key_rewind = 1; break; }
@@ -1290,6 +1319,58 @@ static void handle_event(SDL_Event* e) {
     kb_input &= ~keymap(e->key.keysym.sym);
     break;
   case SDL_CONTROLLERDEVICEADDED: open_pad(e->cdevice.which); break;
+  case SDL_JOYDEVICEADDED: if (!SDL_IsGameController(e->jdevice.which)) open_pad(e->jdevice.which); break;
+  case SDL_JOYDEVICEREMOVED: {
+    int s = joy_slot(e->jdevice.which);
+    if (s >= 0) { SDL_JoystickClose(joys[s]); joys[s] = NULL; joy_dirs[s] = 0; }
+    break;
+  }
+  case SDL_JOYBUTTONDOWN: case SDL_JOYBUTTONUP: {
+    if (joy_slot(e->jbutton.which) < 0) break;
+    SDL_Event c;
+    memset(&c, 0, sizeof c);
+    c.type = e->type == SDL_JOYBUTTONDOWN ? SDL_CONTROLLERBUTTONDOWN : SDL_CONTROLLERBUTTONUP;
+    c.cbutton.which = e->jbutton.which;
+    c.cbutton.button = e->jbutton.button;
+    c.cbutton.state = e->jbutton.state;
+    handle_event(&c);
+    break;
+  }
+  case SDL_JOYHATMOTION: case SDL_JOYAXISMOTION: {
+    int s = joy_slot(e->type == SDL_JOYHATMOTION ? e->jhat.which : e->jaxis.which);
+    if (s < 0) break;
+    uint8_t d = 0;
+    for (int h = 0; h < SDL_JoystickNumHats(joys[s]) && h < 1; h++) {
+      Uint8 v = SDL_JoystickGetHat(joys[s], h);
+      if (v & SDL_HAT_UP) d |= BTN_UP;
+      if (v & SDL_HAT_DOWN) d |= BTN_DOWN;
+      if (v & SDL_HAT_LEFT) d |= BTN_LEFT;
+      if (v & SDL_HAT_RIGHT) d |= BTN_RIGHT;
+    }
+    if (SDL_JoystickNumAxes(joys[s]) >= 2) {
+      int x = SDL_JoystickGetAxis(joys[s], 0), y = SDL_JoystickGetAxis(joys[s], 1);
+      if (x < -16000) d |= BTN_LEFT;
+      if (x > 16000) d |= BTN_RIGHT;
+      if (y < -16000) d |= BTN_UP;
+      if (y > 16000) d |= BTN_DOWN;
+    }
+    // each direction that changes becomes a d-pad press or release (menus and game alike)
+    static const struct { uint8_t bit; int btn; } map[4] = {
+      {BTN_UP, SDL_CONTROLLER_BUTTON_DPAD_UP}, {BTN_DOWN, SDL_CONTROLLER_BUTTON_DPAD_DOWN},
+      {BTN_LEFT, SDL_CONTROLLER_BUTTON_DPAD_LEFT}, {BTN_RIGHT, SDL_CONTROLLER_BUTTON_DPAD_RIGHT}};
+    uint8_t changed = d ^ joy_dirs[s];
+    joy_dirs[s] = d;
+    for (int k = 0; k < 4; k++) {
+      if (!(changed & map[k].bit)) continue;
+      SDL_Event c;
+      memset(&c, 0, sizeof c);
+      c.type = (d & map[k].bit) ? SDL_CONTROLLERBUTTONDOWN : SDL_CONTROLLERBUTTONUP;
+      c.cbutton.which = e->jhat.which;
+      c.cbutton.button = (Uint8)map[k].btn;
+      handle_event(&c);
+    }
+    break;
+  }
   case SDL_CONTROLLERDEVICEREMOVED: {
     int s = pad_slot(e->cdevice.which);
     if (s >= 0) { SDL_GameControllerClose(pads[s]); pads[s] = NULL; stick_x[s] = stick_y[s] = 0; trig_l[s] = trig_r[s] = 0; }
@@ -1378,7 +1459,7 @@ static void error_screen(void) {
     SDL_Event e;
     while (SDL_PollEvent(&e)) {
       if (e.type == SDL_QUIT) running = 0;
-      if (e.type == SDL_KEYDOWN || e.type == SDL_CONTROLLERBUTTONDOWN || e.type == SDL_FINGERDOWN) running = 0;
+      if (e.type == SDL_KEYDOWN || e.type == SDL_CONTROLLERBUTTONDOWN || e.type == SDL_JOYBUTTONDOWN || e.type == SDL_FINGERDOWN) running = 0;
       if (e.type == SDL_CONTROLLERDEVICEADDED) open_pad(e.cdevice.which);
     }
     ui_clear();
@@ -1434,6 +1515,12 @@ int main(int argc, char** argv) {
   SDL_SetHint(SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1");
   SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
   SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
+#ifdef __ANDROID__
+  // built-in controls of Android handhelds often look like USB pads (Xbox ids): SDL's own USB driver
+  // then claims them and, without access to the device, they give no input at all. Android's input
+  // system (what emulators use) reads them fine.
+  SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI, "0");
+#endif
   if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER) != 0) {
     fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
     return 1;

@@ -3,7 +3,10 @@ package com.juanmote.masterofdarkness;
 import android.content.Intent;
 import android.net.Uri;
 
+import android.view.KeyEvent;
+
 import org.libsdl.app.SDLActivity;
+import org.libsdl.app.SDLControllerManager;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -49,6 +52,52 @@ public class GameActivity extends SDLActivity {
             return true;
         }
         return super.onUnhandledMessage(command, param);
+    }
+
+    /**
+     * Gamepad buttons that SDL does not take as a controller (some handhelds send their built-in
+     * controls as plain keys) would be lost: SDL has no keyboard key for them. They are passed to the
+     * game as keys it understands: A jump, B/X attack, Y subweapon, START pause, SELECT menu,
+     * L2 rewind, R2 fast forward.
+     */
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        int code = event.getKeyCode();
+        int mapped = gamepadKey(code);
+        int action = event.getAction();
+        if (mapped != 0 && (action == KeyEvent.ACTION_DOWN || action == KeyEvent.ACTION_UP)) {
+            int dev = event.getDeviceId();
+            if (SDLControllerManager.isDeviceSDLJoystick(dev)) {
+                int r = action == KeyEvent.ACTION_DOWN ? SDLControllerManager.onNativePadDown(dev, code)
+                                                       : SDLControllerManager.onNativePadUp(dev, code);
+                if (r == 0) return true;   // SDL read it as a controller
+            }
+            if (event.getRepeatCount() == 0 || action == KeyEvent.ACTION_UP) {
+                if (action == KeyEvent.ACTION_DOWN) SDLActivity.onNativeKeyDown(mapped);
+                else SDLActivity.onNativeKeyUp(mapped);
+            }
+            return true;
+        }
+        return super.dispatchKeyEvent(event);
+    }
+
+    private static int gamepadKey(int code) {
+        switch (code) {
+            case KeyEvent.KEYCODE_BUTTON_A: return KeyEvent.KEYCODE_SPACE;
+            case KeyEvent.KEYCODE_BUTTON_B: return KeyEvent.KEYCODE_J;
+            case KeyEvent.KEYCODE_BUTTON_X: return KeyEvent.KEYCODE_J;
+            case KeyEvent.KEYCODE_BUTTON_Y: return KeyEvent.KEYCODE_C;
+            case KeyEvent.KEYCODE_BUTTON_START: return KeyEvent.KEYCODE_ENTER;
+            case KeyEvent.KEYCODE_BUTTON_SELECT: return KeyEvent.KEYCODE_ESCAPE;
+            case KeyEvent.KEYCODE_BUTTON_MODE: return KeyEvent.KEYCODE_ESCAPE;
+            case KeyEvent.KEYCODE_BUTTON_L2: return KeyEvent.KEYCODE_Q;
+            case KeyEvent.KEYCODE_BUTTON_R2: return KeyEvent.KEYCODE_E;
+            case KeyEvent.KEYCODE_DPAD_UP: return KeyEvent.KEYCODE_DPAD_UP;
+            case KeyEvent.KEYCODE_DPAD_DOWN: return KeyEvent.KEYCODE_DPAD_DOWN;
+            case KeyEvent.KEYCODE_DPAD_LEFT: return KeyEvent.KEYCODE_DPAD_LEFT;
+            case KeyEvent.KEYCODE_DPAD_RIGHT: return KeyEvent.KEYCODE_DPAD_RIGHT;
+        }
+        return 0;
     }
 
     @Override
