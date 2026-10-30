@@ -15,7 +15,7 @@
 #define STBI_NO_STDIO
 #include "stb_image.h"
 
-#define APP_VERSION "0.9.0"
+#define APP_VERSION "0.9.1"
 #define KNOWN_CRC 0x96FB4D4Bu
 #define UI_W 640
 #define UI_H 360
@@ -48,9 +48,10 @@ typedef struct {
   int ui_lang;     // menus and launcher: 0 English, 1 Spanish (-1: not chosen yet, follows the system)
   int ammo_inf;    // cheat: the subweapon never runs out
   int lock_weapon; // cheat: pickups do not change the weapon / subweapon
+  int multi_shot;  // cheat: no limit of two subweapons on screen
 } config_t;
 
-static config_t cfg = {1, 0, SCALE_FIT, FILTER_SHARP_SMOOTH, 8, SDL_CONTROLLER_BUTTON_A, SDL_CONTROLLER_BUTTON_Y, 1, 0, 0, 0, 0, 1, MOD_DIFF_NORMAL, MOD_RESPAWN_ON, 0, 1, 2, 1, -1, 0, 0};
+static config_t cfg = {1, 0, SCALE_FIT, FILTER_SHARP_SMOOTH, 8, SDL_CONTROLLER_BUTTON_A, SDL_CONTROLLER_BUTTON_Y, 1, 0, 0, 0, 0, 1, MOD_DIFF_NORMAL, MOD_RESPAWN_ON, 0, 1, 2, 1, -1, 0, 0, 0};
 static char pref_path[1024];
 
 static void cfg_path(char* out, size_t n, const char* name) { snprintf(out, n, "%s%s", pref_path, name); }
@@ -86,6 +87,7 @@ static void cfg_load(void) {
     else if (sscanf(line, "ui_lang=%d", &v) == 1 && v >= 0 && v <= 1) cfg.ui_lang = v;
     else if (sscanf(line, "ammo_inf=%d", &v) == 1) cfg.ammo_inf = v ? 1 : 0;
     else if (sscanf(line, "lock_weapon=%d", &v) == 1) cfg.lock_weapon = v ? 1 : 0;
+    else if (sscanf(line, "multi_shot=%d", &v) == 1) cfg.multi_shot = v ? 1 : 0;
   }
   fclose(f);
   if (cfg.sub_btn == cfg.jump_btn) cfg.sub_btn = cfg.jump_btn == SDL_CONTROLLER_BUTTON_Y ? SDL_CONTROLLER_BUTTON_X : SDL_CONTROLLER_BUTTON_Y;
@@ -97,10 +99,10 @@ static void cfg_save(void) {
   if (!f) return;
   fprintf(f, "widescreen=%d\ncrt=%d\nscale=%d\nfilter=%d\nvolume=%d\njump_btn=%d\nsub_btn=%d\nturbo=%d\nlang=%d\n"
              "suit=%d\ncheat_inv=%d\ncheat_lives=%d\ntriggers=%d\ndifficulty=%d\nrespawn=%d\ndbl_jump=%d\nmusic_pack=%d\ntouch=%d\ntouch_size=%d\n"
-             "ui_lang=%d\nammo_inf=%d\nlock_weapon=%d\n",
+             "ui_lang=%d\nammo_inf=%d\nlock_weapon=%d\nmulti_shot=%d\n",
           cfg.widescreen, cfg.crt, cfg.scale, cfg.filter, cfg.volume, cfg.jump_btn, cfg.sub_btn, cfg.turbo, cfg.lang,
           cfg.suit, cfg.cheat_inv, cfg.cheat_lives, cfg.triggers, cfg.difficulty, cfg.respawn, cfg.dbl_jump, cfg.music_pack, cfg.touch, cfg.touch_size,
-          cfg.ui_lang, cfg.ammo_inf, cfg.lock_weapon);
+          cfg.ui_lang, cfg.ammo_inf, cfg.lock_weapon, cfg.multi_shot);
   fclose(f);
 }
 
@@ -402,7 +404,7 @@ enum {
   MI_DIFF, MI_RESPAWN, MI_DJUMP,
   MI_FORMAT, MI_SCALE, MI_FILTER, MI_SUIT,
   MI_VOLUME, MI_BUTTONS, MI_SUBBTN, MI_TURBO, MI_TRIGGERS, MI_LANG, MI_PATCH, MI_MUSIC, MI_MUSPACK, MI_MUSTEST,
-  MI_INV, MI_LIVES, MI_WEAPON, MI_SUB, MI_AMMO, MI_LOCK, MI_START, MI_WARP, MI_UILANG,
+  MI_INV, MI_LIVES, MI_WEAPON, MI_SUB, MI_AMMO, MI_MULTI, MI_LOCK, MI_START, MI_WARP, MI_UILANG,
   MI_BACK
 };
 enum { PAGE_MAIN, PAGE_VIDEO, PAGE_OPTIONS, PAGE_CHEATS, PAGE_GAME, PAGE_CONTROLS, PAGE_HOME, PAGE_COUNT };
@@ -411,7 +413,7 @@ static const int page_items[PAGE_COUNT][PAGE_MAX] = {
   {MI_RESUME, MI_SAVE, MI_LOAD, MI_GAME, MI_CHEATS, MI_VIDEO, MI_OPTIONS, MI_CONTROLS, MI_RESET, MI_HOME, MI_QUIT, -1},
   {MI_FORMAT, MI_SCALE, MI_FILTER, MI_SUIT, MI_BACK, -1},
   {MI_UILANG, MI_VOLUME, MI_LANG, MI_PATCH, MI_MUSIC, MI_MUSPACK, MI_MUSTEST, MI_BACK, -1},
-  {MI_INV, MI_LIVES, MI_WEAPON, MI_SUB, MI_AMMO, MI_LOCK, MI_START, MI_WARP, MI_BACK, -1},
+  {MI_INV, MI_LIVES, MI_WEAPON, MI_SUB, MI_AMMO, MI_MULTI, MI_LOCK, MI_START, MI_WARP, MI_BACK, -1},
   {MI_DIFF, MI_RESPAWN, MI_DJUMP, MI_TURBO, MI_BACK, -1},
   {MI_BUTTONS, MI_SUBBTN, MI_TRIGGERS, MI_TOUCH, MI_TOUCHSIZE, MI_BACK, -1},
   {MI_GAME, MI_CHEATS, MI_VIDEO, MI_OPTIONS, MI_BACK, -1},
@@ -430,6 +432,7 @@ static void apply_game_options(void) {
   E.difficulty = cfg.difficulty;
   E.respawn = cfg.respawn;
   E.double_jump = cfg.dbl_jump != 0;
+  E.multi_shot = cfg.multi_shot != 0;
 }
 static int menu_page;
 
@@ -520,6 +523,7 @@ static void menu_label(int i, char* out, size_t n) {
   case MI_INV: snprintf(out, n, "%s ← %s →", T("Invincible:      ", "Invencible:     "), yes_no(cfg.cheat_inv)); break;
   case MI_LIVES: snprintf(out, n, "%s ← %s →", T("Infinite lives:  ", "Vidas infinitas:"), yes_no(cfg.cheat_lives)); break;
   case MI_AMMO: snprintf(out, n, "%s ← %s →", T("Infinite ammo:   ", "Munición infinita:"), yes_no(cfg.ammo_inf)); break;
+  case MI_MULTI: snprintf(out, n, "%s ← %s →", T("No subweapon limit:", "Subarmas sin límite:"), yes_no(cfg.multi_shot)); break;
   case MI_LOCK: snprintf(out, n, "%s ← %s →", T("Keep my weapons: ", "Bloquear armas:  "), yes_no(cfg.lock_weapon)); break;
   case MI_WEAPON: snprintf(out, n, "%s ← %s →", T("Weapon:   ", "Arma:     "), weapon_names[L][gram(RAM_WEAPON) & 3]); break;
   case MI_SUB: snprintf(out, n, "%s ← %s →", T("Subweapon:", "Subarma: "), gram(RAM_AMMO) ? sub_names[L][1 + (gram(RAM_SUBWEAPON) & 3)] : sub_names[L][0]); break;
@@ -623,6 +627,7 @@ static void menu_change(int dir) {
     break;
   case MI_LIVES: cfg.cheat_lives ^= 1; break;
   case MI_AMMO: cfg.ammo_inf ^= 1; break;
+  case MI_MULTI: cfg.multi_shot ^= 1; apply_game_options(); break;
   case MI_LOCK: cfg.lock_weapon ^= 1; locked_weapon = locked_sub = -1; break;
   case MI_UILANG: cfg.ui_lang = !cfg.ui_lang; break;
   case MI_WEAPON:
@@ -744,6 +749,7 @@ static void draw_ui(void) {
     if (menu_page == PAGE_CHEATS) {
       int it = cur_item();
       foot = it == MI_AMMO ? T("The subweapon never runs out", "La subarma no se gasta nunca") :
+             it == MI_MULTI ? T("Throw as many as you like, not only two at a time", "Lanza todas las que quieras, no solo dos a la vez") :
              it == MI_LOCK ? T("Pickups no longer change your weapons", "Recoger objetos ya no cambia tus armas") :
              T("Official game cheats and weapon selector", "Trucos oficiales del juego y selector de armas");
     }
@@ -1061,7 +1067,7 @@ static void handle_touch(SDL_Event* e) {
       int value_row = it == MI_FORMAT || it == MI_SCALE || it == MI_FILTER || it == MI_SUIT || it == MI_VOLUME ||
                       it == MI_TURBO || it == MI_TRIGGERS || it == MI_DIFF || it == MI_RESPAWN || it == MI_DJUMP ||
                       it == MI_TOUCH || it == MI_TOUCHSIZE || it == MI_INV || it == MI_LIVES || it == MI_WEAPON ||
-                      it == MI_SUB || it == MI_START || it == MI_MUSTEST || it == MI_AMMO || it == MI_LOCK || it == MI_UILANG;
+                      it == MI_SUB || it == MI_START || it == MI_MUSTEST || it == MI_AMMO || it == MI_LOCK || it == MI_UILANG || it == MI_MULTI;
       if (value_row) menu_change(ux < UI_W / 2 ? -1 : 1);
       else menu_activate();
       return;

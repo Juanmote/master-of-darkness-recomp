@@ -222,3 +222,16 @@ Cabecera TMR SEGA válida, checksum 6FE6 correcto, región SMS Export, mapper Se
 - "Salir" (launcher y menú de partida) cierra la app del todo: mensaje 0x8003 a `GameActivity`, que hace
   `finishAndRemoveTask()` y `System.exit(0)` en `onDestroy`.
 - Icono de la app: el logo del fondo del launcher.
+
+## v0.9.1 — subarmas sin límite
+- El juego solo tiene dos huecos para los proyectiles del héroe (CA40 y CA60) y no deja lanzar mientras los dos
+  están ocupados. El truco "Subarmas sin límite" añade 6 huecos más (8 en total) en DC00-DCEF, una zona de RAM que
+  el juego no usa nunca (comprobado escribiendo un mapa de RAM en las 13 salidas de ronda con un bot, 45 partidas;
+  la zona libre es DBA0-DFB2) y sus cajas de golpe en DCC0.
+- Los huecos extra los mueve, dibuja y hace chocar el código original: en cada bucle que recorre los proyectiles
+  se manda a la CPU una vez más por el cuerpo del bucle con los huecos nuevos (2354/2379 movimiento, 43C7/43D5
+  cajas de golpe, 43DC/43E8 golpes a enemigos, 4448/446D paredes, 51B9/51EC pasada de sprites, 50D8/50EE empujes;
+  5179/5195 desplazamiento de cámara y 50CA/61D2 borrados se hacen en C). Las paredes se comprueban copiando la
+  caja de golpe en C860 un momento, porque ese código tiene la dirección fija.
+- Con el truco apagado y sin proyectiles extra los ganchos no tocan nada (huella idéntica a v0.8.2/v0.9.0).
+- Comprobado: los proyectiles extra dañan a los enemigos (con IY en DCC0..), chocan con las paredes y se borran solos.

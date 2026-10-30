@@ -14,6 +14,7 @@
 
 static mod_enhance_t* g;
 static uint8_t hook_map[0x8000];
+static uint8_t ms_hook_map[0x8000];
 
 static inline uint8_t ram8(sms_t* s, uint16_t a) { return s->st.ram[a & 0x1FFF]; }
 static inline void ram_w(sms_t* s, uint16_t a, uint8_t v) { s->st.ram[a & 0x1FFF] = v; }
@@ -254,9 +255,158 @@ static int scale_damage(int d, int* frac, bool taken) {
   return d;
 }
 
+
+// ---------------------------------------------------------------- more subweapons on screen
+// The hero's projectiles live in two fixed slots (CA40, CA60) and a throw is refused while both
+// are busy. Extra slots of the same layout are added in RAM the game never uses; every place that
+// walks the projectile slots is extended to walk them too, by sending the CPU through the game's
+// own loop body once more (so their movement, drawing, hits and walls are the original code):
+//   throw check (147E/1521/1577/15D8), slot choice (22B9), update loop (2354, ends 2379),
+//   hitbox list C858.. (built at 43C7, checked by 43DC, walls at 4448), hit flags (3D7C, 43EF),
+//   sprite pass (51B9, ends 51EC), camera shifts (5179, 5195), pushes (50D8), clears (50CA, 61D2).
+#define MS_SLOTS 6
+#define MS_BASE 0xDC00            // never used by the game (checked in every round); MS_SLOTS * 0x20 bytes of slots, then MS_SLOTS * 8 of hitboxes
+#define MS_HIT (MS_BASE + MS_SLOTS * 0x20)
+
+static inline uint16_t ms_slot(int k) { return (uint16_t)(MS_BASE + k * 0x20); }
+static inline uint16_t ms_hit(int k) { return (uint16_t)(MS_HIT + k * 8); }
+
+static bool ms_any(sms_t* s) {
+  for (int k = 0; k < MS_SLOTS; k++) if (ram8(s, ms_slot(k))) return true;
+  return false;
+}
+
+static void ms_clear(sms_t* s) {
+  for (int k = 0; k < MS_SLOTS; k++) { ram_w(s, ms_slot(k), 0); ram_w(s, ms_hit(k), 0); }
+}
+
+static void push_ret(sms_t* s, uint16_t ret) {
+  z80* z = &s->st.cpu;
+  z->sp -= 2;
+  ram_w(s, z->sp, (uint8_t)ret);
+  ram_w(s, z->sp + 1, (uint8_t)(ret >> 8));
+}
+
+static int ms_next_hit(sms_t* s, int from) {
+  for (int k = from; k < MS_SLOTS; k++) if (ram8(s, ms_hit(k))) return k;
+  return -1;
+}
+
+static bool ms_hook(sms_t* s, uint16_t pc) {
+  z80* z = &s->st.cpu;
+  switch (pc) {
+  case 0x147E: case 0x1521: case 0x1577: case 0x15D8: {   // can a subweapon be thrown?
+    if (!g->multi_shot) return false;
+    bool free_slot = !ram8(s, 0xCA40) || !ram8(s, 0xCA60);
+    for (int k = 0; k < MS_SLOTS && !free_slot; k++) free_slot = !ram8(s, ms_slot(k));
+    static const uint16_t yes[4] = {0x148B, 0x152D, 0x1584, 0x15E5}, no[4] = {0x14C6, 0x154A, 0x15A6, 0x1607};
+    int i = pc == 0x147E ? 0 : pc == 0x1521 ? 1 : pc == 0x1577 ? 2 : 3;
+    z->pc = free_slot ? yes[i] : no[i];
+    z->cyc += 37;
+    return true;
+  }
+  case 0x22B9: {   // the projectile is created: first free slot
+    uint16_t slot = 0;
+    if (!ram8(s, 0xCA40)) slot = 0xCA40;
+    else if (!ram8(s, 0xCA60) || !g->multi_shot) slot = 0xCA60;
+    else for (int k = 0; k < MS_SLOTS && !slot; k++) if (!ram8(s, ms_slot(k))) slot = ms_slot(k);
+    if (!slot) slot = 0xCA60;   // (the throw check makes this impossible)
+    z->b = z->a;
+    z->h = (uint8_t)(slot >> 8); z->l = (uint8_t)slot;
+    z->pc = 0x22C5;
+    z->cyc += 21;
+    return true;
+  }
+  case 0x2379:   // end of the projectile update loop
+    if (g->ms_upd) { g->ms_upd = 0; return false; }
+    if (z->ix != 0xCA80 || !ms_any(s)) return false;
+    g->ms_upd = 1;
+    z->ix = MS_BASE; z->b = MS_SLOTS; z->d = 0; z->e = 0x20;
+    z->pc = 0x235D;
+    return true;
+  case 0x43D5: {   // hitboxes of the hero's weapons were built (HL = after the last one)
+    if (g->ms_draw == 0) {
+      if (!ms_any(s)) { ms_clear(s); return false; }
+      g->ms_hl = (uint16_t)((z->h << 8) | z->l);
+    }
+    if (g->ms_draw < MS_SLOTS) {
+      int k = g->ms_draw++;
+      z->ix = ms_slot(k);
+      z->h = (uint8_t)(ms_hit(k) >> 8); z->l = (uint8_t)ms_hit(k);
+      push_ret(s, 0x43D5);
+      z->pc = 0x0F1A;
+      z->cyc += 17;
+      return true;
+    }
+    g->ms_draw = 0;
+    z->h = (uint8_t)(g->ms_hl >> 8); z->l = (uint8_t)g->ms_hl;
+    return false;
+  }
+  case 0x43E8: {   // end of "does this object touch a weapon?": also the extra projectiles
+    if (z->cf) { g->ms_coll = 0; return false; }
+    int k = ms_next_hit(s, g->ms_coll);
+    if (k < 0) { g->ms_coll = 0; return false; }
+    g->ms_coll = k + 1;
+    z->h = (uint8_t)(ms_hit(k) >> 8); z->l = (uint8_t)ms_hit(k);
+    push_ret(s, 0x43E8);
+    z->pc = 0x0F5B;
+    z->cyc += 17;
+    return true;
+  }
+  case 0x446D: {   // walls: run the check written for C860 on each extra hitbox (swapped in)
+    if (g->ms_wall) {
+      int k = g->ms_wall - 1;
+      for (int i = 0; i < 8; i++) ram_w(s, ms_hit(k) + i, ram8(s, 0xC860 + i));
+      for (int i = 0; i < 8; i++) ram_w(s, 0xC860 + i, g->ms_saved[i]);
+    }
+    int k = ms_next_hit(s, g->ms_wall);
+    if (k < 0) { g->ms_wall = 0; return false; }
+    g->ms_wall = k + 1;
+    for (int i = 0; i < 8; i++) g->ms_saved[i] = ram8(s, 0xC860 + i);
+    for (int i = 0; i < 8; i++) ram_w(s, 0xC860 + i, ram8(s, ms_hit(k) + i));
+    z->pc = 0x4452;
+    return true;
+  }
+  case 0x3D7C: case 0x43EF:   // hit flags go back to the projectiles
+    for (int k = 0; k < MS_SLOTS; k++) {
+      uint8_t f = ram8(s, ms_hit(k) + 7);
+      if (f && ram8(s, ms_hit(k))) ram_w(s, ms_slot(k) + 0x1A, f);
+    }
+    return false;
+  case 0x51EC:   // end of the first group of the sprite pass
+    if (g->ms_spr) { g->ms_spr = 0; return false; }
+    if (!ms_any(s)) return false;
+    g->ms_spr = 1;
+    z->h = (uint8_t)(MS_BASE >> 8); z->l = (uint8_t)MS_BASE; z->d = 0; z->e = 0x20; z->b = MS_SLOTS;
+    z->pc = 0x51C1;
+    return true;
+  case 0x50EE:   // objects pushed by their speed (17 slots from CA40)
+    if (g->ms_vel) { g->ms_vel = 0; return false; }
+    if (!ms_any(s)) return false;
+    g->ms_vel = 1;
+    z->h = (uint8_t)(MS_BASE >> 8); z->l = (uint8_t)MS_BASE; z->d = 0; z->e = 0x20; z->b = MS_SLOTS;
+    z->pc = 0x50E0;
+    return true;
+  case 0x5194: case 0x51B5:   // camera moved: every object shifts one pixel
+    for (int k = 0; k < MS_SLOTS; k++) {
+      uint16_t o = ms_slot(k);
+      if (!ram8(s, o)) continue;
+      uint16_t x = (uint16_t)(ram8(s, o + 4) | (ram8(s, o + 5) << 8));
+      x = pc == 0x5194 ? x + 1 : x - 1;
+      ram_w(s, o + 4, (uint8_t)x); ram_w(s, o + 5, (uint8_t)(x >> 8));
+    }
+    return false;
+  case 0x50D7: case 0x61D2:   // all objects / the hero's projectiles are removed
+    ms_clear(s);
+    return false;
+  }
+  return false;
+}
+
 // ---------------------------------------------------------------- hook entry
 static bool on_hook(sms_t* s, uint16_t pc) {
   z80* z = &s->st.cpu;
+  if (ms_hook_map[pc]) return ms_hook(s, pc);
   switch (pc) {
   case 0x3CD0: case 0x52E7: {  // spawn-list entry: is its slot free? (A = slot byte, HL = entry + 3)
     if (z->a == 0 && entry_blocked(((uint32_t)s->st.bank[2] << 16) | (uint16_t)(((z->h << 8) | z->l) - 3) | 0x80000000u))
@@ -373,6 +523,15 @@ static const struct { uint16_t addr; uint8_t b[4]; } signature[] = {
   {0x52F4, {0xD5, 0xDD, 0xE1, 0x7E}}, {0x523D, {0x36, 0x00, 0xC3, 0x25}}, {0x46F1, {0x3A, 0x3A, 0xCA, 0x90}},
   {0x6198, {0x3A, 0x3A, 0xCB, 0x90}}, {0x3DD3, {0xDD, 0x7E, 0x1A, 0xFD}}, {0x3DD9, {0xDD, 0x77, 0x1A, 0xDD}},
   {0x4A07, {0xCD, 0x4D, 0x4B, 0x3A}}, {0x4A10, {0xCD, 0x7E, 0x4B, 0x3A}}, {0x4A2C, {0x3A, 0xBA, 0xDF, 0x3D}},
+  // extra projectiles
+  {0x147E, {0x3E, 0xFF, 0x21, 0x40}}, {0x1521, {0x3E, 0xFF, 0x21, 0x40}}, {0x1577, {0x3E, 0xFF, 0x21, 0x40}},
+  {0x15D8, {0x3E, 0xFF, 0x21, 0x40}}, {0x22B9, {0x47, 0x21, 0x40, 0xCA}}, {0x2375, {0xDD, 0x19, 0x10, 0xE5}},
+  {0x43C7, {0xDD, 0x21, 0x40, 0xCA}}, {0x43D5, {0xDD, 0x21, 0x20, 0xCA}}, {0x43DC, {0x21, 0x58, 0xC8, 0xCD}},
+  {0x43E8, {0xC9, 0xCD, 0x01, 0x44}}, {0x444B, {0x3A, 0x60, 0xC8, 0xB7}}, {0x446D, {0x3A, 0x68, 0xC8, 0xB7}},
+  {0x3D7C, {0x3A, 0x67, 0xC8, 0xB7}}, {0x43EF, {0x3A, 0x67, 0xC8, 0xB7}}, {0x51E9, {0x19, 0x10, 0xD5, 0x21}},
+  {0x50E1, {0xB6, 0x28, 0x07, 0xAF}}, {0x50EC, {0x10, 0xF3, 0xC9, 0x21}}, {0x5192, {0x10, 0xEE, 0xC9, 0x21}},
+  {0x51B3, {0x10, 0xE9, 0xC9, 0xCD}}, {0x50D5, {0x10, 0xFC, 0xC9, 0x21}}, {0x61D2, {0x21, 0x40, 0xCA, 0x36}},
+  {0x0F1A, {0xDD, 0xCB, 0x00, 0x46}}, {0x0F5B, {0x7E, 0xB7, 0x28, 0x42}},
 };
 
 void mod_request_hud(mod_enhance_t* e, int parts) { e->hud_pending |= (uint8_t)parts; }
@@ -405,6 +564,11 @@ void mod_enhance_attach(sms_t* s, mod_enhance_t* e) {
   static const uint16_t addrs[] = {0x51B6, 0x5228, 0x0DD1, 0x520E, 0x51D5, 0x3CD0, 0x52E7, 0x3CDD, 0x52F4,
                                    0x5238, 0x523D, 0x46F1, 0x6198, 0x3DD6, 0x3DD9};
   for (unsigned i = 0; i < sizeof addrs / sizeof addrs[0]; i++) hook_map[addrs[i]] = 1;
+  memset(ms_hook_map, 0, sizeof ms_hook_map);
+  static const uint16_t ms_addrs[] = {0x147E, 0x1521, 0x1577, 0x15D8, 0x22B9, 0x2379, 0x43D5, 0x43E8, 0x446D,
+                                      0x3D7C, 0x43EF, 0x51EC, 0x50EE, 0x5194, 0x51B5, 0x50D7, 0x61D2};
+  for (unsigned i = 0; i < sizeof ms_addrs / sizeof ms_addrs[0]; i++) hook_map[ms_addrs[i]] = ms_hook_map[ms_addrs[i]] = 1;
+  e->ms_draw = e->ms_coll = e->ms_wall = e->ms_upd = e->ms_spr = e->ms_vel = 0;
   for (int k = 0; k < 2; k++) {
     const spawn_addr_t* a = &spawn_addrs[k];
     hook_map[a->a_hi] = hook_map[a->a_lo] = hook_map[a->a_lo2] = hook_map[a->x_hi] = hook_map[a->end] = 1;

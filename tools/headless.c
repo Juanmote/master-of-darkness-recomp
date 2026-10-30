@@ -90,6 +90,15 @@ static uint8_t parse_btn(const char* t) {
 }
 
 static bool mus_has_test(int id) { return id == (int)strtol(getenv("MUSHOOK"), NULL, 16); }
+static uint8_t rammap[0x2000];
+static void h_rammap(sms_t* s, uint16_t a, uint8_t v) { (void)s; if (v) rammap[a & 0x1FFF] = 1; }
+static void rammap_dump(void) {
+  const char* p = getenv("RAMMAP"); if (!p) return;
+  FILE* f = fopen(p, "r+b"); uint8_t old[0x2000] = {0};
+  if (f) { if (fread(old, 1, sizeof old, f)) {} fclose(f); }
+  for (int i = 0; i < 0x2000; i++) old[i] |= rammap[i];
+  f = fopen(p, "wb"); fwrite(old, 1, sizeof old, f); fclose(f);
+}
 int main(int argc, char** argv) {
   int frames = 600, ext = MOD_WIDE_EXT;
   int enhance = 0, oc = 1; const char *hashpath = NULL; const char *covpath = NULL; int seed = 0, use_recomp = 0, do_verify = 0;
@@ -127,6 +136,7 @@ int main(int argc, char** argv) {
   if (use_recomp) { fprintf(stderr, "built without recompiled code (run tools/recomp/recomp.py first)\n"); return 1; }
 #endif
   if (getenv("DJ")) E.double_jump = true;
+  if (getenv("MULTI")) E.multi_shot = true;
   if (getenv("PSGMUTE")) S.psg_mute = (uint8_t)strtol(getenv("PSGMUTE"), NULL, 16);
   if (getenv("VDPREG")) S.hooks.on_vdp_reg = h_vdpreg;
   if (getenv("MUSHOOK")) E.music_has = mus_has_test;
@@ -135,6 +145,7 @@ int main(int argc, char** argv) {
   if (getenv("HERO")) { static uint8_t hm[16]; memset(hm, 0xFF, 16); const char* h = getenv("HERO"); int i, c, n; while (sscanf(h, "%x:%x%n", &i, &c, &n) == 2) { hm[i & 15] = c; h += n; if (*h == ',') h++; else break; } mod_set_hero_colors(hm); }
   if (getenv("TRACE")) { sscanf(getenv("TRACE"), "%lu-%lu", &tr_from, &tr_to); S.hooks.on_exec = h_exec; }
   if (getenv("SATLINES")) { satlines = 1; S.hooks.on_vram_write = h_vramw; }
+  if (getenv("RAMMAP")) S.hooks.on_ram_write = h_rammap;
   if (getenv("OBJLOG")) { objlog = 1; S.hooks.on_ram_write = h_ramw; }
   if (getenv("WATCH")) { watch_addr = (int)strtol(getenv("WATCH"), NULL, 16); S.hooks.on_ram_write = h_ramw; }
 #ifdef MOD_HAVE_RECOMP
@@ -182,6 +193,13 @@ int main(int argc, char** argv) {
     }
     for (int k = 0; k < npokes; k++) if ((int)fr >= pokes[k].from && (int)fr <= pokes[k].to) S.st.ram[pokes[k].addr & 0x1FFF] = pokes[k].val;
     S.cpu_mult = (oc > 1 && mod_is_gameplay(&S)) ? oc : 1;
+    if (getenv("MSLOG") && fr % 4 == 0) {
+      int n = 0; char b[64]; int bl = 0;
+      static const uint16_t sl[8] = {0xCA40, 0xCA60, 0xDC00, 0xDC20, 0xDC40, 0xDC60, 0xDC80, 0xDCA0};
+      for (int k = 0; k < 8; k++) { int on = S.st.ram[sl[k] & 0x1FFF] != 0; n += on; b[bl++] = on ? '#' : '.'; }
+      b[bl] = 0;
+      printf("MS %u %d %s ammo=%d\n", fr, n, b, S.st.ram[0x1FB9]);
+    }
     if (getenv("WPN") && (int)fr == atoi(getenv("WPN"))) { S.st.ram[0x1FB7] = 2; S.st.ram[0x1FB8] = 3; S.st.ram[0x1FB9] = 99; S.st.ram[0x1FBA] = 9; mod_request_hud(&E, 7); }
     if (getenv("MUSHOOK")) for (int ev; (ev = mod_music_poll(&E)); ) printf("MUS %u %03X\n", fr, ev);
     { static uint32_t lp; uint32_t p0 = E.passes; sms_run_frame(&S); if (getenv("PASSLOG")) printf("PASS %u %u\n", fr, E.passes - p0); if (getenv("LAGLOG") && E.passes == p0 && lp) printf("LAG %u cam %d\n", fr, S.st.ram[0x6A0] | (S.st.ram[0x6A1] << 8)); lp = E.passes; }
@@ -258,5 +276,6 @@ int main(int argc, char** argv) {
   printf("frames %d, playfield detected in %d\n", frames, valid_frames);
   if (use_recomp) printf("interpreter fallback steps (last frame) %u, last pc %04X\n", S.interp_steps, S.last_interp_pc);
   if (do_verify) printf("verified blocks %ld, mismatches %ld\n", verify_blocks, verify_fail);
+  rammap_dump();
   return 0;
 }

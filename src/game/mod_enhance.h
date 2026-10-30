@@ -60,6 +60,11 @@ typedef struct {
   bool air_jump_used;
   int prev_state;
   int margin_l, margin_r;    // playable pixels visible beyond the original picture (per side)
+  // more subweapons on screen: extra projectile slots in free RAM, run by the game's own code
+  bool multi_shot;
+  int ms_draw, ms_coll, ms_wall, ms_upd, ms_spr, ms_vel;   // re-entry state of each extended loop
+  uint16_t ms_hl;
+  uint8_t ms_saved[8];
 } mod_enhance_t;
 
 #define MOD_HUD_WEAPON 1
