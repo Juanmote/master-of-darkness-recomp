@@ -15,7 +15,7 @@
 #define STBI_NO_STDIO
 #include "stb_image.h"
 
-#define APP_VERSION "0.9.5"
+#define APP_VERSION "0.9.6"
 #define KNOWN_CRC 0x96FB4D4Bu
 #define UI_W 640
 #define UI_H 360
@@ -29,7 +29,8 @@
 static int is_face(int b) { return (b >= SDL_CONTROLLER_BUTTON_A && b <= SDL_CONTROLLER_BUTTON_Y) || b == PAD_C || b == PAD_Z; }
 
 enum { SCALE_FIT, SCALE_INT, SCALE_STRETCH, SCALE_COUNT };
-enum { FILTER_SHARP, FILTER_SHARP_SMOOTH, FILTER_SMOOTH, FILTER_SCANLINES, FILTER_COUNT };
+enum { FILTER_SHARP, FILTER_SHARP_SMOOTH, FILTER_SMOOTH, FILTER_SCANLINES, FILTER_CRT, FILTER_CRT_CURVED, FILTER_COUNT };
+enum { PAL_ORIGINAL, PAL_TV, PAL_VIVID, PAL_NIGHT, PAL_SEPIA, PAL_GREEN, PAL_COUNT };
 
 typedef struct {
   int widescreen;
@@ -56,9 +57,10 @@ typedef struct {
   int lock_weapon; // cheat: pickups do not change the weapon / subweapon
   int multi_shot;  // cheat: no limit of two subweapons on screen
   int margin;      // empty border around the picture: 0 none, 1 small, 2 medium (rounded corners, notches)
+  int palette;     // PAL_*: how the console's 64 colours are shown
 } config_t;
 
-static config_t cfg = {1, 0, SCALE_FIT, FILTER_SHARP_SMOOTH, 8, SDL_CONTROLLER_BUTTON_A, SDL_CONTROLLER_BUTTON_Y, 1, 0, 0, 0, 0, 1, MOD_DIFF_NORMAL, MOD_RESPAWN_ON, 0, 1, 2, 1, -1, 0, 0, 0, 0};
+static config_t cfg = {1, 0, SCALE_FIT, FILTER_SHARP_SMOOTH, 8, SDL_CONTROLLER_BUTTON_A, SDL_CONTROLLER_BUTTON_Y, 1, 0, 0, 0, 0, 1, MOD_DIFF_NORMAL, MOD_RESPAWN_ON, 0, 1, 2, 1, -1, 0, 0, 0, 0, PAL_ORIGINAL};
 static char pref_path[1024];
 
 static void cfg_path(char* out, size_t n, const char* name) { snprintf(out, n, "%s%s", pref_path, name); }
@@ -96,6 +98,7 @@ static void cfg_load(void) {
     else if (sscanf(line, "lock_weapon=%d", &v) == 1) cfg.lock_weapon = v ? 1 : 0;
     else if (sscanf(line, "multi_shot=%d", &v) == 1) cfg.multi_shot = v ? 1 : 0;
     else if (sscanf(line, "margin=%d", &v) == 1 && v >= 0 && v <= 2) cfg.margin = v;
+    else if (sscanf(line, "palette=%d", &v) == 1 && v >= 0 && v < PAL_COUNT) cfg.palette = v;
   }
   fclose(f);
   if (cfg.sub_btn == cfg.jump_btn) cfg.sub_btn = cfg.jump_btn == SDL_CONTROLLER_BUTTON_Y ? SDL_CONTROLLER_BUTTON_X : SDL_CONTROLLER_BUTTON_Y;
@@ -107,10 +110,10 @@ static void cfg_save(void) {
   if (!f) return;
   fprintf(f, "widescreen=%d\ncrt=%d\nscale=%d\nfilter=%d\nvolume=%d\njump_btn=%d\nsub_btn=%d\nturbo=%d\nlang=%d\n"
              "suit=%d\ncheat_inv=%d\ncheat_lives=%d\ntriggers=%d\ndifficulty=%d\nrespawn=%d\ndbl_jump=%d\nmusic_pack=%d\ntouch=%d\ntouch_size=%d\n"
-             "ui_lang=%d\nammo_inf=%d\nlock_weapon=%d\nmulti_shot=%d\nmargin=%d\n",
+             "ui_lang=%d\nammo_inf=%d\nlock_weapon=%d\nmulti_shot=%d\nmargin=%d\npalette=%d\n",
           cfg.widescreen, cfg.crt, cfg.scale, cfg.filter, cfg.volume, cfg.jump_btn, cfg.sub_btn, cfg.turbo, cfg.lang,
           cfg.suit, cfg.cheat_inv, cfg.cheat_lives, cfg.triggers, cfg.difficulty, cfg.respawn, cfg.dbl_jump, cfg.music_pack, cfg.touch, cfg.touch_size,
-          cfg.ui_lang, cfg.ammo_inf, cfg.lock_weapon, cfg.multi_shot, cfg.margin);
+          cfg.ui_lang, cfg.ammo_inf, cfg.lock_weapon, cfg.multi_shot, cfg.margin, cfg.palette);
   fclose(f);
 }
 
@@ -328,6 +331,63 @@ static void show_toast(const char* msg, Uint32 ms) {
   toast_until = SDL_GetTicks() + ms;
 }
 
+// ---------------------------------------------------------------- colour palettes
+// The Master System has 64 colours (2 bits per component). A palette only decides which RGB
+// colour each of them becomes: the pictures themselves are untouched.
+static uint32_t palette_lut[64];
+
+static int clamp255(double v) { return v < 0 ? 0 : v > 255 ? 255 : (int)(v + 0.5); }
+
+static void apply_palette(void) {
+  if (cfg.palette == PAL_ORIGINAL) { sms_set_palette(NULL); return; }
+  for (int c = 0; c < 64; c++) {
+    int ci[3] = {c & 3, (c >> 2) & 3, (c >> 4) & 3};
+    double rgb[3];
+    for (int k = 0; k < 3; k++) rgb[k] = ci[k] * 85.0;
+    double y = 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2];
+    double o[3];
+    switch (cfg.palette) {
+    case PAL_TV: {   // composite TV: softer contrast, slightly warm, lifted blacks, a little less saturated
+      static const double lv[4] = {16, 98, 178, 240};
+      for (int k = 0; k < 3; k++) o[k] = lv[ci[k]];
+      double yy = 0.299 * o[0] + 0.587 * o[1] + 0.114 * o[2];
+      for (int k = 0; k < 3; k++) o[k] = yy + (o[k] - yy) * 0.82;
+      o[0] += 8; o[2] -= 6;
+      break;
+    }
+    case PAL_VIVID: {   // richer colours and deeper shadows
+      static const double lv[4] = {0, 72, 168, 255};
+      for (int k = 0; k < 3; k++) o[k] = lv[ci[k]];
+      double yy = 0.299 * o[0] + 0.587 * o[1] + 0.114 * o[2];
+      for (int k = 0; k < 3; k++) o[k] = yy + (o[k] - yy) * 1.28;
+      break;
+    }
+    case PAL_NIGHT: {   // moonlight: cold shadows, slightly muted, warm highlights stay
+      static const double lv[4] = {6, 80, 160, 236};
+      for (int k = 0; k < 3; k++) o[k] = lv[ci[k]];
+      double yy = 0.299 * o[0] + 0.587 * o[1] + 0.114 * o[2];
+      double t = 1.0 - yy / 255.0;   // how dark: darker colours turn bluer
+      for (int k = 0; k < 3; k++) o[k] = yy + (o[k] - yy) * 0.9;
+      o[0] -= 22 * t; o[1] -= 6 * t; o[2] += 26 * t;
+      break;
+    }
+    case PAL_SEPIA: {   // old photograph
+      double v = y / 255.0;
+      o[0] = 255 * (0.10 + 0.95 * v); o[1] = 255 * (0.06 + 0.80 * v); o[2] = 255 * (0.03 + 0.58 * v);
+      break;
+    }
+    default: {   // green monochrome screen, four shades like an old portable
+      static const uint32_t g4[4] = {0x0F380F, 0x306230, 0x8BAC0F, 0x9BBC0F};
+      int sh = y < 40 ? 0 : y < 110 ? 1 : y < 185 ? 2 : 3;
+      o[0] = (g4[sh] >> 16) & 255; o[1] = (g4[sh] >> 8) & 255; o[2] = g4[sh] & 255;
+      break;
+    }
+    }
+    palette_lut[c] = 0xFF000000u | ((uint32_t)clamp255(o[0]) << 16) | ((uint32_t)clamp255(o[1]) << 8) | (uint32_t)clamp255(o[2]);
+  }
+  sms_set_palette(palette_lut);
+}
+
 // ---------------------------------------------------------------- hero colours
 // light and dark shade of the suit (sprite palette entries 10 and 11), SMS colours %00BBGGRR
 static const struct { const char *en, *es; uint8_t light, dark; } suits[] = {
@@ -416,7 +476,7 @@ enum {
   MI_RESUME, MI_SAVE, MI_LOAD, MI_GAME, MI_CHEATS, MI_VIDEO, MI_OPTIONS, MI_RESET, MI_QUIT,
   MI_CONTROLS, MI_HOME, MI_TOUCH, MI_TOUCHSIZE,
   MI_DIFF, MI_RESPAWN, MI_DJUMP,
-  MI_FORMAT, MI_SCALE, MI_FILTER, MI_SUIT, MI_MARGIN,
+  MI_FORMAT, MI_SCALE, MI_FILTER, MI_PALETTE, MI_SUIT, MI_MARGIN,
   MI_VOLUME, MI_BUTTONS, MI_SUBBTN, MI_TURBO, MI_TRIGGERS, MI_LANG, MI_PATCH, MI_MUSIC, MI_MUSPACK, MI_MUSTEST,
   MI_INV, MI_LIVES, MI_WEAPON, MI_SUB, MI_AMMO, MI_MULTI, MI_LOCK, MI_START, MI_WARP, MI_UILANG, MI_ORIGINAL,
   MI_BACK
@@ -425,7 +485,7 @@ enum { PAGE_MAIN, PAGE_VIDEO, PAGE_OPTIONS, PAGE_CHEATS, PAGE_GAME, PAGE_CONTROL
 #define PAGE_MAX 12
 static const int page_items[PAGE_COUNT][PAGE_MAX] = {
   {MI_RESUME, MI_SAVE, MI_LOAD, MI_GAME, MI_CHEATS, MI_VIDEO, MI_OPTIONS, MI_CONTROLS, MI_RESET, MI_HOME, MI_QUIT, -1},
-  {MI_FORMAT, MI_SCALE, MI_FILTER, MI_MARGIN, MI_SUIT, MI_BACK, -1},
+  {MI_FORMAT, MI_SCALE, MI_FILTER, MI_PALETTE, MI_MARGIN, MI_SUIT, MI_BACK, -1},
   {MI_UILANG, MI_VOLUME, MI_LANG, MI_PATCH, MI_MUSIC, MI_MUSPACK, MI_MUSTEST, MI_BACK, -1},
   {MI_INV, MI_LIVES, MI_WEAPON, MI_SUB, MI_AMMO, MI_MULTI, MI_LOCK, MI_START, MI_WARP, MI_BACK, -1},
   {MI_DIFF, MI_RESPAWN, MI_DJUMP, MI_TURBO, MI_ORIGINAL, MI_BACK, -1},
@@ -471,8 +531,11 @@ static const char* button_name(int b) {
 
 static const char* scale_names[2][SCALE_COUNT] = {{"Fit to screen", "Integer scale", "Stretch"},
                                                   {"Ajustar a pantalla", "Escala entera", "Estirar"}};
-static const char* filter_names[2][FILTER_COUNT] = {{"Sharp", "Sharp smoothed", "Smooth", "Scanlines"},
-                                                   {"Nítido", "Nítido suavizado", "Suave", "Scanlines"}};
+static const char* filter_names[2][FILTER_COUNT] = {{"Sharp", "Sharp smoothed", "Smooth", "Scanlines", "CRT", "Curved CRT"},
+                                                   {"Nítido", "Nítido suavizado", "Suave", "Scanlines", "CRT", "CRT curvo"}};
+static const char* palette_names[2][PAL_COUNT] = {
+  {"Original", "Old TV", "Vivid", "Night", "Sepia", "Green screen"},
+  {"Original", "Tele antigua", "Vivos", "Nocturna", "Sepia", "Pantalla verde"}};
 static const char* yes_no(int v) { return v ? T("Yes", "Sí") : "No"; }
 
 static int music_test_sel;
@@ -513,6 +576,7 @@ static void menu_label(int i, char* out, size_t n) {
     break;
   case MI_SCALE: snprintf(out, n, "%s ← %s →", T("Scaling:", "Escalado:"), scale_names[L][cfg.scale]); break;
   case MI_FILTER: snprintf(out, n, "%s   ← %s →", T("Filter:", "Filtro:"), filter_names[L][cfg.filter]); break;
+  case MI_PALETTE: snprintf(out, n, "%s ← %s →", T("Colours:", "Colores:"), palette_names[L][cfg.palette]); break;
   case MI_MARGIN: {
     static const char* mn[2][3] = {{"None", "Small", "Medium"}, {"No", "Pequeño", "Mediano"}};
     snprintf(out, n, "%s ← %s →", T("Screen margin:", "Margen de pantalla:"), mn[L][cfg.margin]);
@@ -614,6 +678,7 @@ static void menu_change(int dir) {
   case MI_FILTER: cfg.filter = (cfg.filter + dir + FILTER_COUNT) % FILTER_COUNT; break;
   case MI_SUIT: cfg.suit = (cfg.suit + dir + SUIT_COUNT) % SUIT_COUNT; apply_suit(); break;
   case MI_MARGIN: cfg.margin = (cfg.margin + dir + 3) % 3; break;
+  case MI_PALETTE: cfg.palette = (cfg.palette + dir + PAL_COUNT) % PAL_COUNT; apply_palette(); break;
 
   case MI_VOLUME: cfg.volume += dir; if (cfg.volume < 0) cfg.volume = 0; if (cfg.volume > 10) cfg.volume = 10; break;
   case MI_BUTTONS: capture_jump = 1; return;
@@ -858,6 +923,94 @@ static void ensure_textures(int game_w) {
     SDL_SetTextureBlendMode(tex_scan, SDL_BLENDMODE_BLEND);
     SDL_SetTextureScaleMode(tex_scan, SDL_ScaleModeLinear);
   }
+}
+
+// ---------------------------------------------------------------- CRT filter
+// Done with the GPU: the picture is drawn 3 columns x k lines per game pixel, multiplied by a
+// mask (beam profile of each scanline and red/green/blue phosphor stripes), then a blurred copy
+// is added on top (the glow that also gives back the brightness the mask took). The curved
+// version draws the result on a bulging grid with darker corners.
+static SDL_Texture *tex_crt, *tex_mask, *tex_glow;
+static int crt_w, crt_h, crt_k;
+
+static void crt_textures(int gw, int k) {
+  int w = gw * 3, h = SMS_H * k;
+  if (tex_crt && crt_w == w && crt_h == h) return;
+  if (tex_crt) SDL_DestroyTexture(tex_crt);
+  if (tex_mask) SDL_DestroyTexture(tex_mask);
+  if (tex_glow) SDL_DestroyTexture(tex_glow);
+  tex_crt = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, w, h);
+  tex_glow = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, gw / 2, SMS_H / 2);
+  tex_mask = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STATIC, w, h);
+  uint32_t* px = malloc(sizeof(uint32_t) * w * h);
+  for (int y = 0; y < h; y++) {
+    // beam profile across the k lines of one scanline: bright in the middle, dark between lines
+    double t = ((y % k) + 0.5) / k - 0.5;
+    double beam = 0.38 + 0.62 * exp(-t * t / (2 * 0.2 * 0.2));
+    for (int x = 0; x < w; x++) {
+      double m[3] = {0.78, 0.78, 0.78};
+      m[x % 3] = 1.0;   // phosphor stripe
+      uint32_t c = 0xFF000000u;
+      for (int ch = 0; ch < 3; ch++) c |= (uint32_t)clamp255(255 * beam * m[ch]) << (16 - 8 * ch);
+      px[y * w + x] = c;
+    }
+  }
+  SDL_UpdateTexture(tex_mask, NULL, px, w * 4);
+  free(px);
+  SDL_SetTextureBlendMode(tex_mask, SDL_BLENDMODE_MOD);
+  SDL_SetTextureScaleMode(tex_crt, SDL_ScaleModeLinear);
+  SDL_SetTextureScaleMode(tex_glow, SDL_ScaleModeLinear);
+  crt_w = w; crt_h = h; crt_k = k;
+}
+
+static void draw_crt(SDL_Rect dst, int gw, int curved) {
+  int k = dst.h / SMS_H;
+  if (k < 3) k = 3;
+  if (k > 6) k = 6;
+  crt_textures(gw, k);
+  if (!tex_crt || !tex_mask || !tex_glow) { SDL_RenderCopy(ren, tex_game, NULL, &dst); return; }
+  // glow source: the picture at half size, smoothed
+  SDL_SetTextureScaleMode(tex_game, SDL_ScaleModeLinear);
+  SDL_SetRenderTarget(ren, tex_glow);
+  SDL_SetTextureBlendMode(tex_game, SDL_BLENDMODE_NONE);
+  SDL_RenderCopy(ren, tex_game, NULL, NULL);
+  // the picture with the mask, then the glow added
+  SDL_SetRenderTarget(ren, tex_crt);
+  SDL_SetTextureScaleMode(tex_game, SDL_ScaleModeNearest);
+  SDL_RenderCopy(ren, tex_game, NULL, NULL);
+  SDL_SetTextureBlendMode(tex_game, SDL_BLENDMODE_BLEND);
+  SDL_RenderCopy(ren, tex_mask, NULL, NULL);
+  SDL_SetTextureBlendMode(tex_glow, SDL_BLENDMODE_ADD);
+  SDL_SetTextureAlphaMod(tex_glow, 72);
+  SDL_RenderCopy(ren, tex_glow, NULL, NULL);
+  SDL_SetTextureAlphaMod(tex_glow, 255);
+  SDL_SetRenderTarget(ren, NULL);
+  if (!curved) { SDL_RenderCopy(ren, tex_crt, NULL, &dst); return; }
+  // bulging screen: a grid whose edges bow outwards, corners pulled in and darker
+  enum { GX = 32, GY = 24 };
+  static SDL_Vertex v[(GX + 1) * (GY + 1)];
+  static int idx[GX * GY * 6];
+  const double bend = 0.045;
+  for (int j = 0; j <= GY; j++)
+    for (int i = 0; i <= GX; i++) {
+      double u = (double)i / GX, w = (double)j / GY;
+      double x = u * 2 - 1, y = w * 2 - 1;
+      double xs = x * (1 - bend * y * y), ys = y * (1 - bend * x * x);
+      double r2 = x * x * y * y;   // darker towards the corners
+      int lum = clamp255(255 * (1 - 0.35 * r2 - 0.06 * (x * x + y * y)));
+      SDL_Vertex* p = &v[j * (GX + 1) + i];
+      p->position.x = (float)(dst.x + (xs + 1) * 0.5 * dst.w);
+      p->position.y = (float)(dst.y + (ys + 1) * 0.5 * dst.h);
+      p->color = (SDL_Color){(Uint8)lum, (Uint8)lum, (Uint8)lum, 255};
+      p->tex_coord.x = (float)u; p->tex_coord.y = (float)w;
+    }
+  int n = 0;
+  for (int j = 0; j < GY; j++)
+    for (int i = 0; i < GX; i++) {
+      int a = j * (GX + 1) + i, b = a + 1, c = a + GX + 1, d = c + 1;
+      idx[n++] = a; idx[n++] = b; idx[n++] = c; idx[n++] = b; idx[n++] = d; idx[n++] = c;
+    }
+  SDL_RenderGeometry(ren, tex_crt, v, (GX + 1) * (GY + 1), idx, n);
 }
 
 static SDL_Rect dest_rect(int ww, int wh, int gw) {
@@ -1147,7 +1300,7 @@ static void handle_touch(SDL_Event* e) {
       menu_sel = row;
       // value rows: left half goes back, right half forward; other rows activate
       int it = cur_item();
-      int value_row = it == MI_FORMAT || it == MI_SCALE || it == MI_FILTER || it == MI_SUIT || it == MI_MARGIN || it == MI_VOLUME ||
+      int value_row = it == MI_FORMAT || it == MI_SCALE || it == MI_FILTER || it == MI_SUIT || it == MI_MARGIN || it == MI_PALETTE || it == MI_VOLUME ||
                       it == MI_TURBO || it == MI_TRIGGERS || it == MI_DIFF || it == MI_RESPAWN || it == MI_DJUMP ||
                       it == MI_TOUCH || it == MI_TOUCHSIZE || it == MI_INV || it == MI_LIVES || it == MI_WEAPON ||
                       it == MI_SUB || it == MI_START || it == MI_MUSTEST || it == MI_AMMO || it == MI_LOCK || it == MI_UILANG || it == MI_MULTI;
@@ -1228,6 +1381,8 @@ static void present(void) {
     } else {
       SDL_RenderCopy(ren, tex_game, NULL, &dst);
     }
+  } else if (cfg.filter == FILTER_CRT || cfg.filter == FILTER_CRT_CURVED) {
+    draw_crt(dst, gw, cfg.filter == FILTER_CRT_CURVED);
   } else {
     SDL_SetTextureScaleMode(tex_game, cfg.filter == FILTER_SMOOTH ? SDL_ScaleModeLinear : SDL_ScaleModeNearest);
     SDL_RenderCopy(ren, tex_game, NULL, &dst);
@@ -1570,6 +1725,7 @@ int main(int argc, char** argv) {
   load_patch();
   apply_language();
   apply_suit();
+  apply_palette();
   sms_init(&S, rom, (int)rom_size);
   mod_enhance_attach(&S, &E);
   mod_enhance_set_wide(&E, cfg.widescreen, MOD_WIDE_EXT);

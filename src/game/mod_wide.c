@@ -302,6 +302,7 @@ void mod_render(const sms_t* s, uint32_t* out, int pitch, int ext, mod_wide_info
   if (valid) side_sources(s, &m, &v, &srcL, &srcR);
   const sms_vdp_t* d = &s->st.vdp;
   const int sh = (d->reg[1] & 0x02) ? 16 : 8;
+  const uint32_t black = sms_color(0);
   for (int y = 0; y < SMS_H; y++) {
     uint32_t* row = out + y * pitch;
     uint32_t pal[32];
@@ -312,7 +313,7 @@ void mod_render(const sms_t* s, uint32_t* out, int pitch, int ext, mod_wide_info
     bool hud = scene && y < GAME_Y0;
     bool left_blank = (s->line_reg0[y] & 0x20) != 0;
     int off = fill ? cx : ext;
-    if (ext) for (int x = 0; x < W; x++) row[x] = 0xFF000000u;
+    if (ext) for (int x = 0; x < W; x++) row[x] = black;   // the black of the current palette
     if (hud && cx != ext) {
       // status bar stays centred, sprites crossing into it follow the playfield
       for (int x = 0; x < SMS_W; x++) row[ext + x] = pal[s->fb_bg[y][x]];

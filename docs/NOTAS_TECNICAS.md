@@ -267,3 +267,12 @@ Cabecera TMR SEGA válida, checksum 6FE6 correcto, región SMS Export, mapper Se
 - Juego → "Volver al juego original" (pide confirmación pulsando dos veces): apaga los trucos y deja dificultad
   normal, reaparición original, sin doble salto, ralentizaciones originales, traje original y música original.
   Imagen, controles, volumen e idiomas se mantienen.
+
+## v0.9.6 — filtros CRT y paletas
+- Filtros "CRT" y "CRT curvo" (por GPU): la imagen se dibuja a 3 columnas x k líneas por píxel en una textura,
+  se multiplica por una máscara (perfil del haz en cada línea y franjas de fósforo rojo/verde/azul) y se le suma
+  una copia borrosa a media resolución (resplandor, devuelve el brillo). El curvo dibuja el resultado con
+  `SDL_RenderGeometry` sobre una rejilla 32x24 abombada, con las esquinas más oscuras.
+- Imagen → "Colores": paletas Original, Tele antigua, Vivos, Nocturna, Sepia y Pantalla verde. Solo cambian el
+  RGB de cada uno de los 64 colores de la consola (`sms_set_palette` en el núcleo); el dibujo no se toca. Los
+  laterales vacíos del 16:9 usan el negro de la paleta.

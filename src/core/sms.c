@@ -35,7 +35,12 @@ static void mem_write(void* u, uint16_t a, uint8_t v) {
   }
 }
 
+static const uint32_t* color_lut;   // optional replacement palette (64 ARGB colours)
+
+void sms_set_palette(const uint32_t* lut64) { color_lut = lut64; }
+
 uint32_t sms_color(uint8_t c) {
+  if (color_lut) return color_lut[c & 63];
   static const uint8_t lv[4] = {0, 85, 170, 255};
   return 0xFF000000u | ((uint32_t)lv[c & 3] << 16) | ((uint32_t)lv[(c >> 2) & 3] << 8) | lv[(c >> 4) & 3];
 }

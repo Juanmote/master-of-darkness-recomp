@@ -113,6 +113,7 @@ void sms_run_frame(sms_t* s);
 int sms_rom_offset(const sms_t* s, uint16_t addr);  // -1 if not ROM
 uint8_t sms_peek(const sms_t* s, uint16_t addr);
 uint32_t sms_color(uint8_t cram_value);               // ARGB8888
+void sms_set_palette(const uint32_t* lut64);          // NULL: the console's own colours
 bool sms_irq_line(sms_t* s);
 
 size_t sms_state_size(void);
