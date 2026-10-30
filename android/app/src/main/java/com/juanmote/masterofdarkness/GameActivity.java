@@ -13,6 +13,8 @@ import java.io.InputStream;
 public class GameActivity extends SDLActivity {
     private static final int MSG_PICK_PATCH = 0x8001;
     private static final int MSG_PICK_MUSIC = 0x8002;
+    private static final int MSG_EXIT = 0x8003;
+    private static boolean exitRequested;
     private static final int PICK_PATCH = 2;
     private static final int PICK_MUSIC = 3;
 
@@ -24,6 +26,16 @@ public class GameActivity extends SDLActivity {
     /** Messages sent from the game with SDL_AndroidSendMessage. */
     @Override
     protected boolean onUnhandledMessage(int command, Object param) {
+        if (command == MSG_EXIT) {
+            // "Exit": close the window, remove it from recents and end the process
+            exitRequested = true;
+            runOnUiThread(new Runnable() {
+                @Override public void run() {
+                    if (android.os.Build.VERSION.SDK_INT >= 21) finishAndRemoveTask(); else finish();
+                }
+            });
+            return true;
+        }
         if (command == MSG_PICK_PATCH || command == MSG_PICK_MUSIC) {
             final int request = command == MSG_PICK_PATCH ? PICK_PATCH : PICK_MUSIC;
             runOnUiThread(new Runnable() {
@@ -37,6 +49,12 @@ public class GameActivity extends SDLActivity {
             return true;
         }
         return super.onUnhandledMessage(command, param);
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (exitRequested) System.exit(0);
     }
 
     /** The chosen translation patch (IPS) is copied inside the app as patch.ips. */

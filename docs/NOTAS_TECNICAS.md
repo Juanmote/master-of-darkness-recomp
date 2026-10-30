@@ -206,3 +206,19 @@ Cabecera TMR SEGA válida, checksum 6FE6 correcto, región SMS Export, mapper Se
 - Música original exportada para el usuario (grabación del PSG en una partida quieta con los canales de efectos
   apagados; `psg_mute` en el núcleo para separar los 4 canales). Medido: 87 (introducción, 1:38) y 8D (historia y
   final, 2:20) no se repiten; el pack las toca una vez.
+
+## v0.9.0 — inglés/español, trucos de armas, traje Camaleón
+- Idioma de la interfaz (launcher, menús, avisos, pantalla de la ROM): inglés por defecto, español si el sistema
+  está en español (`SDL_GetPreferredLocales`; en Java `Locale.getDefault()`). Se cambia en Sonido e idioma →
+  "Idioma de los menús" (`ui_lang` en config.ini). Los botones del launcher en inglés son `launcher/en_*.png`
+  (opcionales: si faltan se usan los españoles). La opción del parche ahora se llama "Texto del juego".
+- Reaparición "No": al cambiar de sección ya no se borra `slot_entry` (los objetos creados antes de la primera
+  pasada de sprites perdían su entrada y volvían a salir).
+- Trucos nuevos: "Munición infinita" (DFB9 se mantiene en 99 si se lleva subarma) y "Bloquear armas"
+  (DFB7/DFB8 vuelven al arma fijada si un objeto las cambia; cambiar el arma en el menú mueve el bloqueo).
+  Se hace desde la app cada fotograma y se pide el redibujado del marcador con `mod_request_hud`.
+- Traje "Camaleón": recorre 12 colores (entradas 10/11 de la paleta del héroe) cada medio segundo.
+- Cruceta táctil: solo se iluminan los brazos pulsados (copia del trozo de la textura con mezcla aditiva).
+- "Salir" (launcher y menú de partida) cierra la app del todo: mensaje 0x8003 a `GameActivity`, que hace
+  `finishAndRemoveTask()` y `System.exit(0)` en `onDestroy`.
+- Icono de la app: el logo del fondo del launcher.

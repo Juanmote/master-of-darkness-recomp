@@ -3,7 +3,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-typedef struct { int id; const char* file; const char* name; bool loops; } music_track_t;
+typedef struct { int id; const char* file; const char* name; bool loops; const char* name_en; } music_track_t;
 extern const music_track_t music_tracks[];
 extern const int music_track_count;
 

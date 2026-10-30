@@ -21,6 +21,10 @@ public class RomPickerActivity extends Activity {
     private static final int PICK_ROM = 1;
     private TextView status;
 
+    /** Texts follow the system language: Spanish if the phone is in Spanish, English otherwise. */
+    private static boolean es() { return "es".equals(java.util.Locale.getDefault().getLanguage()); }
+    private static String t(String en, String sp) { return es() ? sp : en; }
+
     private File romFile() { return new File(getFilesDir(), "rom.sms"); }
 
     @Override
@@ -48,8 +52,10 @@ public class RomPickerActivity extends Activity {
         root.addView(title);
 
         status = new TextView(this);
-        status.setText("Para jugar necesitas tu ROM de Master of Darkness para Master System (.sms).\n"
-                + "Solo hay que elegirla una vez: se copiará dentro de la app.");
+        status.setText(t("To play you need your Master of Darkness ROM for Master System (.sms).\n"
+                + "You only have to choose it once: it will be copied inside the app.",
+                "Para jugar necesitas tu ROM de Master of Darkness para Master System (.sms).\n"
+                + "Solo hay que elegirla una vez: se copiará dentro de la app."));
         status.setTextColor(Color.WHITE);
         status.setTextSize(16);
         status.setGravity(Gravity.CENTER);
@@ -57,7 +63,7 @@ public class RomPickerActivity extends Activity {
         root.addView(status);
 
         Button pick = new Button(this);
-        pick.setText("Elegir ROM");
+        pick.setText(t("Choose ROM", "Elegir ROM"));
         pick.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { openPicker(); }
         });
@@ -80,7 +86,7 @@ public class RomPickerActivity extends Activity {
         try {
             byte[] rom = readAll(data.getData());
             if (rom.length < 0x8000 || rom.length > (1 << 20) || !hasSegaHeader(rom)) {
-                status.setText("Ese archivo no parece una ROM de Master System. Prueba con otro.");
+                status.setText(t("That file does not look like a Master System ROM. Try another one.", "Ese archivo no parece una ROM de Master System. Prueba con otro."));
                 return;
             }
             FileOutputStream out = new FileOutputStream(romFile());
@@ -88,7 +94,7 @@ public class RomPickerActivity extends Activity {
             out.close();
             startGame();
         } catch (Exception e) {
-            status.setText("No se pudo leer el archivo: " + e.getMessage());
+            status.setText(t("Could not read the file: ", "No se pudo leer el archivo: ") + e.getMessage());
         }
     }
 

@@ -11,21 +11,21 @@
 
 // The game's tracks (sound driver ids 0x81-0x8F). Names are what each one is used for.
 const music_track_t music_tracks[] = {
-  {0x87, "87", "Introducción (la leyenda)", false},
-  {0x83, "83", "Pantalla de título", true},
-  {0x85, "85", "Presentación de ronda", false},
-  {0x8B, "8B", "Ronda 1", true},
-  {0x89, "89", "Ronda 2", true},
-  {0x8F, "8F", "Ronda 3", true},
-  {0x8C, "8C", "Ronda 4", true},
-  {0x84, "84", "Ronda 5", true},
-  {0x88, "88", "Por identificar (88)", true},
-  {0x8E, "8E", "Por identificar (8E)", true},
-  {0x81, "81", "Escena superada", false},
-  {0x86, "86", "Ronda superada", false},
-  {0x8A, "8A", "Vida perdida", false},
-  {0x82, "82", "Continuar / fin de partida", true},
-  {0x8D, "8D", "Historia y final", false},
+  {0x87, "87", "Introducción (la leyenda)", false, "Intro (the legend)"},
+  {0x83, "83", "Pantalla de título", true, "Title screen"},
+  {0x85, "85", "Presentación de ronda", false, "Round intro"},
+  {0x8B, "8B", "Ronda 1", true, "Round 1"},
+  {0x89, "89", "Ronda 2", true, "Round 2"},
+  {0x8F, "8F", "Ronda 3", true, "Round 3"},
+  {0x8C, "8C", "Ronda 4", true, "Round 4"},
+  {0x84, "84", "Ronda 5", true, "Round 5"},
+  {0x88, "88", "Por identificar (88)", true, "Unidentified (88)"},
+  {0x8E, "8E", "Por identificar (8E)", true, "Unidentified (8E)"},
+  {0x81, "81", "Escena superada", false, "Scene clear"},
+  {0x86, "86", "Ronda superada", false, "Round clear"},
+  {0x8A, "8A", "Vida perdida", false, "Life lost"},
+  {0x82, "82", "Continuar / fin de partida", true, "Continue / game over"},
+  {0x8D, "8D", "Historia y final", false, "Story and ending"},
 };
 const int music_track_count = sizeof music_tracks / sizeof music_tracks[0];
 

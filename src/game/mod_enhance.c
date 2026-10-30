@@ -209,8 +209,10 @@ static void scan_slots(sms_t* s) {
   int lives = ram8(s, 0xDFBA);
   if (key != g->kill_key || lives < g->last_lives) {
     g->kill_key = key;
+    // the list of killed enemies starts again; the objects already created for the new
+    // section keep their entry (the game creates them before its first sprite pass), and
+    // the slots emptied by the change itself do not count as kills
     g->n_killed = 0;
-    memset(g->slot_entry, 0, sizeof g->slot_entry);
     memset(g->slot_active, 0, sizeof g->slot_active);
   }
   g->last_lives = lives;
