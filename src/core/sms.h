@@ -71,6 +71,7 @@ struct sms {
   const uint8_t* rom;
   int rom_size;
   uint8_t input;                                   // active-high BTN_ bits
+  uint8_t psg_mute;   // bit per PSG channel (0-2 tone, 3 noise) left out of the audio output
   int cpu_mult;                                    // CPU speed multiplier (1 = original, 2 = no slowdown)
   // per-frame outputs
   uint8_t fb_idx[SMS_H][SMS_W];                    // CRAM index per pixel

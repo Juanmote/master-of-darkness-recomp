@@ -201,3 +201,8 @@ Cabecera TMR SEGA válida, checksum 6FE6 correcto, región SMS Export, mapper Se
 - Corrección del pack de música: sustituir la petición por C1 (parar todo) dejaba al juego esperando en el inicio
   de ronda (la espera de fotograma no terminaba). Ahora la petición pasa a 0x80 (nada) y se apagan los cuatro
   canales de música (C140/C170/C1A0/C1D0) y sus volúmenes en el PSG.
+
+## v0.8.2
+- Música original exportada para el usuario (grabación del PSG en una partida quieta con los canales de efectos
+  apagados; `psg_mute` en el núcleo para separar los 4 canales). Medido: 87 (introducción, 1:38) y 8D (historia y
+  final, 2:20) no se repiten; el pack las toca una vez.

@@ -11,7 +11,7 @@
 
 // The game's tracks (sound driver ids 0x81-0x8F). Names are what each one is used for.
 const music_track_t music_tracks[] = {
-  {0x87, "87", "Introducción (la leyenda)", true},
+  {0x87, "87", "Introducción (la leyenda)", false},
   {0x83, "83", "Pantalla de título", true},
   {0x85, "85", "Presentación de ronda", false},
   {0x8B, "8B", "Ronda 1", true},
@@ -25,7 +25,7 @@ const music_track_t music_tracks[] = {
   {0x86, "86", "Ronda superada", false},
   {0x8A, "8A", "Vida perdida", false},
   {0x82, "82", "Continuar / fin de partida", true},
-  {0x8D, "8D", "Historia y final", true},
+  {0x8D, "8D", "Historia y final", false},
 };
 const int music_track_count = sizeof music_tracks / sizeof music_tracks[0];
 

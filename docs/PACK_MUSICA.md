@@ -28,7 +28,7 @@ En el ordenador, copia el pack como `musica.zip` en la carpeta de datos de la ap
 
 | Código | Dónde suena | ¿Se repite? |
 |:-----:|-------------|:-----------:|
-| `87` | Introducción ("...and the legend goes") | Sí |
+| `87` | Introducción ("...and the legend goes") | No (dura 1:38) |
 | `83` | Pantalla de título | Sí |
 | `85` | Presentación de cada ronda (antes de empezar) | No, es corta |
 | `8B` | Ronda 1 | Sí |
@@ -42,11 +42,11 @@ En el ordenador, copia el pack como `musica.zip` en la carpeta de datos de la ap
 | `86` | Ronda superada | No, es corta |
 | `8A` | Vida perdida | No, es corta |
 | `82` | Continuar / fin de partida | Sí |
-| `8D` | Historia y final | Sí |
+| `8D` | Historia y final | No (dura 2:20) |
 
 Las que **se repiten** vuelven a empezar desde el principio de su `.ogg` (o desde el principio de la parte
 principal si hay `_intro`). Para que el bucle no se note, corta el archivo justo en el punto de repetición.
-Las que **no se repiten** suenan una vez; lo ideal es que duren parecido a la original (2 a 4 segundos).
+Las que **no se repiten** suenan una vez; lo ideal es que duren parecido a la original (las cortas, de 2 a 5 segundos).
 
 Si identificas qué suena en `88` o `8E` con **Probar música**, avísanos y actualizamos la tabla.
 

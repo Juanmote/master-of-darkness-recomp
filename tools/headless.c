@@ -127,6 +127,7 @@ int main(int argc, char** argv) {
   if (use_recomp) { fprintf(stderr, "built without recompiled code (run tools/recomp/recomp.py first)\n"); return 1; }
 #endif
   if (getenv("DJ")) E.double_jump = true;
+  if (getenv("PSGMUTE")) S.psg_mute = (uint8_t)strtol(getenv("PSGMUTE"), NULL, 16);
   if (getenv("VDPREG")) S.hooks.on_vdp_reg = h_vdpreg;
   if (getenv("MUSHOOK")) E.music_has = mus_has_test;
   if (getenv("DIFF")) E.difficulty = atoi(getenv("DIFF")); else E.difficulty = 1;

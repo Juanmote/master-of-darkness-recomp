@@ -103,9 +103,9 @@ static void psg_render(sms_t* s) {
       int32_t smp = 0;
       for (int c = 0; c < 3; c++) {
         int on = p->tone[c] <= 1 ? 1 : p->output[c];
-        if (on) smp += psg_vol[p->vol[c]];
+        if (on && !(s->psg_mute & (1 << c))) smp += psg_vol[p->vol[c]];
       }
-      if (p->lfsr & 1) smp += psg_vol[p->vol[3]];
+      if ((p->lfsr & 1) && !(s->psg_mute & 8)) smp += psg_vol[p->vol[3]];
       acc += smp;
     }
     int32_t v = ticks ? acc / ticks : 0;
