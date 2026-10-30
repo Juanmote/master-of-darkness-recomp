@@ -235,15 +235,3 @@ Cabecera TMR SEGA válida, checksum 6FE6 correcto, región SMS Export, mapper Se
   caja de golpe en C860 un momento, porque ese código tiene la dirección fija.
 - Con el truco apagado y sin proyectiles extra los ganchos no tocan nada (huella idéntica a v0.8.2/v0.9.0).
 - Comprobado: los proyectiles extra dañan a los enemigos (con IY en DCC0..), chocan con las paredes y se borran solos.
-
-## v0.9.2 — mandos integrados de otras consolas (Retroid Pocket Classic)
-- En Android se apaga el driver USB propio de SDL (`SDL_HINT_JOYSTICK_HIDAPI=0`): los controles integrados de
-  algunas portátiles se presentan como mandos USB tipo Xbox, SDL los reclama con ese driver y, sin acceso al
-  dispositivo, no llega ninguna pulsación. El sistema de entrada de Android (el que usan los emuladores) los lee bien.
-- Los mandos que SDL no reconoce como "game controller" se leen como joystick genérico: en Android sus botones ya
-  vienen numerados como los del game controller; la cruceta (hat) y el stick izquierdo se convierten en
-  pulsaciones de la cruceta.
-- Botones de mando que llegan como teclas sueltas (SDL no tiene tecla para KEYCODE_BUTTON_*): `GameActivity`
-  primero se los ofrece a SDL como mando y, si no los quiere, los pasa como teclas: A espacio (saltar/aceptar),
-  B/X J (atacar/volver), Y C (subarma), START Intro, SELECT Escape (menú), L2 Q, R2 E.
-- Al conectarse un mando sale un aviso con su nombre ("genérico" si va como joystick), para diagnosticar.
