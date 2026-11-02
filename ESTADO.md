@@ -1,6 +1,6 @@
 # Estado del proyecto — Master of Darkness Re-Master-Ed
 
-Última actualización: 2 de noviembre de 2026. Versión publicada: **v0.9.8**.
+Última actualización: 2 de noviembre de 2026. Versión publicada: **v0.9.9**.
 
 Launcher para Android (y escritorio) que ejecuta *Master of Darkness* (Master System) desde la ROM del
 usuario, con 16:9 real, trucos, opciones de juego, filtros, paletas, pack de música y controles táctiles.
@@ -17,7 +17,8 @@ arranca, pero las mejoras se desactivan solas (se comprueban los bytes de cada p
 **Pantalla de inicio y app**
 - Pantalla de inicio con el arte del usuario: Jugar, Opciones, Controles, Créditos, Salir.
 - Salir cierra la app del todo: `GameActivity` hace `finishAndRemoveTask()` y `System.exit(0)`.
-- Icono con el logo.
+- Icono adaptable con el logo a todo el ancho, sobre fondo oscuro (`tools/gen_icon.py`). Antes era un icono cuadrado
+  antiguo: Android lo encogía y le ponía un plato blanco.
 - Interfaz en inglés por defecto y en español si el sistema está en español; se cambia en *Sonido e idioma*.
   Los botones del launcher tienen versión en inglés (`assets/launcher/en_*.png`).
 - La primera vez se elige la ROM con el selector de archivos. Los packs de música se eligen igual y se copian dentro
@@ -42,8 +43,9 @@ arranca, pero las mejoras se desactivan solas (se comprueban los bytes de cada p
 - Doble salto.
 - Ralentizaciones eliminadas u originales (CPU al doble durante la partida).
 - "Versión remasterizada (recomendada)": pide confirmación. Dificultad normal, reaparición sí, sin doble salto,
-  sin ralentizaciones, sin trucos, 16:9 ajustado, scanlines, colores y traje originales, sin margen, música
-  original y táctiles solo sin mando. Es también lo que trae una instalación nueva.
+  sin ralentizaciones, 16:9 ajustado, scanlines, colores y traje originales, sin margen, música original, táctiles
+  solo sin mando, **subarmas sin límite** (único truco activo) y vibración con los valores recomendados
+  (Suave, Suave, Media, Fuerte, Suave, Fuerte). Es también lo que trae una instalación nueva.
 - "Volver al juego original": pide confirmación. Apaga los trucos y deja reglas, traje y música originales;
   no toca imagen, controles, volumen ni idiomas.
 
@@ -89,8 +91,13 @@ Probado por el usuario y compañeros en Odin 3 Max, Retroid Pocket Classic y mó
 
 ## Errores y puntos pendientes de comprobar
 
-- **v0.9.8 sin probar en consola:** reaparición por posición, vibración (en especial la fuerza en móviles sin
-  control de intensidad, que solo notan la duración), versión remasterizada y traducción.
+- **Acentos y signos antes que el texto (abierto, v0.9.9 no lo arregla):** el usuario ve Á É Í Ó Ú Ñ ¿ ¡ antes que el
+  resto del texto al aparecer una página. Sin causa confirmada: hace falta la ROM para mirarlo en el emulador
+  (`GLYPHS=1`). Código en `src/game/mod_text.c` (`build`) y el dibujado en `src/core/sms.c`.
+- **Sin probar en consola:** vibración en móviles sin control de intensidad (solo notan la duración), icono
+  nuevo y ajustes remasterizados de v0.9.9.
+- **Confirmado por el usuario (2-11-2026):** OST 2 pista 89, y los enemigos mayores ya no reaparecen. Los menores
+  (murciélagos, perros) sí, y le gusta así: no tocar. Traducción revisada y correcta salvo lo de los acentos.
 - **Traducción:** comprobada en el emulador en intro, ouija, historia tras la ronda 0, rótulos, marcador y final.
   Las páginas entre rondas y los diálogos de jefes no se han podido ver (el bot no llega); conviene leerlas en
   consola. El texto se corrige en `tools/traduccion/es.txt` y se monta con `construir.py`.
@@ -193,6 +200,9 @@ apagadas, la huella no debe cambiar.
      acordes), ajustado a pulso y a la forma de onda, con fundido cruzado de un pulso; la parte anterior va como
      `_intro`. Cortas recortadas a la duración original con fundido. 87 recortada a la escena (unos 2 min).
    - OST 2: la 89 (Ronda 2) se cambió el 2-11-2026 por la buena (antes era la del OST 1); intro 18 s, bucle 56 s.
-   - Pendiente: que el usuario pruebe los bucles y diga si alguno se nota.
+   - Pendiente: que el usuario pruebe los bucles y diga si alguno se nota. (Pista 89 del OST 2: confirmada.)
 4. **Selector de OST en la app: hecho** (v0.9.7).
-5. **Pendiente de confirmar por el usuario en consola:** reaparición, vibración, traducción y el OST 2 nuevo.
+5. **Arreglar acentos y signos** (ver Errores); necesita la ROM.
+6. **Galería en el launcher.** Por definir qué contiene; todo material sin derechos de terceros o aportado por el usuario.
+7. **Huevo de pascua:** en Créditos, al pulsar varias veces en el nombre del usuario, aparece el ticket de compra
+   del juego. El usuario pasará la imagen más adelante.

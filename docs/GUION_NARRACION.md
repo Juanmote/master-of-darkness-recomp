@@ -29,16 +29,17 @@ Sugerencia de voces: un **narrador** para casi todo y otra voz, maliciosa, para 
 | N07 | E3BC | There was an investigator of the paranormal, a young psychologist named Ferdinand Social. | Había un investigador de lo paranormal, un joven psicólogo llamado Ferdinand Social. |
 | N08 | E434 | ...On the night of the full moon, he received a mysterious message while using his Ouija board. | ...Una noche de luna llena, recibió un mensaje misterioso mientras usaba su tablero ouija. |
 
-Después la tabla de ouija deletrea letra a letra *KILLER*, *GO TO THAMES*, *CAUTION*, *IN THE WAKE OF*,
-*DRACULA*. Son palabras sueltas y van con efecto de sonido; si quieres voz también, serían:
+Después la tabla de ouija deletrea letra a letra sus palabras. Son palabras sueltas y van con efecto de sonido;
+si quieres voz también, serían estas (CUIDADO sale dos veces seguidas: con una voz basta):
 
 | Código | Inglés | Español (lo que deletrea el tablero) |
 |:-:|---|---|
 | N09a | Killer | Crimen |
-| N09b | Go to Thames | Al Támesis |
-| N09c | Caution | Cuidado |
-| N09d | In the wake of | Tras el rastro |
-| N09e | Dracula | De Drácula |
+| N09b | Vampire | Vampiro |
+| N09c | Go to Thames | Al Támesis |
+| N09d | Caution | Cuidado |
+| N09e | In the wake of | Tras el rastro |
+| N09f | Dracula | De Drácula |
 
 ## 2. Al empezar la partida (antes de la ronda 1)
 

@@ -339,3 +339,13 @@ Cabecera TMR SEGA válida, checksum 6FE6 correcto, región SMS Export, mapper Se
 - headless: `GLYPHS=1` (letras extra), `EVLOG=1` (momentos de vibración), `FAKEKILL=1`, `RESPDBG=1`, `KILLPC=1`,
   `BOTATK=1|2`, `JUMP=frame:banco:pc` (salta a una rutina; `JUMP=900:3:AC35` enseña el final).
 - Con las opciones por defecto del núcleo la huella `-H` es idéntica a v0.9.7 (16:9 y 4:3).
+
+## v0.9.9 — icono adaptable y ajustes remasterizados
+- **Icono:** el anterior era un PNG cuadrado sin versión adaptable; Android 8+ lo encoge dentro de un plato blanco.
+  Ahora `mipmap-anydpi-v26/ic_launcher.xml` con fondo de color y `ic_launcher_foreground.png` (108 dp, logo de 68 dp
+  en los 72 dp visibles). `tools/gen_icon.py` recorta el logo de `fondo.jpg` y quita el cielo pintado alrededor de
+  las volutas. Los PNG `ic_launcher.png` quedan para Android 7 o menos. El `banner` pasa a `drawable-xhdpi/banner.png`
+  (320x180), porque un banner debe ser una imagen apaisada.
+- **Versión remasterizada:** añade `multi_shot = 1` y `cfg.vib = vib_recommended`, también en una instalación nueva.
+  Un `config.ini` existente conserva sus valores hasta pulsar la opción.
+

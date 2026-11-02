@@ -17,7 +17,7 @@
 #define STBI_NO_STDIO
 #include "stb_image.h"
 
-#define APP_VERSION "0.9.8"
+#define APP_VERSION "0.9.9"
 #define KNOWN_CRC 0x96FB4D4Bu
 #define UI_W 640
 #define UI_H 360
@@ -64,10 +64,11 @@ typedef struct {
 } config_t;
 
 // A new installation starts as the "remastered" version (see apply_remaster)
-static config_t cfg = {1, 0, SCALE_FIT, FILTER_SCANLINES, 8, SDL_CONTROLLER_BUTTON_A, SDL_CONTROLLER_BUTTON_Y, 1, -1, 0, 0, 0, 1, MOD_DIFF_NORMAL, MOD_RESPAWN_ON, 0, 0, 2, 1, -1, 0, 0, 0, 0, PAL_ORIGINAL,
+static config_t cfg = {1, 0, SCALE_FIT, FILTER_SCANLINES, 8, SDL_CONTROLLER_BUTTON_A, SDL_CONTROLLER_BUTTON_Y, 1, -1, 0, 0, 0, 1, MOD_DIFF_NORMAL, MOD_RESPAWN_ON, 0, 0, 2, 1, -1, 0, 0, 1, 0, PAL_ORIGINAL,
                        {1, 1, 2, 3, 1, 3}};
 enum { VIB_TOUCH, VIB_SWING, VIB_HIT, VIB_HURT, VIB_LAND, VIB_BOSS, VIB_COUNT };
 static const char* vib_keys[VIB_COUNT] = {"vib_touch", "vib_swing", "vib_hit", "vib_hurt", "vib_land", "vib_boss"};
+static const int vib_recommended[VIB_COUNT] = {1, 1, 2, 3, 1, 3};   // same as the initial cfg.vib
 #define MUSIC_SLOTS 3
 static char pref_path[1024];
 
@@ -817,10 +818,13 @@ static void reset_to_original(void) {
 }
 
 // The version recommended by the project (also what a new installation starts with): the original rules
-// without slowdowns, real 16:9 with scanlines and the original colours, suit and music, no cheats, and
-// touch controls only when no gamepad is connected. Buttons, volume, vibration and languages stay.
+// without slowdowns, real 16:9 with scanlines and the original colours, suit and music, no subweapon
+// limit as the only cheat, the recommended vibration, and touch controls only when no gamepad is
+// connected. Buttons, volume and languages stay.
 static void apply_remaster(void) {
-  cfg.cheat_inv = cfg.cheat_lives = cfg.ammo_inf = cfg.lock_weapon = cfg.multi_shot = 0;
+  cfg.cheat_inv = cfg.cheat_lives = cfg.ammo_inf = cfg.lock_weapon = 0;
+  cfg.multi_shot = 1;
+  for (int k = 0; k < VIB_COUNT; k++) cfg.vib[k] = vib_recommended[k];
   if (rom_crc == KNOWN_CRC) gram_w(RAM_INVINCIBLE, 0);
   locked_weapon = locked_sub = -1;
   cfg.difficulty = MOD_DIFF_NORMAL;
@@ -958,7 +962,7 @@ static void draw_ui(void) {
                                  T("Whether the enemies you kill come back", "Si los enemigos que matas vuelven a salir")) :
              it == MI_DJUMP ? T("Press jump again in the air", "Pulsa saltar otra vez en el aire") :
              it == MI_ORIGINAL ? T("Cheats off, original rules, suit and music", "Trucos fuera, reglas, traje y música originales") :
-             it == MI_REMASTER ? T("No slowdowns, 16:9, scanlines, no cheats", "Sin ralentizaciones, 16:9, scanlines, sin trucos") : T("Game", "Juego");
+             it == MI_REMASTER ? T("No slowdowns, 16:9, scanlines, no subweapon limit", "Sin ralentizar, 16:9, scanlines, subarmas sin límite") : T("Game", "Juego");
     }
     if (menu_page == PAGE_VIBRA) {
       int it = cur_item();
