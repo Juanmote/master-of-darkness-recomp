@@ -33,7 +33,7 @@ Port nativo de *Master of Darkness* (Sega Master System, 1992) para Android, con
 - v0.2: los enemigos aparecen y se mueven también por los laterales en 16:9 (en 4:3 el juego es idéntico al original).
 - Siguiente: recompilación del código a C y 16:9 completo con enemigos en los laterales.
 
-Notas técnicas: `docs/NOTAS_TECNICAS.md`.
+Notas técnicas: `docs/NOTAS_TECNICAS.md`. Estado actual, decisiones y próximas tareas: `ESTADO.md`.
 
 ## Compilar en PC
 Requiere SDL2: `cmake -S . -B build && cmake --build build`, y coloca la ROM como `mod.sms` junto al ejecutable.
