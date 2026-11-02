@@ -19,8 +19,8 @@ const music_track_t music_tracks[] = {
   {0x8F, "8F", "Ronda 3", true, "Round 3"},
   {0x8C, "8C", "Ronda 4", true, "Round 4"},
   {0x84, "84", "Ronda 5", true, "Round 5"},
-  {0x88, "88", "Por identificar (88)", true, "Unidentified (88)"},
-  {0x8E, "8E", "Por identificar (8E)", true, "Unidentified (8E)"},
+  {0x88, "88", "Jefes", true, "Bosses"},
+  {0x8E, "8E", "Jefe final", true, "Final boss"},
   {0x81, "81", "Escena superada", false, "Scene clear"},
   {0x86, "86", "Ronda superada", false, "Round clear"},
   {0x8A, "8A", "Vida perdida", false, "Life lost"},
@@ -71,6 +71,14 @@ void music_unload(void) {
   n_replaced = 0;
 }
 
+static int strncasecmp_ascii(const char* a, const char* b, size_t n) {
+  for (size_t i = 0; i < n; i++) {
+    int d = tolower((unsigned char)a[i]) - tolower((unsigned char)b[i]);
+    if (d || !a[i]) return d;
+  }
+  return 0;
+}
+
 // file name (any folder inside the zip) -> track: "8b.ogg", "8B_intro.ogg", "8b - ronda 1.ogg"...
 static void index_entry(const char* path, int idx) {
   const char* name = strrchr(path, '/');
@@ -83,10 +91,9 @@ static void index_entry(const char* path, int idx) {
   char hx[3] = {name[0], name[1], 0};
   int id = (int)strtol(hx, NULL, 16);
   if (track_index(id) < 0) return;
-  bool intro = false;
-  for (const char* p = name + 2; *p && p < name + n - 4; p++)
-    if (tolower((unsigned char)p[0]) == 'i' && tolower((unsigned char)p[1]) == 'n' && tolower((unsigned char)p[2]) == 't' &&
-        tolower((unsigned char)p[3]) == 'r' && tolower((unsigned char)p[4]) == 'o') { intro = true; break; }
+  // the part played once before the loop: the name ends in "intro" ("8B_intro.ogg", "8B - Ronda 1 intro.ogg");
+  // a name that only contains it ("87 - Introduccion.ogg") is a normal track
+  bool intro = n >= 2 + 5 + 4 && !strncasecmp_ascii(name + n - 4 - 5, "intro", 5);
   if (intro) entry_intro[id] = idx + 1; else entry_main[id] = idx + 1;
 }
 

@@ -1,11 +1,11 @@
 # Estado del proyecto — Master of Darkness Re-Master-Ed
 
-Última actualización: 2 de noviembre de 2026. Versión publicada: **v0.9.6 (build-31)**.
+Última actualización: 2 de noviembre de 2026. Versión publicada: **v0.9.7** (build tras build-31).
 
 Launcher para Android (y escritorio) que ejecuta *Master of Darkness* (Master System) desde la ROM del
 usuario, con 16:9 real, trucos, opciones de juego, filtros, paletas, pack de música y controles táctiles.
 Detalles técnicos de cada versión: [`docs/NOTAS_TECNICAS.md`](docs/NOTAS_TECNICAS.md). Pack de música:
-[`docs/PACK_MUSICA.md`](docs/PACK_MUSICA.md).
+[`docs/PACK_MUSICA.md`](docs/PACK_MUSICA.md). Guion de narración: [`docs/GUION_NARRACION.md`](docs/GUION_NARRACION.md).
 
 ROM necesaria: *Master of Darkness (Europe, Brazil) (En).sms*, CRC32 `96FB4D4B`. Con otra ROM el juego
 arranca, pero las mejoras se desactivan solas (se comprueban los bytes de cada punto enganchado).
@@ -35,7 +35,8 @@ arranca, pero las mejoras se desactivan solas (se comprueban los bytes de cada p
 
 **Juego**
 - Dificultad Fácil, Normal o Difícil (escala el daño recibido y causado).
-- Reaparición de enemigos: Sí (original), No, o Al volver a la zona.
+- Reaparición de enemigos: Sí (original), No, o Al volver a la zona. Solo cuentan las muertes reales (código
+  del juego que destruye al enemigo); "No" dura toda la ronda, aunque pierdas una vida o continúes (v0.9.7).
 - Doble salto.
 - Ralentizaciones eliminadas u originales (CPU al doble durante la partida).
 - "Volver al juego original": pide confirmación. Apaga los trucos y deja reglas, traje y música originales;
@@ -65,23 +66,25 @@ arranca, pero las mejoras se desactivan solas (se comprueban los bytes de cada p
 - Volumen.
 - Texto del juego en inglés o traducido con el parche elegido por el usuario (se acredita a Traducciones Wave
   si se reconoce su parche, CRC `1173EA42`).
-- Pack de música opcional: `.zip` de `.ogg` nombrados por número de pista, con intro opcional.
+- Packs de música opcionales: `.zip` de `.ogg` nombrados por número de pista, con intro opcional. Tres ranuras:
+  «Música: Original / OST 1 / OST 2 / OST 3» (v0.9.7).
 - Prueba de pistas.
 
 **Guardar**
 - Guardar y cargar estado (1 ranura).
 
-Probado por el usuario y compañeros en Odin 3 Max, Retroid Pocket Classic y móvil.
+Probado por el usuario y compañeros en Odin 3 Max, Retroid Pocket Classic y móvil. Confirmado en consola
+(v0.9.6): C y Z, filtros, START en el título, y sin parpadeos con subarmas sin límite.
 
 ---
 
 ## Errores y puntos pendientes de comprobar
 
-- **C y Z en la Retroid Pocket Classic (v0.9.5):** que funcionen como botones normales no está confirmado en
-  la consola. SDL los entrega como botones 17 y 18 del joystick y aquí se convierten en los ids 24 y 25.
-- **Rendimiento de los filtros CRT (v0.9.6)** en Odin y Classic: sin confirmar. En escritorio va bien.
-- **Subarmas sin límite:** con muchos proyectiles y enemigos puede haber parpadeo de sprites. Es el límite de
-  sprites por línea de la Master System, igual que en el juego original. Falta probar bien contra jefes.
+- **Reaparición rehecha (v0.9.7), sin confirmar en consola.** Fallos que tenía la v0.9.6: al morir o continuar
+  se apuntaban como muertos todos los enemigos a la vista (por eso "desaparecían todos"), y la lista se vaciaba
+  al perder una vida (por eso "volvían a salir").
+- **Packs de música (v0.9.7), sin probar en consola:** bucles hechos por análisis; algún punto de unión puede
+  notarse. Si uno chirría, decir pista y OST y se busca otro punto.
 - **START en el título** depende de la última música pedida. Justo después de cargar un estado puede tardar
   hasta la siguiente pista en reconocer la pantalla.
 - **Pequeña diferencia de sincronía:** durante 42 fotogramas, la huella de la emulación difiere de la
@@ -167,24 +170,18 @@ apagadas, la huella no debe cambiar.
 
 ## Próximas tareas
 
-1. **Guion de narración (pedido y pendiente de hacer).**
-   - Extraer todas las páginas de texto del juego (leyenda inicial, historia entre rondas, final), numeradas,
-     en inglés original y con la traducción de Wave.
-   - Proponer nombres de archivo para las voces.
-   - El usuario generará las voces con una IA de voz. Para la versión en español hay que pedir permiso a
-     Traducciones Wave.
+1. **Guion de narración: hecho** (`docs/GUION_NARRACION.md`, códigos N01–N36). El usuario genera las voces con
+   una IA de voz; para el español hay que pedir permiso a Traducciones Wave.
 2. **Narración en la app.**
    - Reconocer cada página de texto en pantalla, en los dos idiomas.
    - Reproducir su voz desde un pack opcional y bajar la música mientras habla.
    - Si una página se cierra sola antes de acabar la voz, mirar si se puede hacer esperar al juego.
-3. **Packs de música del usuario.** Versiones gothic/metal instrumentales; dos variantes de cada pista para
-   formar dos OST.
-   - Analizar las dos carpetas (tempo, tonalidad, intensidad, brillo, densidad) y proponer qué variantes van
-     juntas; recolocar solo con el visto bueno del usuario.
-   - Masterizar: igualar volumen (LUFS), ecualización, compresión y limitador, recortes y fundidos.
-   - Preparar bucles sin salto y separar intros (`_intro`).
-   - Montar los `.zip`.
-   - No se puede generar música nueva con IA: solo procesar lo que entregue el usuario.
-4. **Selector de dos OST en la app:** «Música: Original / OST 1 / OST 2», guardando los dos packs sin
-   tener que recargar el zip.
-5. **Pendiente de confirmar por el usuario en consola:** C y Z en la Classic y rendimiento de los filtros CRT.
+3. **Packs de música del usuario: montados** (fuera del repositorio, los tiene el usuario): `MoD_OST_1.zip`,
+   `MoD_OST_2.zip` (SUNO, con cortas) y `MoD_OST_YT.zip` (de YouTube, sin cortas: suenan las originales).
+   - Proceso: mono, filtro de 30 Hz, -17 LUFS, techo -1,5 dBFS, bucle buscado por similitud (rasgos de espectro y
+     acordes), ajustado a pulso y a la forma de onda, con fundido cruzado de un pulso; la parte anterior va como
+     `_intro`. Cortas recortadas a la duración original con fundido. 87 recortada a la escena (unos 2 min).
+   - La pista 89 (Ronda 2) es el mismo archivo en OST 1 y OST 2.
+   - Pendiente: que el usuario pruebe los bucles y diga si alguno se nota.
+4. **Selector de OST en la app: hecho** (v0.9.7).
+5. **Pendiente de confirmar por el usuario en consola:** la nueva reaparición y los tres packs.

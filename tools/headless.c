@@ -187,7 +187,9 @@ int main(int argc, char** argv) {
           if ((r >> 8) % 7 == 0) held |= BTN_UP | BTN_1;
           hold_left = 4 + (r >> 12) % 30;
         }
-        S.input |= held;
+        uint8_t h2 = held;
+        if (getenv("BOTFLIP") && (fr / atoi(getenv("BOTFLIP"))) % 2 == 1 && (h2 & (BTN_LEFT | BTN_RIGHT))) h2 ^= BTN_LEFT | BTN_RIGHT;
+        S.input |= h2;
         if (fr % 600 == 0) S.input |= BTN_1;  // continue screens etc.
       }
     }
@@ -204,6 +206,7 @@ int main(int argc, char** argv) {
     if (getenv("MUSHOOK")) for (int ev; (ev = mod_music_poll(&E)); ) printf("MUS %u %03X\n", fr, ev);
     { static uint32_t lp; uint32_t p0 = E.passes; sms_run_frame(&S); if (getenv("PASSLOG")) printf("PASS %u %u\n", fr, E.passes - p0); if (getenv("LAGLOG") && E.passes == p0 && lp) printf("LAG %u cam %d\n", fr, S.st.ram[0x6A0] | (S.st.ram[0x6A1] << 8)); lp = E.passes; }
     mod_enhance_frame(&S, &E);
+    if (getenv("KILLLOG")) { static int lk = -1; if (E.n_killed != lk) { printf("KILL %u n=%d lives=%d round=%d-%d\n", fr, E.n_killed, S.st.ram[0x1FBA], S.st.ram[0x1FC0], S.st.ram[0x1FC1]); lk = E.n_killed; } }
     mod_wide_info_t info;
     mod_render(&S, pix, W, ext, &info, E.wide ? E.shown : NULL, E.wide ? E.n_shown : 0);
     if (info.map_valid) valid_frames++;

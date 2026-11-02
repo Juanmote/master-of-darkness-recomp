@@ -183,11 +183,14 @@ static bool spawn_hook(sms_t* s, int k, uint16_t pc) {
 
 // ---------------------------------------------------------------- respawn option
 // Each spawn-list entry names the object slot it uses: the game creates the enemy when the
-// camera reaches the entry and that slot is free. An enemy killed (freed while visible, not by
-// the off-screen clean-up) is remembered so its entry does not fill the slot again:
-// "off" until the section changes or the player dies, "mixed" until its spot has been left behind.
-static uint32_t kill_section_key(sms_t* s) {
-  return ((uint32_t)ram8(s, 0xDFC0) << 16) | ((uint32_t)ram8(s, 0xDFC1) << 8) | ram8(s, 0xC6A2);
+// camera reaches the entry and that slot is free. Only real kills are remembered: the game's own
+// "enemy destroyed" code (3DFA: hit with no energy left, 41AE: destroyed in one blow) marks the
+// entry that created that object, so the off-screen clean-up, deaths, continues or the game
+// clearing the screen never count. A killed entry sees its slot "busy" and the enemy is not made:
+// "off" for the rest of the round (losing a life or continuing does not bring them back), "mixed"
+// until its spot has been left well behind. A new round or the title screen starts a new list.
+static uint32_t entry_id(sms_t* s, uint16_t entry) {
+  return 0x80000000u | ((uint32_t)(ram8(s, 0xDFC1) & 0x7F) << 24) | ((uint32_t)s->st.bank[2] << 16) | entry;
 }
 
 static bool entry_blocked(uint32_t id) {
@@ -199,48 +202,43 @@ static bool entry_blocked(uint32_t id) {
 static void note_spawn(sms_t* s, int k, uint16_t slot_addr, uint16_t entry) {
   int slot = slot_of(slot_addr);
   if (slot < 0) return;
-  g->slot_entry[slot] = ((uint32_t)s->st.bank[2] << 16) | entry | 0x80000000u;
+  g->slot_entry[slot] = entry_id(s, entry);
   g->slot_trigger[slot] = g->spawn[k].active ? g->spawn[k].next : cam16(s);
-  g->slot_culled[slot] = 0;
 }
 
-// called at the start of every sprite pass: which objects disappeared since the last one
+void mod_respawn_clear(mod_enhance_t* e) { e->n_killed = 0; }
+
+// the enemy in this object slot has just been destroyed by the player
+static void note_kill(uint16_t obj) {
+  int slot = slot_of(obj);
+  if (slot < 0 || !g->slot_entry[slot]) return;
+  uint32_t id = g->slot_entry[slot];
+  g->slot_entry[slot] = 0;   // its death animation may stay in the slot for a while
+  for (int i = 0; i < g->n_killed; i++) if (g->killed[i].id == id) return;
+  if (g->n_killed >= MOD_MAX_KILLED) {   // full: forget the oldest
+    memmove(&g->killed[0], &g->killed[1], sizeof g->killed[0] * (MOD_MAX_KILLED - 1));
+    g->n_killed--;
+  }
+  g->killed[g->n_killed].id = id;
+  g->killed[g->n_killed].trigger = g->slot_trigger[slot];
+  g->n_killed++;
+}
+
+// called at the start of every sprite pass
 static void scan_slots(sms_t* s) {
-  uint32_t key = kill_section_key(s);
-  int lives = ram8(s, 0xDFBA);
-  if (key != g->kill_key || lives < g->last_lives) {
-    g->kill_key = key;
-    // the list of killed enemies starts again; the objects already created for the new
-    // section keep their entry (the game creates them before its first sprite pass), and
-    // the slots emptied by the change itself do not count as kills
-    g->n_killed = 0;
-    memset(g->slot_active, 0, sizeof g->slot_active);
-  }
-  g->last_lives = lives;
-  for (int i = 0; i < 46; i++) {
-    uint16_t a = 0xCA40 + i * 0x20;
-    bool act = ram8(s, a) != 0;
-    if (g->slot_active[i] && !act && g->slot_entry[i]) {
-      int x = g->slot_x[i];
-      bool visible = x >= -16 - g->margin_l && x <= 255 + g->margin_r;
-      if (!g->slot_culled[i] && visible && g->n_killed < 64) {
-        g->killed[g->n_killed].id = g->slot_entry[i];
-        g->killed[g->n_killed].trigger = g->slot_trigger[i];
-        g->n_killed++;
-      }
-      g->slot_entry[i] = 0;
-    }
-    g->slot_active[i] = act;
-    if (act) g->slot_x[i] = (int16_t)(ram8(s, a + 4) | (ram8(s, a + 5) << 8));
-    g->slot_culled[i] = 0;
-  }
+  int round = ram8(s, 0xDFC0);
+  if ((uint32_t)round != g->kill_key) { g->kill_key = (uint32_t)round; g->n_killed = 0; }
+  for (int i = 0; i < 46; i++)
+    if (!ram8(s, 0xCA40 + i * 0x20)) g->slot_entry[i] = 0;   // free slot: no entry owns it any more
   // mixed: an enemy can come back once its spot has been left well behind
   if (g->respawn == MOD_RESPAWN_MIXED) {
     int cam = cam16(s);
     for (int i = 0; i < g->n_killed; ) {
       int d = g->killed[i].trigger - cam;
-      if (d < -(256 + 2 * MOD_WIDE_EXT) || d > 256 + 2 * MOD_WIDE_EXT) g->killed[i] = g->killed[--g->n_killed];
-      else i++;
+      if (d < -(256 + 2 * MOD_WIDE_EXT) || d > 256 + 2 * MOD_WIDE_EXT) {
+        memmove(&g->killed[i], &g->killed[i + 1], sizeof g->killed[0] * (g->n_killed - i - 1));
+        g->n_killed--;
+      } else i++;
     }
   }
 }
@@ -409,18 +407,16 @@ static bool on_hook(sms_t* s, uint16_t pc) {
   if (ms_hook_map[pc]) return ms_hook(s, pc);
   switch (pc) {
   case 0x3CD0: case 0x52E7: {  // spawn-list entry: is its slot free? (A = slot byte, HL = entry + 3)
-    if (z->a == 0 && entry_blocked(((uint32_t)s->st.bank[2] << 16) | (uint16_t)(((z->h << 8) | z->l) - 3) | 0x80000000u))
+    if (z->a == 0 && entry_blocked(entry_id(s, (uint16_t)(((z->h << 8) | z->l) - 3))))
       z->a = 1;   // treat the slot as busy: the enemy is not created
     return false;
   }
   case 0x3CDD: case 0x52F4:  // object created from a spawn-list entry (DE = slot, HL = entry + 3)
     note_spawn(s, pc == 0x3CDD ? 0 : 1, (z->d << 8) | z->e, (uint16_t)(((z->h << 8) | z->l) - 3));
     return false;
-  case 0x5238: case 0x523D: {  // the game removes an object that went off screen (HL = slot)
-    int slot = slot_of((z->h << 8) | z->l);
-    if (slot >= 0) g->slot_culled[slot] = 1;
+  case 0x3DFA: case 0x41AE:  // an enemy is destroyed (IX = its slot)
+    note_kill(z->ix);
     return false;
-  }
   case 0x46F1:  // damage to the player (B)
     if (g->difficulty != MOD_DIFF_NORMAL) z->b = (uint8_t)scale_damage(z->b, &g->frac_taken, true);
     return false;
@@ -442,6 +438,7 @@ static bool on_hook(sms_t* s, uint16_t pc) {
     if (s->st.bank[2] == 9) {
       int id = ram8(s, 0xC103);
       int ev = 0;
+      if (id == 0x83 || id == 0x87) g->n_killed = 0;   // title / intro: a new game will start
       if (id >= 0x81 && id <= 0x8F) {
         if (g->music_has && g->music_has(id)) {
           // no new sound starts (0x80 = idle) and the music channels go quiet: the driver's own
@@ -497,7 +494,7 @@ static bool on_hook(sms_t* s, uint16_t pc) {
     if (x16 >= 0 && x16 <= 255) { z->a = 0; z->pc = 0x51E5; z->cyc += 35; }
     else if (x16 >= -17 && x16 < 0) { z->a = (0x11 + (x16 & 0xFF)) & 0xFF; z->pc = 0x51E5; z->cyc += 74; }
     else if (in_wide_range(z->ix, x16)) { capture(s, z->ix, false); z->pc = 0x51E9; z->cyc += 35; }
-    else { int sl = slot_of(z->ix); if (sl >= 0) g->slot_culled[sl] = 1; z->pc = 0x5238; z->cyc += 35; }
+    else { z->pc = 0x5238; z->cyc += 35; }
     return true;
   }
   }
@@ -522,6 +519,7 @@ static const struct { uint16_t addr; uint8_t b[4]; } signature[] = {
   {0x3CCF, {0x1A, 0xB7, 0xCC, 0xDD}}, {0x52E6, {0x1A, 0xB7, 0xCC, 0xF4}}, {0x3CDD, {0xD5, 0xDD, 0xE1, 0x7E}},
   {0x52F4, {0xD5, 0xDD, 0xE1, 0x7E}}, {0x523D, {0x36, 0x00, 0xC3, 0x25}}, {0x46F1, {0x3A, 0x3A, 0xCA, 0x90}},
   {0x6198, {0x3A, 0x3A, 0xCB, 0x90}}, {0x3DD3, {0xDD, 0x7E, 0x1A, 0xFD}}, {0x3DD9, {0xDD, 0x77, 0x1A, 0xDD}},
+  {0x3DFA, {0x3E, 0xA0, 0x32, 0x05}}, {0x41AE, {0xC5, 0xD5, 0xDD, 0x36}},
   {0x4A07, {0xCD, 0x4D, 0x4B, 0x3A}}, {0x4A10, {0xCD, 0x7E, 0x4B, 0x3A}}, {0x4A2C, {0x3A, 0xBA, 0xDF, 0x3D}},
   // extra projectiles
   {0x147E, {0x3E, 0xFF, 0x21, 0x40}}, {0x1521, {0x3E, 0xFF, 0x21, 0x40}}, {0x1577, {0x3E, 0xFF, 0x21, 0x40}},
@@ -562,7 +560,7 @@ void mod_enhance_attach(sms_t* s, mod_enhance_t* e) {
   if (!mod_enhance_compatible(s)) { s->hook_map = NULL; s->hook2_pc = 0; return; }
   memset(hook_map, 0, sizeof hook_map);
   static const uint16_t addrs[] = {0x51B6, 0x5228, 0x0DD1, 0x520E, 0x51D5, 0x3CD0, 0x52E7, 0x3CDD, 0x52F4,
-                                   0x5238, 0x523D, 0x46F1, 0x6198, 0x3DD6, 0x3DD9};
+                                   0x3DFA, 0x41AE, 0x46F1, 0x6198, 0x3DD6, 0x3DD9};
   for (unsigned i = 0; i < sizeof addrs / sizeof addrs[0]; i++) hook_map[addrs[i]] = 1;
   memset(ms_hook_map, 0, sizeof ms_hook_map);
   static const uint16_t ms_addrs[] = {0x147E, 0x1521, 0x1577, 0x15D8, 0x22B9, 0x2379, 0x43D5, 0x43E8, 0x446D,
@@ -578,7 +576,6 @@ void mod_enhance_attach(sms_t* s, mod_enhance_t* e) {
   e->n_killed = 0; e->kill_key = 0xFFFFFFFFu; e->saved_dmg_addr = 0;
   e->difficulty = MOD_DIFF_NORMAL; e->respawn = MOD_RESPAWN_ON;
   memset(e->slot_entry, 0, sizeof e->slot_entry);
-  memset(e->slot_active, 0, sizeof e->slot_active);
   memset(e->seen_in, 0, sizeof e->seen_in);
   s->hook_map = hook_map;
   s->pc_hook = on_hook;

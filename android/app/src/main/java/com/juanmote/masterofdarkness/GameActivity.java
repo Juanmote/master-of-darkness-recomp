@@ -17,6 +17,7 @@ public class GameActivity extends SDLActivity {
     private static boolean exitRequested;
     private static final int PICK_PATCH = 2;
     private static final int PICK_MUSIC = 3;
+    private static int musicSlot = 1;   // music pack slot being chosen (OST 1-3)
 
     @Override
     protected String[] getLibraries() {
@@ -38,6 +39,7 @@ public class GameActivity extends SDLActivity {
         }
         if (command == MSG_PICK_PATCH || command == MSG_PICK_MUSIC) {
             final int request = command == MSG_PICK_PATCH ? PICK_PATCH : PICK_MUSIC;
+            if (command == MSG_PICK_MUSIC && param instanceof Integer) musicSlot = (Integer) param;
             runOnUiThread(new Runnable() {
                 @Override public void run() {
                     Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
@@ -75,7 +77,8 @@ public class GameActivity extends SDLActivity {
         }
     }
 
-    /** The music pack (a .zip, possibly large) is copied as musica.zip without loading it in memory. */
+    /** The music pack (a .zip, possibly large) is copied as musica.zip, musica2.zip or musica3.zip (slot OST 1-3)
+     *  without loading it in memory. */
     private void copyMusicPack(Uri uri) {
         File tmp = new File(getFilesDir(), "musica.tmp");
         try {
@@ -91,7 +94,9 @@ public class GameActivity extends SDLActivity {
             }
             in.close();
             out.close();
-            if (header) tmp.renameTo(new File(getFilesDir(), "musica.zip"));
+            String name = musicSlot == 2 ? "musica2.zip" : musicSlot == 3 ? "musica3.zip" : "musica.zip";
+            File dst = new File(getFilesDir(), name);
+            if (header) { dst.delete(); tmp.renameTo(dst); }
             else tmp.delete();
         } catch (Exception e) {
             tmp.delete();

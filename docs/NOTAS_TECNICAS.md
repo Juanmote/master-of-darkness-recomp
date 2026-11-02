@@ -276,3 +276,28 @@ Cabecera TMR SEGA válida, checksum 6FE6 correcto, región SMS Export, mapper Se
 - Imagen → "Colores": paletas Original, Tele antigua, Vivos, Nocturna, Sepia y Pantalla verde. Solo cambian el
   RGB de cada uno de los 64 colores de la consola (`sms_set_palette` en el núcleo); el dibujo no se toca. Los
   laterales vacíos del 16:9 usan el negro de la paleta.
+
+## v0.9.7 — enemigos muertos de verdad, tres packs de música
+- Reaparición rehecha. Antes contaba como "muerto" cualquier objeto que desaparecía a la vista; al morir el
+  jugador, continuar o limpiarse la pantalla, todos los enemigos visibles se apuntaban como muertos (y con vidas
+  infinitas la lista nunca se vaciaba). Ahora solo cuentan las muertes reales, enganchadas en el código del
+  juego que destruye un enemigo: 3DFA (golpe sin energía, suena A0 y da puntos) y 41AE (destruido de un golpe,
+  da puntos). En ese momento se apunta la entrada de la lista de aparición que creó ese slot (IX).
+- Identificador de entrada: tramo (DFC1) + banco + dirección. La lista dura toda la ronda (DFC0); se vacía al
+  cambiar de ronda o al pedir el juego la música del título (83) o de la intro (87), es decir, partida nueva.
+  Perder una vida o continuar ya no la vacía. Hasta 256 entradas (se olvida la más antigua).
+- "Al volver a la zona": igual, pero la entrada se borra cuando la cámara se aleja más de 342 px.
+- Comprobado con el bot (`BOTFLIP=2500` invierte izquierda/derecha cada 2500 fotogramas): con "Sí" vuelven las
+  entradas muertas, con "No" ninguna, con "Al volver" sí al alejarse. Con opciones por defecto la huella `-H`
+  es idéntica a v0.9.6.
+- headless: `KILLLOG=1` (cambios de la lista de muertos) y `BOTFLIP=N`.
+- Música: `music_pack` pasa a ser 0 (original) o 1-3 (ranura OST 1-3). Archivos `musica.zip`, `musica2.zip`,
+  `musica3.zip`; solo se abre el elegido. En Android el selector recibe la ranura como parámetro del mensaje
+  0x8002. Un `music_pack=1` antiguo sigue siendo OST 1.
+- Intro de una pista: el nombre debe **terminar** en "intro" (antes bastaba con contenerlo y
+  "87 - Introduccion.ogg" se tomaba como intro sin pista principal).
+- Pistas identificadas en la tabla de música por ronda (BCE4: 8B 89 8F 8C 84, luego 88 88 88 88 8E): 88 =
+  jefes de las rondas 1-4, 8E = jefe de la ronda 5 (también en 73F9).
+- Duraciones originales medidas en el emulador: 81 2,6 s; 85 3,05 s; 86 4,8 s; 8A 1,8 s (el juego hace fundido
+  a los 2,0 s); 87 suena 97,7 s y la escena dura 131 s. Música original ≈ -21,5 LUFS; el pack se suma con
+  ganancia 20000/32768 (-4,3 dB), así que -17 LUFS en el .ogg queda igual de fuerte que la original.

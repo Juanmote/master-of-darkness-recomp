@@ -8,6 +8,7 @@ extern "C" {
 #endif
 
 #define MOD_MAX_PIECES 256
+#define MOD_MAX_KILLED 256   // enemies remembered as killed in the current round
 
 typedef struct {
   int16_t x;      // screen X relative to the original 256-pixel picture (can be <0 or >255)
@@ -41,12 +42,9 @@ typedef struct {
   int respawn;               // MOD_RESPAWN_*
   uint32_t slot_entry[46];   // spawn-list entry that created the object in each slot (0 = none)
   int slot_trigger[46];      // camera value of that entry
-  uint8_t slot_active[46], slot_culled[46];
-  int16_t slot_x[46];
-  struct { uint32_t id; int trigger; } killed[64];
+  struct { uint32_t id; int trigger; } killed[MOD_MAX_KILLED];
   int n_killed;
-  uint32_t kill_key;         // section the list belongs to
-  int last_lives;
+  uint32_t kill_key;         // round the list belongs to
   // difficulty
   int difficulty;            // MOD_DIFF_*
   int frac_taken, frac_dealt;
@@ -80,6 +78,7 @@ enum { MOD_DIFF_EASY, MOD_DIFF_NORMAL, MOD_DIFF_HARD };
 #define MOD_MUSIC_FADE 0x300
 int mod_music_poll(mod_enhance_t* e);           // next event or 0
 bool mod_music_paused(const sms_t* s);          // the game has paused its sound (pause screen)
+void mod_respawn_clear(mod_enhance_t* e);       // forget the enemies killed so far
 void mod_music_request(sms_t* s, int id);       // ask the game to play a track (music test)
 
 bool mod_enhance_compatible(const sms_t* s);

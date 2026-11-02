@@ -15,7 +15,7 @@
 #define STBI_NO_STDIO
 #include "stb_image.h"
 
-#define APP_VERSION "0.9.6"
+#define APP_VERSION "0.9.7"
 #define KNOWN_CRC 0x96FB4D4Bu
 #define UI_W 640
 #define UI_H 360
@@ -49,7 +49,7 @@ typedef struct {
   int difficulty;  // MOD_DIFF_*
   int respawn;     // MOD_RESPAWN_*
   int dbl_jump;
-  int music_pack;  // play the user's music pack instead of the original tracks
+  int music_pack;  // 0: original music, 1-3: the user's music pack in that slot (OST 1, 2, 3)
   int touch;       // on-screen controls: 0 no, 1 yes, 2 only without a gamepad
   int touch_size;  // 0 small, 1 normal, 2 big
   int ui_lang;     // menus and launcher: 0 English, 1 Spanish (-1: not chosen yet, follows the system)
@@ -61,6 +61,7 @@ typedef struct {
 } config_t;
 
 static config_t cfg = {1, 0, SCALE_FIT, FILTER_SHARP_SMOOTH, 8, SDL_CONTROLLER_BUTTON_A, SDL_CONTROLLER_BUTTON_Y, 1, 0, 0, 0, 0, 1, MOD_DIFF_NORMAL, MOD_RESPAWN_ON, 0, 1, 2, 1, -1, 0, 0, 0, 0, PAL_ORIGINAL};
+#define MUSIC_SLOTS 3
 static char pref_path[1024];
 
 static void cfg_path(char* out, size_t n, const char* name) { snprintf(out, n, "%s%s", pref_path, name); }
@@ -90,7 +91,7 @@ static void cfg_load(void) {
     else if (sscanf(line, "difficulty=%d", &v) == 1 && v >= 0 && v <= 2) cfg.difficulty = v;
     else if (sscanf(line, "respawn=%d", &v) == 1 && v >= 0 && v <= 2) cfg.respawn = v;
     else if (sscanf(line, "dbl_jump=%d", &v) == 1) cfg.dbl_jump = v ? 1 : 0;
-    else if (sscanf(line, "music_pack=%d", &v) == 1) cfg.music_pack = v ? 1 : 0;
+    else if (sscanf(line, "music_pack=%d", &v) == 1) cfg.music_pack = v >= 0 && v <= MUSIC_SLOTS ? v : 0;
     else if (sscanf(line, "touch=%d", &v) == 1 && v >= 0 && v <= 2) cfg.touch = v;
     else if (sscanf(line, "touch_size=%d", &v) == 1 && v >= 0 && v <= 2) cfg.touch_size = v;
     else if (sscanf(line, "ui_lang=%d", &v) == 1 && v >= 0 && v <= 1) cfg.ui_lang = v;
@@ -288,25 +289,32 @@ static int on_title_screens(void) {
 }
 static int waiting_music;
 
-static void music_pack_path(char* out, size_t n) {
+// Music packs: up to three slots (OST 1-3), saved as musica.zip, musica2.zip and musica3.zip.
+// Only the selected one is open; changing the selection opens the other file, nothing is copied again.
+static const char* music_pack_file(int slot) { return slot == 2 ? "musica2.zip" : slot == 3 ? "musica3.zip" : "musica.zip"; }
+
+static void music_pack_path(int slot, char* out, size_t n) {
 #ifdef __ANDROID__
-  snprintf(out, n, "%s/musica.zip", SDL_AndroidGetInternalStoragePath());
+  snprintf(out, n, "%s/%s", SDL_AndroidGetInternalStoragePath(), music_pack_file(slot));
 #else
-  cfg_path(out, n, "musica.zip");
+  cfg_path(out, n, music_pack_file(slot));
 #endif
 }
 
-static bool music_enabled_has(int id) { return cfg.music_pack && music_has(id); }
+static bool music_enabled_has(int id) { return cfg.music_pack > 0 && music_has(id); }
 
 static void load_music_pack(void) {
-  char p[1100]; music_pack_path(p, sizeof p);
-  music_load_pack(p);
+  if (cfg.music_pack <= 0) { music_unload(); return; }
+  char p[1100]; music_pack_path(cfg.music_pack, p, sizeof p);
+  if (!music_load_pack(p)) music_unload();
 }
 
-static void request_music_file(void) {
+static void request_music_file(int slot) {
 #ifdef __ANDROID__
-  waiting_music = 1;
-  SDL_AndroidSendMessage(0x8002, 0);
+  waiting_music = slot;
+  SDL_AndroidSendMessage(0x8002, slot);
+#else
+  (void)slot;
 #endif
 }
 
@@ -598,12 +606,14 @@ static void menu_label(int i, char* out, size_t n) {
   case MI_LANG: snprintf(out, n, "%s ← %s →", T("Game text:", "Texto del juego:"), lang_active() ? T("Translated (patch)", "Traducido (parche)") : T("English (original)", "Inglés (original)")); break;
   case MI_PATCH: snprintf(out, n, "%s %s", T("Patch:    ", "Parche:   "), patch_name()); break;
   case MI_MUSIC:
-    if (!music_pack_loaded()) snprintf(out, n, "%s", T("Music:    original", "Música:   original"));
-    else snprintf(out, n, "%s ← %s →", T("Music:   ", "Música:  "), cfg.music_pack ? T("user pack", "pack del usuario") : "original");
+    if (!cfg.music_pack) snprintf(out, n, "%s ← Original →", T("Music:", "Música:"));
+    else snprintf(out, n, "%s ← OST %d%s →", T("Music:", "Música:"), cfg.music_pack,
+                  music_pack_loaded() ? "" : T(" (empty)", " (vacía)"));
     break;
   case MI_MUSPACK:
-    if (music_pack_loaded()) snprintf(out, n, T("Music pack: %d tracks (change)", "Pack de música: %d pistas (cambiar)"), music_pack_tracks());
-    else snprintf(out, n, "%s", T("Music pack: none (choose a .zip)", "Pack de música: ninguno (elegir .zip)"));
+    if (!cfg.music_pack) snprintf(out, n, "%s", T("Music pack: pick OST 1, 2 or 3 above", "Pack de música: elige OST 1, 2 o 3 arriba"));
+    else if (music_pack_loaded()) snprintf(out, n, T("OST %d pack: %d tracks (change)", "Pack OST %d: %d pistas (cambiar)"), cfg.music_pack, music_pack_tracks());
+    else snprintf(out, n, T("OST %d pack: none (choose a .zip)", "Pack OST %d: ninguno (elegir .zip)"), cfg.music_pack);
     break;
   case MI_MUSTEST: {
     const music_track_t* t = &music_tracks[music_test_sel];
@@ -688,16 +698,17 @@ static void menu_change(int dir) {
   case MI_TOUCH: cfg.touch = (cfg.touch + dir + 3) % 3; break;
   case MI_TOUCHSIZE: cfg.touch_size = (cfg.touch_size + dir + 3) % 3; break;
   case MI_MUSIC:
-    if (!music_pack_loaded()) { show_toast(T("Choose a music pack first", "Primero elige un pack de música"), 2000); return; }
-    cfg.music_pack ^= 1;
+    cfg.music_pack = (cfg.music_pack + (dir ? dir : 1) + MUSIC_SLOTS + 1) % (MUSIC_SLOTS + 1);
     music_stop();
-    if (music_current > 0) mod_music_request(&S, music_current);   // the current track again, from the new source
+    load_music_pack();
+    if (music_current > 0 && !in_launcher) mod_music_request(&S, music_current);   // the current track again, from the new source
     break;
   case MI_MUSPACK:
+    if (!cfg.music_pack) { show_toast(T("First choose OST 1, 2 or 3 in Music", "Primero elige OST 1, 2 o 3 en Música"), 2500); return; }
 #ifdef __ANDROID__
-    request_music_file();
+    request_music_file(cfg.music_pack);
 #else
-    show_toast(T("Copy the pack as musica.zip in the data folder", "Copia el pack como musica.zip en la carpeta de datos"), 3000);
+    { char t[120]; snprintf(t, sizeof t, T("Copy the pack as %.12s in the data folder", "Copia el pack como %.12s en la carpeta de datos"), music_pack_file(cfg.music_pack)); show_toast(t, 3000); }
 #endif
     return;
   case MI_MUSTEST:
@@ -777,6 +788,7 @@ static void reset_to_original(void) {
   if (cfg.music_pack) {
     cfg.music_pack = 0;
     music_stop();
+    load_music_pack();
     if (music_current > 0 && !in_launcher) mod_music_request(&S, music_current);   // the original track again
   }
   cfg_save();
@@ -884,7 +896,9 @@ static void draw_ui(void) {
     if (menu_page == PAGE_GAME) {
       int it = cur_item();
       foot = it == MI_DIFF ? T("Easy: you take half the damage and deal double", "Fácil: recibes la mitad, pegas el doble") :
-             it == MI_RESPAWN ? T("Whether the enemies you kill come back", "Si los enemigos que matas vuelven a salir") :
+             it == MI_RESPAWN ? (cfg.respawn == MOD_RESPAWN_OFF ? T("Enemies you kill stay dead for the whole round", "Los enemigos que matas no vuelven en toda la ronda") :
+                                 cfg.respawn == MOD_RESPAWN_MIXED ? T("Enemies you kill come back once you have gone far away", "Los que matas vuelven cuando te has alejado") :
+                                 T("Whether the enemies you kill come back", "Si los enemigos que matas vuelven a salir")) :
              it == MI_DJUMP ? T("Press jump again in the air", "Pulsa saltar otra vez en el aire") :
              it == MI_ORIGINAL ? T("Cheats off, original rules, suit and music", "Trucos fuera, reglas, traje y música originales") : T("Game", "Juego");
     }
@@ -1303,7 +1317,7 @@ static void handle_touch(SDL_Event* e) {
       int value_row = it == MI_FORMAT || it == MI_SCALE || it == MI_FILTER || it == MI_SUIT || it == MI_MARGIN || it == MI_PALETTE || it == MI_VOLUME ||
                       it == MI_TURBO || it == MI_TRIGGERS || it == MI_DIFF || it == MI_RESPAWN || it == MI_DJUMP ||
                       it == MI_TOUCH || it == MI_TOUCHSIZE || it == MI_INV || it == MI_LIVES || it == MI_WEAPON ||
-                      it == MI_SUB || it == MI_START || it == MI_MUSTEST || it == MI_AMMO || it == MI_LOCK || it == MI_UILANG || it == MI_MULTI;
+                      it == MI_SUB || it == MI_START || it == MI_MUSTEST || it == MI_MUSIC || it == MI_AMMO || it == MI_LOCK || it == MI_UILANG || it == MI_MULTI;
       if (value_row) menu_change(ux < UI_W / 2 ? -1 : 1);
       else menu_activate();
       return;
@@ -1491,10 +1505,12 @@ static void handle_event(SDL_Event* e) {
   case SDL_APP_WILLENTERBACKGROUND: cfg_save(); if (!menu_open) menu_set_open(1); break;
   case SDL_APP_DIDENTERFOREGROUND:
     if (waiting_music) {
+      cfg.music_pack = waiting_music;
       waiting_music = 0;
+      music_stop();
       load_music_pack();
       if (music_pack_loaded()) {
-        cfg.music_pack = 1; cfg_save();
+        cfg_save();
         char t[80]; snprintf(t, sizeof t, T("Music pack loaded: %d tracks", "Pack de música cargado: %d pistas"), music_pack_tracks());
         show_toast(t, 2500);
         if (music_current > 0) mod_music_request(&S, music_current);
