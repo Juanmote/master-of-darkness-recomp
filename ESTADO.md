@@ -1,6 +1,6 @@
 # Estado del proyecto — Master of Darkness Re-Master-Ed
 
-Última actualización: 2 de noviembre de 2026. Versión publicada: **v0.9.7** (build tras build-31).
+Última actualización: 2 de noviembre de 2026. Versión publicada: **v0.9.8**.
 
 Launcher para Android (y escritorio) que ejecuta *Master of Darkness* (Master System) desde la ROM del
 usuario, con 16:9 real, trucos, opciones de juego, filtros, paletas, pack de música y controles táctiles.
@@ -20,8 +20,9 @@ arranca, pero las mejoras se desactivan solas (se comprueban los bytes de cada p
 - Icono con el logo.
 - Interfaz en inglés por defecto y en español si el sistema está en español; se cambia en *Sonido e idioma*.
   Los botones del launcher tienen versión en inglés (`assets/launcher/en_*.png`).
-- La primera vez se elige la ROM con el selector de archivos. El parche de traducción y el pack de música se
-  eligen igual y se copian dentro de la app.
+- La primera vez se elige la ROM con el selector de archivos. Los packs de música se eligen igual y se copian dentro
+  de la app.
+- Instalación nueva = **versión remasterizada** (ver Juego).
 
 **Imagen**
 - Formatos 16:9 panorámico real (43 px de escenario extra por lado, reconstruidos del mapa del juego en RAM),
@@ -35,10 +36,14 @@ arranca, pero las mejoras se desactivan solas (se comprueban los bytes de cada p
 
 **Juego**
 - Dificultad Fácil, Normal o Difícil (escala el daño recibido y causado).
-- Reaparición de enemigos: Sí (original), No, o Al volver a la zona. Solo cuentan las muertes reales (código
-  del juego que destruye al enemigo); "No" dura toda la ronda, aunque pierdas una vida o continúes (v0.9.7).
+- Reaparición de enemigos: Sí (original), No, o Al volver a la zona. Solo cuentan las muertes reales; "No" dura
+  toda la ronda. v0.9.8: el enemigo se reconoce por su sitio en el mapa, así que tampoco vuelve al dar marcha atrás
+  (antes salía por la lista de aparición del otro sentido: era el fallo "a veces sí, a veces no").
 - Doble salto.
 - Ralentizaciones eliminadas u originales (CPU al doble durante la partida).
+- "Versión remasterizada (recomendada)": pide confirmación. Dificultad normal, reaparición sí, sin doble salto,
+  sin ralentizaciones, sin trucos, 16:9 ajustado, scanlines, colores y traje originales, sin margen, música
+  original y táctiles solo sin mando. Es también lo que trae una instalación nueva.
 - "Volver al juego original": pide confirmación. Apaga los trucos y deja reglas, traje y música originales;
   no toca imagen, controles, volumen ni idiomas.
 
@@ -61,11 +66,15 @@ arranca, pero las mejoras se desactivan solas (se comprueban los bytes de cada p
 - Controles táctiles: modo No, Sí o Solo sin mando; tres tamaños.
 - La cruceta táctil ilumina solo la dirección pulsada.
 - Botón táctil de subarma con el dibujo del arma que se lleva (`b3_*.png`); se ve apagado sin munición.
+- **Vibración** (Controles › Vibración), con fuerza No/Suave/Media/Fuerte para cada cosa: controles táctiles (y
+  toques en menús), al atacar, al acertar (más al destruir), al recibir golpes (más al perder una vida), al caer al
+  suelo y jefes (aparece, le aciertas, lo derrotas). Si el mando vibra, vibra el mando; si no, el aparato.
 
 **Sonido**
 - Volumen.
-- Texto del juego en inglés o traducido con el parche elegido por el usuario (se acredita a Traducciones Wave
-  si se reconoce su parche, CRC `1173EA42`).
+- **Texto del juego: inglés o español con nuestra propia traducción**, incluida en la app (sin parches externos).
+  La primera vez sigue el idioma de los menús. Con tildes, Ñ, ¿ y ¡ en introducción, historia y final; en los
+  diálogos de jefes, marcador y rótulos van sin tildes (ahí la consola no tiene sitio para letras nuevas).
 - Packs de música opcionales: `.zip` de `.ogg` nombrados por número de pista, con intro opcional. Tres ranuras:
   «Música: Original / OST 1 / OST 2 / OST 3» (v0.9.7).
 - Prueba de pistas.
@@ -80,11 +89,12 @@ Probado por el usuario y compañeros en Odin 3 Max, Retroid Pocket Classic y mó
 
 ## Errores y puntos pendientes de comprobar
 
-- **Reaparición rehecha (v0.9.7), sin confirmar en consola.** Fallos que tenía la v0.9.6: al morir o continuar
-  se apuntaban como muertos todos los enemigos a la vista (por eso "desaparecían todos"), y la lista se vaciaba
-  al perder una vida (por eso "volvían a salir").
-- **Packs de música (v0.9.7), sin probar en consola:** bucles hechos por análisis; algún punto de unión puede
-  notarse. Si uno chirría, decir pista y OST y se busca otro punto.
+- **v0.9.8 sin probar en consola:** reaparición por posición, vibración (en especial la fuerza en móviles sin
+  control de intensidad, que solo notan la duración), versión remasterizada y traducción.
+- **Traducción:** comprobada en el emulador en intro, ouija, historia tras la ronda 0, rótulos, marcador y final.
+  Las páginas entre rondas y los diálogos de jefes no se han podido ver (el bot no llega); conviene leerlas en
+  consola. El texto se corrige en `tools/traduccion/es.txt` y se monta con `construir.py`.
+- **Packs de música:** bucles hechos por análisis; si una unión chirría, decir pista y OST y se busca otro punto.
 - **START en el título** depende de la última música pedida. Justo después de cargar un estado puede tardar
   hasta la siguiente pista en reconocer la pantalla.
 - **Pequeña diferencia de sincronía:** durante 42 fotogramas, la huella de la emulación difiere de la
@@ -98,8 +108,9 @@ Probado por el usuario y compañeros en Odin 3 Max, Retroid Pocket Classic y mó
 
 ## Decisiones importantes y por qué
 
-- **100 % legal.** El APK no lleva la ROM, ni el parche de traducción, ni música con derechos. El usuario elige
-  sus archivos desde la app. El parche se borró también del historial de git.
+- **100 % legal.** El APK no lleva la ROM ni música con derechos. La traducción es texto nuestro (no la de Wave,
+  que se dejó de usar para no depender de permisos); las letras con tilde se dibujan en el momento a partir de la
+  fuente del juego, sin gráficos sacados de la ROM.
 - **El código recompilado no se sube.** La traducción Z80→C (`tools/recomp`, carpeta `generated/` ignorada)
   es solo una herramienta de análisis, porque es una traducción del programa del juego. Las mejoras son código
   propio enganchado en direcciones concretas, y cada enganche se verifica por firma de bytes.
@@ -170,8 +181,8 @@ apagadas, la huella no debe cambiar.
 
 ## Próximas tareas
 
-1. **Guion de narración: hecho** (`docs/GUION_NARRACION.md`, códigos N01–N36). El usuario genera las voces con
-   una IA de voz; para el español hay que pedir permiso a Traducciones Wave.
+1. **Guion de narración: hecho** (`docs/GUION_NARRACION.md`, códigos N01–N36), con nuestra traducción en la
+   columna de español: ya no hace falta pedir permiso a nadie.
 2. **Narración en la app.**
    - Reconocer cada página de texto en pantalla, en los dos idiomas.
    - Reproducir su voz desde un pack opcional y bajar la música mientras habla.
@@ -181,7 +192,7 @@ apagadas, la huella no debe cambiar.
    - Proceso: mono, filtro de 30 Hz, -17 LUFS, techo -1,5 dBFS, bucle buscado por similitud (rasgos de espectro y
      acordes), ajustado a pulso y a la forma de onda, con fundido cruzado de un pulso; la parte anterior va como
      `_intro`. Cortas recortadas a la duración original con fundido. 87 recortada a la escena (unos 2 min).
-   - La pista 89 (Ronda 2) es el mismo archivo en OST 1 y OST 2.
+   - OST 2: la 89 (Ronda 2) se cambió el 2-11-2026 por la buena (antes era la del OST 1); intro 18 s, bucle 56 s.
    - Pendiente: que el usuario pruebe los bucles y diga si alguno se nota.
 4. **Selector de OST en la app: hecho** (v0.9.7).
-5. **Pendiente de confirmar por el usuario en consola:** la nueva reaparición y los tres packs.
+5. **Pendiente de confirmar por el usuario en consola:** reaparición, vibración, traducción y el OST 2 nuevo.

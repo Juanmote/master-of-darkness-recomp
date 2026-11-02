@@ -301,3 +301,41 @@ Cabecera TMR SEGA válida, checksum 6FE6 correcto, región SMS Export, mapper Se
 - Duraciones originales medidas en el emulador: 81 2,6 s; 85 3,05 s; 86 4,8 s; 8A 1,8 s (el juego hace fundido
   a los 2,0 s); 87 suena 97,7 s y la escena dura 131 s. Música original ≈ -21,5 LUFS; el pack se suma con
   ganancia 20000/32768 (-4,3 dB), así que -17 LUFS en el .ogg queda igual de fuerte que la original.
+
+## v0.9.8 — traducción propia, reaparición por posición, vibración, versión remasterizada
+- **Reaparición:** cada enemigo está en dos listas de aparición (una para cuando la cámara avanza, C905/C90A, y otra
+  para cuando retrocede, C907/C90C) con entradas distintas. Antes se bloqueaba la entrada por su dirección en la
+  ROM, así que al volver hacia atrás el enemigo salía por la otra lista. Ahora un muerto se recuerda por tramo
+  (DFC1), grupo de listas (3C9C o 52B5), slot, Y y posición en el mapa (cámara de disparo + X de nacimiento), con
+  margen de 112 px (las dos entradas de un enemigo lo colocan hasta 98 px aparte en 1-1). Comprobado con
+  `FAKEKILL=1` (headless mata lo que entra en pantalla) yendo y viniendo: con "Sí" vuelven 23 de 55, con "No" 0,
+  en 16:9 y 4:3 y en las 5 rondas. El rebobinado guarda también la información de los slots; cargar un estado la
+  olvida (los objetos en pantalla ya no se conocen).
+- **Vibración:** el núcleo apunta momentos (`MOD_EV_*`, `mod_events_take`): ataque (flanco del bit 0x10 de C701),
+  golpe a enemigo (3DD6), enemigo destruido (3DFA/41AE), daño (46F1, B > 0), vida perdida (música 8A), aterrizaje
+  (CA31 de 2/3 a 0), aparece jefe (música 88/8E), golpe a jefe (6198) y jefe sin energía (6198 con B ≥ CB3A).
+  La app vibra el mando si tiene vibración (`SDL_GameControllerRumble`) o el aparato (mensaje 0x8004 a
+  `GameActivity`: fuerza << 16 | ms, `VibrationEffect` con `USAGE_GAME`). Los toques en la pantalla vibran siempre el
+  aparato. Seis fuerzas (No/Suave/Media/Fuerte) en Controles › Vibración; por fotograma solo se siente el momento más
+  fuerte y uno más débil no corta el que está sonando.
+- **Versión remasterizada:** Juego › "Versión remasterizada (recomendada)" (pide confirmación) y valores de una
+  instalación nueva: dificultad normal, reaparición original, sin doble salto, sin ralentizaciones, sin trucos,
+  16:9 ajustado a pantalla, scanlines, colores y traje originales, sin margen, música original y controles táctiles
+  solo sin mando.
+- **Traducción propia** (`tools/traduccion/`): `segmentos.py` describe dónde está cada texto y su formato (páginas
+  `[x][texto](FF x texto)* FF FF`, cuadros de jefe `F1 x ... FF [F4 nn] x ...`, final `([n][texto])* 00`, rótulos de
+  largo fijo). `construir.py` monta `es.txt` en el mismo sitio y número de bytes (hay punteros a cada página y a cada
+  diálogo), rellena con espacios donde no tapa el dibujo y cubre lo que escribió la página anterior (el juego no
+  borra la pantalla entre páginas del mismo capítulo; las cadenas se sacaron viendo qué páginas originales tapan a
+  la anterior). Las palabras del tablero ouija no pueden ser más largas que las originales (se deletrean en el
+  tiempo de la original). Salida: `src/app/text_es.h` (solo nuestro texto), aplicado en memoria sobre la ROM original.
+- **Letras extra:** códigos 0xB0-0xB8 (Á É Í Ó Ú Ñ ¿ ¡ Ü) = tiles 0x1B0-0x1B8, que ninguna pantalla de texto usa
+  (comprobado en intro, ouija, historia, rótulos y final). `mod_text.c` las crea cada fotograma desde la fuente del
+  juego en VRAM (la letra tal cual; ¿ ¡ son ? y ! girados) y el núcleo las dibuja en su lugar (`sms_t.glyphs`). La
+  tilde va en la fila vacía de encima (los renglones van a doble espacio): el núcleo pinta la segunda mitad de la
+  tabla en los píxeles vacíos del tile de arriba. Apagado en la partida (`mod_is_gameplay`), donde esos tiles son del
+  nivel: los diálogos de jefes, marcador y rótulos van sin tildes (otra fuente o tiles ocupados).
+- Ya no se usa el parche IPS del usuario ni se acredita a Traducciones Wave.
+- headless: `GLYPHS=1` (letras extra), `EVLOG=1` (momentos de vibración), `FAKEKILL=1`, `RESPDBG=1`, `KILLPC=1`,
+  `BOTATK=1|2`, `JUMP=frame:banco:pc` (salta a una rutina; `JUMP=900:3:AC35` enseña el final).
+- Con las opciones por defecto del núcleo la huella `-H` es idéntica a v0.9.7 (16:9 y 4:3).

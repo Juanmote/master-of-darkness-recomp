@@ -6,7 +6,8 @@ set(MOD_CORE_SOURCES
   src/core/sms.c
   src/core/z80.c
   src/game/mod_wide.c
-  src/game/mod_enhance.c)
+  src/game/mod_enhance.c
+  src/game/mod_text.c)
 
 find_package(SDL2 REQUIRED CONFIG)
 

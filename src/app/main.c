@@ -9,13 +9,15 @@
 #include "../game/mod_enhance.h"
 #include "font_data.h"
 #include "music.h"
+#include "text_es.h"
+#include "../game/mod_text.h"
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_ONLY_PNG
 #define STBI_ONLY_JPEG
 #define STBI_NO_STDIO
 #include "stb_image.h"
 
-#define APP_VERSION "0.9.7"
+#define APP_VERSION "0.9.8"
 #define KNOWN_CRC 0x96FB4D4Bu
 #define UI_W 640
 #define UI_H 360
@@ -41,7 +43,7 @@ typedef struct {
   int jump_btn;    // SDL controller button that jumps (the other face buttons attack)
   int sub_btn;     // button that throws the subweapon (up + attack), -1 none
   int turbo;       // double CPU speed: removes the original slowdowns
-  int lang;        // 0: original (English), 1: translation patch chosen by the user
+  int lang;        // game text: 0 English (original), 1 Spanish (our translation), -1 not chosen yet: follows the menus
   int suit;        // hero colours (0 = original)
   int cheat_inv;   // official "hit check" cheat: no damage
   int cheat_lives; // lives never run out
@@ -58,9 +60,14 @@ typedef struct {
   int multi_shot;  // cheat: no limit of two subweapons on screen
   int margin;      // empty border around the picture: 0 none, 1 small, 2 medium (rounded corners, notches)
   int palette;     // PAL_*: how the console's 64 colours are shown
+  int vib[6];      // vibration strength per kind of moment (VIB_*): 0 off, 1 soft, 2 medium, 3 strong
 } config_t;
 
-static config_t cfg = {1, 0, SCALE_FIT, FILTER_SHARP_SMOOTH, 8, SDL_CONTROLLER_BUTTON_A, SDL_CONTROLLER_BUTTON_Y, 1, 0, 0, 0, 0, 1, MOD_DIFF_NORMAL, MOD_RESPAWN_ON, 0, 1, 2, 1, -1, 0, 0, 0, 0, PAL_ORIGINAL};
+// A new installation starts as the "remastered" version (see apply_remaster)
+static config_t cfg = {1, 0, SCALE_FIT, FILTER_SCANLINES, 8, SDL_CONTROLLER_BUTTON_A, SDL_CONTROLLER_BUTTON_Y, 1, -1, 0, 0, 0, 1, MOD_DIFF_NORMAL, MOD_RESPAWN_ON, 0, 0, 2, 1, -1, 0, 0, 0, 0, PAL_ORIGINAL,
+                       {1, 1, 2, 3, 1, 3}};
+enum { VIB_TOUCH, VIB_SWING, VIB_HIT, VIB_HURT, VIB_LAND, VIB_BOSS, VIB_COUNT };
+static const char* vib_keys[VIB_COUNT] = {"vib_touch", "vib_swing", "vib_hit", "vib_hurt", "vib_land", "vib_boss"};
 #define MUSIC_SLOTS 3
 static char pref_path[1024];
 
@@ -83,7 +90,7 @@ static void cfg_load(void) {
     else if (sscanf(line, "jump_btn=%d", &v) == 1 && is_face(v)) { cfg.jump_btn = v; jump_seen = 1; }
     else if (sscanf(line, "sub_btn=%d", &v) == 1 && (v == -1 || is_face(v))) cfg.sub_btn = v;
     else if (sscanf(line, "turbo=%d", &v) == 1) cfg.turbo = v ? 1 : 0;
-    else if (sscanf(line, "lang=%d", &v) == 1) cfg.lang = v ? 1 : 0;
+    else if (sscanf(line, "lang=%d", &v) == 1) cfg.lang = v < 0 ? -1 : v ? 1 : 0;
     else if (sscanf(line, "suit=%d", &v) == 1 && v >= 0 && v < 16) cfg.suit = v;
     else if (sscanf(line, "cheat_inv=%d", &v) == 1) cfg.cheat_inv = v ? 1 : 0;
     else if (sscanf(line, "cheat_lives=%d", &v) == 1) cfg.cheat_lives = v ? 1 : 0;
@@ -100,6 +107,12 @@ static void cfg_load(void) {
     else if (sscanf(line, "multi_shot=%d", &v) == 1) cfg.multi_shot = v ? 1 : 0;
     else if (sscanf(line, "margin=%d", &v) == 1 && v >= 0 && v <= 2) cfg.margin = v;
     else if (sscanf(line, "palette=%d", &v) == 1 && v >= 0 && v < PAL_COUNT) cfg.palette = v;
+    else {
+      for (int k = 0; k < VIB_COUNT; k++) {
+        char fmt[24]; snprintf(fmt, sizeof fmt, "%s=%%d", vib_keys[k]);
+        if (sscanf(line, fmt, &v) == 1 && v >= 0 && v <= 3) cfg.vib[k] = v;
+      }
+    }
   }
   fclose(f);
   if (cfg.sub_btn == cfg.jump_btn) cfg.sub_btn = cfg.jump_btn == SDL_CONTROLLER_BUTTON_Y ? SDL_CONTROLLER_BUTTON_X : SDL_CONTROLLER_BUTTON_Y;
@@ -115,6 +128,7 @@ static void cfg_save(void) {
           cfg.widescreen, cfg.crt, cfg.scale, cfg.filter, cfg.volume, cfg.jump_btn, cfg.sub_btn, cfg.turbo, cfg.lang,
           cfg.suit, cfg.cheat_inv, cfg.cheat_lives, cfg.triggers, cfg.difficulty, cfg.respawn, cfg.dbl_jump, cfg.music_pack, cfg.touch, cfg.touch_size,
           cfg.ui_lang, cfg.ammo_inf, cfg.lock_weapon, cfg.multi_shot, cfg.margin, cfg.palette);
+  for (int k = 0; k < VIB_COUNT; k++) fprintf(f, "%s=%d\n", vib_keys[k], cfg.vib[k]);
   fclose(f);
 }
 
@@ -223,61 +237,24 @@ static uint8_t* rom;
 static size_t rom_size;
 static uint32_t rom_crc;
 static uint32_t* pix;
-static uint8_t* rom_orig;   // the user's ROM as loaded (the patch is applied on a copy)
+static uint8_t* rom_orig;   // the user's ROM as loaded (the translation is applied on a copy)
 
-// IPS patch: records [offset 3][size 2][data] or [offset 3][0 0][run 2][value 1], "EOF"
-static int ips_apply(uint8_t* dst, size_t size, const uint8_t* p, size_t n) {
-  if (n < 8 || memcmp(p, "PATCH", 5)) return 0;
-  size_t i = 5;
-  while (i + 3 <= n && memcmp(p + i, "EOF", 3)) {
-    if (i + 5 > n) return 0;
-    size_t off = ((size_t)p[i] << 16) | (p[i + 1] << 8) | p[i + 2], len = (p[i + 3] << 8) | p[i + 4];
-    i += 5;
-    if (len) {
-      if (i + len > n || off + len > size) return 0;
-      memcpy(dst + off, p + i, len); i += len;
-    } else {
-      if (i + 3 > n) return 0;
-      size_t run = (p[i] << 8) | p[i + 1];
-      if (off + run > size) return 0;
-      memset(dst + off, p[i + 2], run); i += 3;
-    }
-  }
-  return 1;
-}
-
-// Translation patch: an IPS file chosen by the user (like the ROM), kept as patch.ips.
-#define WAVE_PATCH_CRC 0x1173EA42u   // Spanish translation v1.2 (C) 2018 Traducciones Wave
-static uint8_t* patch_data;
-static size_t patch_size;
-static uint32_t patch_crc;
-
-static void patch_path(char* out, size_t n) {
-#ifdef __ANDROID__
-  snprintf(out, n, "%s/patch.ips", SDL_AndroidGetInternalStoragePath());
-#else
-  cfg_path(out, n, "patch.ips");
-#endif
-}
-
-static int load_patch(void) {
-  char p[1100]; patch_path(p, sizeof p);
-  size_t n = 0;
-  uint8_t* d = load_file(p, &n);
-  if (!d || n < 8 || memcmp(d, "PATCH", 5)) { free(d); return 0; }
-  free(patch_data);
-  patch_data = d; patch_size = n; patch_crc = crc32_buf(d, n);
-  return 1;
-}
-
+// Spanish text: our own translation (text_es.h), applied on a copy of the original ROM. Records:
+// offset (3 bytes), length (2 bytes), data. The extra letters (codes 0xB0..) are drawn by mod_text.
 static void apply_language(void) {
   if (!rom || !rom_orig) return;
   memcpy(rom, rom_orig, rom_size);
-  if (cfg.lang && patch_data && rom_crc == KNOWN_CRC && !ips_apply(rom, rom_size, patch_data, patch_size))
-    memcpy(rom, rom_orig, rom_size);
+  if (cfg.lang != 1 || rom_crc != KNOWN_CRC) return;
+  for (size_t i = 0; i + 5 <= sizeof text_es_data; ) {
+    size_t off = ((size_t)text_es_data[i] << 16) | (text_es_data[i + 1] << 8) | text_es_data[i + 2];
+    size_t len = (text_es_data[i + 3] << 8) | text_es_data[i + 4];
+    i += 5;
+    if (off + len <= rom_size && i + len <= sizeof text_es_data) memcpy(rom + off, text_es_data + i, len);
+    i += len;
+  }
 }
 
-static int lang_active(void) { return cfg.lang && patch_data && rom_crc == KNOWN_CRC; }
+static int lang_active(void) { return cfg.lang == 1 && rom_crc == KNOWN_CRC; }
 
 // ---------------------------------------------------------------- music pack
 static int music_current = -1;   // last track the game asked for
@@ -315,15 +292,6 @@ static void request_music_file(int slot) {
   SDL_AndroidSendMessage(0x8002, slot);
 #else
   (void)slot;
-#endif
-}
-
-// Opens the system file picker (Android): the result is copied to patch.ips by GameActivity.
-static int waiting_patch;
-static void request_patch_file(void) {
-#ifdef __ANDROID__
-  waiting_patch = 1;
-  SDL_AndroidSendMessage(0x8001, 0);
 #endif
 }
 
@@ -479,30 +447,90 @@ static void cheats_frame(void) {
   if (cfg.ammo_inf && gram(RAM_AMMO) && gram(RAM_AMMO) < 99) { gram_w(RAM_AMMO, 99); mod_request_hud(&E, MOD_HUD_SUBWEAPON); }
 }
 
+// ---------------------------------------------------------------- vibration
+// Touch controls always vibrate the phone. Game moments vibrate the gamepad when one with rumble is
+// connected, otherwise the device itself (consoles like the Odin vibrate their own motor).
+// Each kind of moment has its own strength (cfg.vib): off, soft, medium or strong.
+static const char* vib_level_names[2][4] = {{"Off", "Soft", "Medium", "Strong"}, {"No", "Suave", "Media", "Fuerte"}};
+static const char* vib_names[2][VIB_COUNT] = {
+  {"Touch controls:", "Attacking:", "Hitting enemies:", "Taking hits:", "Landing:", "Bosses:"},
+  {"Controles táctiles:", "Al atacar:", "Al acertar:", "Al recibir golpes:", "Al caer al suelo:", "Jefes:"}};
+static Uint32 vib_until;   // end of the vibration in progress
+static int vib_amp;        // and its strength (a weaker one does not cut it short)
+
+static SDL_GameController* rumble_pad(void) {
+  for (int i = 0; i < 8; i++) if (pads[i] && SDL_GameControllerHasRumble(pads[i])) return pads[i];
+  return NULL;
+}
+
+// kind: VIB_*; ms and power (0..1) describe the moment at full strength
+static void vibrate(int kind, int ms, float power, int on_pad) {
+  int lv = cfg.vib[kind];
+  if (lv <= 0) return;
+  static const float gain[4] = {0, 0.40f, 0.70f, 1.0f};
+  int amp = (int)(255 * power * gain[lv] + 0.5f);
+  if (amp < 1) amp = 1;
+  if (amp > 255) amp = 255;
+  ms = ms * (2 + lv) / 5;   // softer is also shorter (phones without strength control feel the length)
+  if (ms < 8) ms = 8;
+  Uint32 now = SDL_GetTicks();
+  if ((Sint32)(vib_until - now) > 0 && amp < vib_amp) return;
+  vib_until = now + (Uint32)ms; vib_amp = amp;
+  SDL_GameController* pad = on_pad ? rumble_pad() : NULL;
+  if (pad) { SDL_GameControllerRumble(pad, (Uint16)(amp * 257), (Uint16)(amp * 200), (Uint32)ms); return; }
+#ifdef __ANDROID__
+  SDL_AndroidSendMessage(0x8004, (amp << 16) | (ms & 0xFFFF));
+#else
+  if (getenv("MOD_VIBLOG")) printf("VIB kind=%d amp=%d ms=%d\n", kind, amp, ms);
+#endif
+}
+
+static void vibrate_touch(void) { vibrate(VIB_TOUCH, 18, 0.65f, 0); }
+
+// the moments the game reported this frame (MOD_EV_*): only the strongest one is felt
+static void vibrate_game(uint32_t ev) {
+  static const struct { uint32_t bit; int kind, ms; float power; } m[] = {
+    {MOD_EV_BOSS_DOWN, VIB_BOSS, 900, 1.0f}, {MOD_EV_DEATH, VIB_HURT, 380, 1.0f}, {MOD_EV_BOSS_START, VIB_BOSS, 450, 0.6f},
+    {MOD_EV_HURT, VIB_HURT, 110, 1.0f}, {MOD_EV_BOSS_HIT, VIB_BOSS, 80, 0.9f}, {MOD_EV_KILL, VIB_HIT, 60, 0.9f},
+    {MOD_EV_HIT, VIB_HIT, 40, 0.7f}, {MOD_EV_LAND, VIB_LAND, 35, 0.55f}, {MOD_EV_SWING, VIB_SWING, 25, 0.45f}};
+  for (unsigned i = 0; i < sizeof m / sizeof m[0]; i++)
+    if ((ev & m[i].bit) && cfg.vib[m[i].kind]) { vibrate(m[i].kind, m[i].ms, m[i].power, 1); return; }
+}
+
+// a sample of each kind, felt when its strength is changed in the menu
+static void vibrate_sample(int kind) {
+  static const int ms[VIB_COUNT] = {18, 25, 60, 110, 35, 450};
+  static const float pw[VIB_COUNT] = {0.65f, 0.45f, 0.9f, 1.0f, 0.55f, 0.8f};
+  vib_until = 0;
+  vibrate(kind, ms[kind], pw[kind], kind != VIB_TOUCH);
+}
+
 // ---------------------------------------------------------------- menu
 enum {
   MI_RESUME, MI_SAVE, MI_LOAD, MI_GAME, MI_CHEATS, MI_VIDEO, MI_OPTIONS, MI_RESET, MI_QUIT,
   MI_CONTROLS, MI_HOME, MI_TOUCH, MI_TOUCHSIZE,
   MI_DIFF, MI_RESPAWN, MI_DJUMP,
   MI_FORMAT, MI_SCALE, MI_FILTER, MI_PALETTE, MI_SUIT, MI_MARGIN,
-  MI_VOLUME, MI_BUTTONS, MI_SUBBTN, MI_TURBO, MI_TRIGGERS, MI_LANG, MI_PATCH, MI_MUSIC, MI_MUSPACK, MI_MUSTEST,
+  MI_VOLUME, MI_BUTTONS, MI_SUBBTN, MI_TURBO, MI_TRIGGERS, MI_LANG, MI_MUSIC, MI_MUSPACK, MI_MUSTEST,
   MI_INV, MI_LIVES, MI_WEAPON, MI_SUB, MI_AMMO, MI_MULTI, MI_LOCK, MI_START, MI_WARP, MI_UILANG, MI_ORIGINAL,
+  MI_REMASTER, MI_VIBRA, MI_VIB0, MI_VIB_LAST = MI_VIB0 + VIB_COUNT - 1,
   MI_BACK
 };
-enum { PAGE_MAIN, PAGE_VIDEO, PAGE_OPTIONS, PAGE_CHEATS, PAGE_GAME, PAGE_CONTROLS, PAGE_HOME, PAGE_COUNT };
+enum { PAGE_MAIN, PAGE_VIDEO, PAGE_OPTIONS, PAGE_CHEATS, PAGE_GAME, PAGE_CONTROLS, PAGE_HOME, PAGE_VIBRA, PAGE_COUNT };
 #define PAGE_MAX 12
 static const int page_items[PAGE_COUNT][PAGE_MAX] = {
   {MI_RESUME, MI_SAVE, MI_LOAD, MI_GAME, MI_CHEATS, MI_VIDEO, MI_OPTIONS, MI_CONTROLS, MI_RESET, MI_HOME, MI_QUIT, -1},
   {MI_FORMAT, MI_SCALE, MI_FILTER, MI_PALETTE, MI_MARGIN, MI_SUIT, MI_BACK, -1},
-  {MI_UILANG, MI_VOLUME, MI_LANG, MI_PATCH, MI_MUSIC, MI_MUSPACK, MI_MUSTEST, MI_BACK, -1},
+  {MI_UILANG, MI_VOLUME, MI_LANG, MI_MUSIC, MI_MUSPACK, MI_MUSTEST, MI_BACK, -1},
   {MI_INV, MI_LIVES, MI_WEAPON, MI_SUB, MI_AMMO, MI_MULTI, MI_LOCK, MI_START, MI_WARP, MI_BACK, -1},
-  {MI_DIFF, MI_RESPAWN, MI_DJUMP, MI_TURBO, MI_ORIGINAL, MI_BACK, -1},
-  {MI_BUTTONS, MI_SUBBTN, MI_TRIGGERS, MI_TOUCH, MI_TOUCHSIZE, MI_BACK, -1},
+  {MI_DIFF, MI_RESPAWN, MI_DJUMP, MI_TURBO, MI_REMASTER, MI_ORIGINAL, MI_BACK, -1},
+  {MI_BUTTONS, MI_SUBBTN, MI_TRIGGERS, MI_TOUCH, MI_TOUCHSIZE, MI_VIBRA, MI_BACK, -1},
   {MI_GAME, MI_CHEATS, MI_VIDEO, MI_OPTIONS, MI_BACK, -1},
+  {MI_VIB0, MI_VIB0 + 1, MI_VIB0 + 2, MI_VIB0 + 3, MI_VIB0 + 4, MI_VIB0 + 5, MI_BACK, -1},
 };
 static const char* page_titles[2][PAGE_COUNT] = {
-  {"MASTER OF DARKNESS", "VIDEO", "SOUND & LANGUAGE", "CHEATS", "GAME", "CONTROLS", "OPTIONS"},
-  {"MASTER OF DARKNESS", "IMAGEN", "SONIDO E IDIOMA", "TRUCOS", "JUEGO", "CONTROLES", "OPCIONES"}};
+  {"MASTER OF DARKNESS", "VIDEO", "SOUND & LANGUAGE", "CHEATS", "GAME", "CONTROLS", "OPTIONS", "VIBRATION"},
+  {"MASTER OF DARKNESS", "IMAGEN", "SONIDO E IDIOMA", "TRUCOS", "JUEGO", "CONTROLES", "OPCIONES", "VIBRACIÓN"}};
 static const char* touch_names[2][3] = {{"No", "Yes", "Only without a gamepad"}, {"No", "Sí", "Solo sin mando"}};
 static const char* touch_size_names[2][3] = {{"Small", "Normal", "Big"}, {"Pequeños", "Normales", "Grandes"}};
 static int in_launcher = 1;   // the start screen is shown (the game waits)
@@ -517,7 +545,7 @@ static void apply_game_options(void) {
   E.multi_shot = cfg.multi_shot != 0;
 }
 static int menu_page;
-static int confirm_original;   // "back to the original game" was chosen once: the next press confirms
+static int confirm_original;   // "back to the original game" (1) or "remastered" (2) was chosen once: the next press confirms
 
 static int page_count(int p) { int n = 0; while (n < PAGE_MAX && page_items[p][n] >= 0) n++; return n; }
 static int cur_item(void) { return page_items[menu_page][menu_sel]; }
@@ -548,11 +576,6 @@ static const char* yes_no(int v) { return v ? T("Yes", "Sí") : "No"; }
 
 static int music_test_sel;
 
-static const char* patch_name(void) {
-  if (!patch_data) return T("none (choose a file)", "ninguno (elegir archivo)");
-  return patch_crc == WAVE_PATCH_CRC ? T("Spanish, Traducciones Wave", "Español, Traducciones Wave") : T("your own patch", "parche propio");
-}
-
 static void menu_label(int i, char* out, size_t n) {
   const int L = ES;
   switch (i) {
@@ -574,10 +597,15 @@ static void menu_label(int i, char* out, size_t n) {
   case MI_QUIT: snprintf(out, n, "%s", T("Exit", "Salir")); break;
   case MI_BACK: snprintf(out, n, "‹  %s", T("Back", "Volver")); break;
   case MI_ORIGINAL:
-    snprintf(out, n, "%s", confirm_original ? T("Sure? Press again to confirm", "¿Seguro? Pulsa otra vez para confirmar")
-                                            : T("Back to the original game", "Volver al juego original"));
+    snprintf(out, n, "%s", confirm_original == 1 ? T("Sure? Press again to confirm", "¿Seguro? Pulsa otra vez para confirmar")
+                                                 : T("Back to the original game", "Volver al juego original"));
     break;
   case MI_UILANG: snprintf(out, n, "%s ← %s →", T("Menu language:", "Idioma de los menús:"), T("English", "Español")); break;
+  case MI_REMASTER:
+    snprintf(out, n, "%s", confirm_original == 2 ? T("Sure? Press again to confirm", "¿Seguro? Pulsa otra vez para confirmar")
+                                                 : T("Remastered version (recommended)", "Versión remasterizada (recomendada)"));
+    break;
+  case MI_VIBRA: snprintf(out, n, "%s  ›", T("Vibration", "Vibración")); break;
   case MI_FORMAT:
     snprintf(out, n, "%s  ← %s →", T("Format:", "Formato:"),
              cfg.widescreen ? T("16:9 widescreen", "16:9 panorámico") : cfg.crt ? T("CRT TV (8:7)", "Tele de tubo (8:7)") : T("4:3 square pixels", "4:3 píxel cuadrado"));
@@ -603,8 +631,7 @@ static void menu_label(int i, char* out, size_t n) {
     break;
   case MI_TURBO: snprintf(out, n, "%s ← %s →", T("Slowdowns:", "Ralentizaciones:"), cfg.turbo ? T("Removed", "Eliminadas") : T("Original", "Originales")); break;
   case MI_TRIGGERS: snprintf(out, n, "%s ← %s →", T("Triggers (L2 rewind, R2 fast forward):", "Gatillos (L2 rebobinar, R2 acelerar):"), yes_no(cfg.triggers)); break;
-  case MI_LANG: snprintf(out, n, "%s ← %s →", T("Game text:", "Texto del juego:"), lang_active() ? T("Translated (patch)", "Traducido (parche)") : T("English (original)", "Inglés (original)")); break;
-  case MI_PATCH: snprintf(out, n, "%s %s", T("Patch:    ", "Parche:   "), patch_name()); break;
+  case MI_LANG: snprintf(out, n, "%s ← %s →", T("Game text:", "Texto del juego:"), lang_active() ? T("Spanish", "Español") : T("English (original)", "Inglés (original)")); break;
   case MI_MUSIC:
     if (!cfg.music_pack) snprintf(out, n, "%s ← Original →", T("Music:", "Música:"));
     else snprintf(out, n, "%s ← OST %d%s →", T("Music:", "Música:"), cfg.music_pack,
@@ -629,6 +656,9 @@ static void menu_label(int i, char* out, size_t n) {
   case MI_SUB: snprintf(out, n, "%s ← %s →", T("Subweapon:", "Subarma: "), gram(RAM_AMMO) ? sub_names[L][1 + (gram(RAM_SUBWEAPON) & 3)] : sub_names[L][0]); break;
   case MI_START: snprintf(out, n, "%s ← %d-%d →", T("Round:   ", "Ronda:   "), start_points[start_sel][0] + 1, start_points[start_sel][1] + 1); break;
   case MI_WARP: snprintf(out, n, T("Start a game at round %d-%d", "Empezar partida en la ronda %d-%d"), start_points[start_sel][0] + 1, start_points[start_sel][1] + 1); break;
+  default:
+    if (i >= MI_VIB0 && i <= MI_VIB_LAST) snprintf(out, n, "%-20s ← %s →", vib_names[L][i - MI_VIB0], vib_level_names[L][cfg.vib[i - MI_VIB0]]);
+    break;
   }
 }
 
@@ -649,22 +679,13 @@ static void do_load_state(void) {
   char p[1100]; state_file(p, sizeof p);
   size_t n = 0;
   uint8_t* buf = load_file(p, &n);
-  if (buf && sms_load_state(&S, buf, n)) { music_stop(); show_toast(T("State loaded", "Estado cargado"), 1500); }
+  if (buf && sms_load_state(&S, buf, n)) { music_stop(); mod_respawn_forget_slots(&E); show_toast(T("State loaded", "Estado cargado"), 1500); }
   else show_toast(T("There is no saved state", "No hay ningún estado guardado"), 2000);
   free(buf);
 }
 
 static void set_language(int lang) {
   if (lang && rom_crc != KNOWN_CRC) { show_toast(T("The translation needs the original, unmodified ROM", "La traducción necesita la ROM original sin modificar"), 3000); return; }
-  if (lang && !patch_data) {
-#ifdef __ANDROID__
-    show_toast(T("Choose the patch file (.ips)", "Elige el archivo del parche (.ips)"), 2500);
-    request_patch_file();
-#else
-    show_toast(T("Copy the patch as patch.ips in the data folder", "Copia el parche como patch.ips en la carpeta de datos"), 3000);
-#endif
-    return;
-  }
   cfg.lang = lang;
   apply_language();
   music_stop();
@@ -718,13 +739,6 @@ static void menu_change(int dir) {
   case MI_RESPAWN: cfg.respawn = (cfg.respawn + dir + 3) % 3; apply_game_options(); break;
   case MI_DJUMP: cfg.dbl_jump ^= 1; apply_game_options(); break;
   case MI_LANG: set_language(!lang_active()); break;
-  case MI_PATCH:
-#ifdef __ANDROID__
-    request_patch_file();
-#else
-    show_toast(T("Copy the patch as patch.ips in the data folder", "Copia el parche como patch.ips en la carpeta de datos"), 3000);
-#endif
-    return;
   case MI_INV:
     cfg.cheat_inv ^= 1;
     if (!cfg.cheat_inv && rom_crc == KNOWN_CRC) gram_w(RAM_INVINCIBLE, 0);
@@ -750,7 +764,14 @@ static void menu_change(int dir) {
     return;
   }
   case MI_START: start_sel = (start_sel + dir + START_COUNT) % START_COUNT; return;
-  default: return;
+  default:
+    if (cur_item() >= MI_VIB0 && cur_item() <= MI_VIB_LAST) {
+      int k = cur_item() - MI_VIB0;
+      cfg.vib[k] = (cfg.vib[k] + dir + 4) % 4;
+      vibrate_sample(k);
+      break;
+    }
+    return;
   }
   cfg_save();
 }
@@ -795,6 +816,36 @@ static void reset_to_original(void) {
   show_toast(T("Original game restored (picture and controls kept)", "Juego original restablecido (imagen y controles se mantienen)"), 3000);
 }
 
+// The version recommended by the project (also what a new installation starts with): the original rules
+// without slowdowns, real 16:9 with scanlines and the original colours, suit and music, no cheats, and
+// touch controls only when no gamepad is connected. Buttons, volume, vibration and languages stay.
+static void apply_remaster(void) {
+  cfg.cheat_inv = cfg.cheat_lives = cfg.ammo_inf = cfg.lock_weapon = cfg.multi_shot = 0;
+  if (rom_crc == KNOWN_CRC) gram_w(RAM_INVINCIBLE, 0);
+  locked_weapon = locked_sub = -1;
+  cfg.difficulty = MOD_DIFF_NORMAL;
+  cfg.respawn = MOD_RESPAWN_ON;
+  cfg.dbl_jump = 0;
+  cfg.turbo = 1;
+  cfg.widescreen = 1; cfg.crt = 0;
+  mod_enhance_set_wide(&E, 1, MOD_WIDE_EXT);
+  cfg.scale = SCALE_FIT;
+  cfg.filter = FILTER_SCANLINES;
+  cfg.palette = PAL_ORIGINAL; apply_palette();
+  cfg.margin = 0;
+  cfg.suit = 0; apply_suit();
+  cfg.touch = 2;
+  apply_game_options();
+  if (cfg.music_pack) {
+    cfg.music_pack = 0;
+    music_stop();
+    load_music_pack();
+    if (music_current > 0 && !in_launcher) mod_music_request(&S, music_current);
+  }
+  cfg_save();
+  show_toast(T("Remastered version restored", "Versión remasterizada restablecida"), 3000);
+}
+
 static void menu_activate(void) {
   switch (cur_item()) {
   case MI_RESUME: menu_set_open(0); break;
@@ -808,7 +859,7 @@ static void menu_activate(void) {
     if (rom_crc != KNOWN_CRC) { show_toast(T("These options need the original ROM", "Estas opciones necesitan la ROM original"), 2000); break; }
     menu_goto(PAGE_GAME); break;
   case MI_OPTIONS: menu_goto(PAGE_OPTIONS); break;
-  case MI_BACK: if (menu_page == menu_root) menu_set_open(0); else menu_goto(menu_root); break;
+  case MI_BACK: if (menu_page == PAGE_VIBRA) { menu_goto(PAGE_CONTROLS); menu_sel = 5; } else if (menu_page == menu_root) menu_set_open(0); else menu_goto(menu_root); break;
   case MI_CONTROLS: menu_goto(PAGE_CONTROLS); break;
   case MI_HOME: menu_set_open(0); in_launcher = 1; music_set_paused(true); SDL_ClearQueuedAudio(audio_dev); break;
   case MI_RESET: music_stop(); sms_reset(&S); menu_set_open(0); show_toast(T("Game reset", "Juego reiniciado"), 1500); break;
@@ -825,10 +876,16 @@ static void menu_activate(void) {
     break;
   case MI_QUIT: running = 0; break;
   case MI_ORIGINAL:
-    if (!confirm_original) { confirm_original = 1; break; }
+    if (confirm_original != 1) { confirm_original = 1; break; }
     confirm_original = 0;
     reset_to_original();
     break;
+  case MI_REMASTER:
+    if (confirm_original != 2) { confirm_original = 2; break; }
+    confirm_original = 0;
+    apply_remaster();
+    break;
+  case MI_VIBRA: menu_goto(PAGE_VIBRA); break;
   default: menu_change(1); break;
   }
 }
@@ -839,7 +896,7 @@ static void menu_nav(int dy, int dx, int ok, int back) {
   if (dy) { menu_sel = (menu_sel + dy + n) % n; capture_jump = 0; }
   if (dx) menu_change(dx);
   if (ok) menu_activate();
-  if (back) { if (menu_page != menu_root) menu_goto(menu_root); else menu_set_open(0); }
+  if (back) { if (menu_page == PAGE_VIBRA) { menu_goto(PAGE_CONTROLS); menu_sel = 5; } else if (menu_page != menu_root) menu_goto(menu_root); else menu_set_open(0); }
 }
 
 static int rewinding, fast_forward;
@@ -851,7 +908,7 @@ static void draw_credits(void) {
   ui_text_center(y, "RE-MASTER-ED OF DARKNESS", 0xE8C060); y += 22;
   ui_text_center(y, "A RECOMP PROJECT  ·  v" APP_VERSION, 0xB8B0A8); y += 40;
   ui_text_center(y, T("Recomp and launcher by Juanmote", "Recomp y launcher por Juanmote"), 0xFFFFFF); y += 26;
-  if (patch_data && patch_crc == WAVE_PATCH_CRC) { ui_text_center(y, T("Spanish translation: Traducciones Wave", "Traducción al español: Traducciones Wave"), 0xFFFFFF); y += 26; }
+  ui_text_center(y, T("Spanish translation of the game: Re-Master-Ed", "Traducción del juego al español: Re-Master-Ed"), 0xFFFFFF); y += 26;
   y += 8;
   ui_text_center(y, "Master of Darkness © 1992 Sega / SIMS", 0xB8B0A8); y += 22;
   ui_text_center(y, T("The app does not include the game: use your own ROM", "La app no incluye el juego: usa tu propia ROM"), 0xB8B0A8); y += 34;
@@ -879,7 +936,6 @@ static void draw_ui(void) {
       ui_text(bx + 24, y, l, i == menu_sel ? 0xFFFFFF : 0xB8B0A8);
     }
     const char* foot = "v" APP_VERSION "  ·  Recomp por Juanmote";
-    if (lang_active() && patch_crc == WAVE_PATCH_CRC) foot = T("v" APP_VERSION " · Recomp por Juanmote · Translation: Wave", "v" APP_VERSION " · Recomp por Juanmote · Traducción: Wave");
     if (menu_page == PAGE_CHEATS) {
       int it = cur_item();
       foot = it == MI_AMMO ? T("The subweapon never runs out", "La subarma no se gasta nunca") :
@@ -890,6 +946,7 @@ static void draw_ui(void) {
     if (menu_page == PAGE_CONTROLS) {
       int it = cur_item();
       foot = it == MI_TRIGGERS ? T("L2 rewinds up to 20 s, R2 fast forwards", "L2 rebobina hasta 20 s, R2 acelera") :
+             it == MI_VIBRA ? T("Vibration strength for each moment of the game", "Fuerza de la vibración para cada momento del juego") :
              it == MI_TOUCH ? T("On screen: d-pad, 1 attack, 2 jump, dagger subweapon, START menu, PAUSE pause", "En pantalla: cruceta, 1 ataque, 2 salto, puñal subarma, START menú, PAUSE pausa") :
              T("SELECT or BACK opens the menu while playing", "SELECT o ATRÁS abre el menú durante la partida");
     }
@@ -900,7 +957,18 @@ static void draw_ui(void) {
                                  cfg.respawn == MOD_RESPAWN_MIXED ? T("Enemies you kill come back once you have gone far away", "Los que matas vuelven cuando te has alejado") :
                                  T("Whether the enemies you kill come back", "Si los enemigos que matas vuelven a salir")) :
              it == MI_DJUMP ? T("Press jump again in the air", "Pulsa saltar otra vez en el aire") :
-             it == MI_ORIGINAL ? T("Cheats off, original rules, suit and music", "Trucos fuera, reglas, traje y música originales") : T("Game", "Juego");
+             it == MI_ORIGINAL ? T("Cheats off, original rules, suit and music", "Trucos fuera, reglas, traje y música originales") :
+             it == MI_REMASTER ? T("No slowdowns, 16:9, scanlines, no cheats", "Sin ralentizaciones, 16:9, scanlines, sin trucos") : T("Game", "Juego");
+    }
+    if (menu_page == PAGE_VIBRA) {
+      int it = cur_item();
+      foot = it == MI_VIB0 ? T("When you press the on-screen buttons", "Al pulsar los botones de la pantalla") :
+             it == MI_VIB0 + 1 ? T("Every swing of the weapon", "Cada golpe del arma") :
+             it == MI_VIB0 + 2 ? T("Hitting and destroying enemies", "Al dar y destruir enemigos") :
+             it == MI_VIB0 + 3 ? T("Damage and lives lost", "Daño recibido y vidas perdidas") :
+             it == MI_VIB0 + 4 ? T("Touching the ground after a jump or a fall", "Al tocar suelo tras un salto o una caída") :
+             it == MI_VIB0 + 5 ? T("Boss appears, is hit and is defeated", "Aparece el jefe, le aciertas y lo derrotas") :
+             T("A gamepad with rumble vibrates instead of the phone", "Si el mando vibra, vibra el mando en vez del móvil");
     }
     ui_text_center(by + bh - 26, foot, 0x807870);
   } else if (rewinding || fast_forward) {
@@ -1312,24 +1380,27 @@ static void handle_touch(SDL_Event* e) {
       float ux, uy;
       ui_scale_xy(x, y, ww, wh, &ux, &uy);
       menu_sel = row;
+      vibrate_touch();
       // value rows: left half goes back, right half forward; other rows activate
       int it = cur_item();
       int value_row = it == MI_FORMAT || it == MI_SCALE || it == MI_FILTER || it == MI_SUIT || it == MI_MARGIN || it == MI_PALETTE || it == MI_VOLUME ||
                       it == MI_TURBO || it == MI_TRIGGERS || it == MI_DIFF || it == MI_RESPAWN || it == MI_DJUMP ||
                       it == MI_TOUCH || it == MI_TOUCHSIZE || it == MI_INV || it == MI_LIVES || it == MI_WEAPON ||
-                      it == MI_SUB || it == MI_START || it == MI_MUSTEST || it == MI_MUSIC || it == MI_AMMO || it == MI_LOCK || it == MI_UILANG || it == MI_MULTI;
+                      it == MI_SUB || it == MI_START || it == MI_MUSTEST || it == MI_MUSIC || it == MI_AMMO || it == MI_LOCK || it == MI_UILANG || it == MI_MULTI ||
+                      (it >= MI_VIB0 && it <= MI_VIB_LAST);
       if (value_row) menu_change(ux < UI_W / 2 ? -1 : 1);
       else menu_activate();
       return;
     }
     if (in_launcher) {
       layout_launcher(ww, wh);
-      for (int i = 0; i < 5; i++) if (in_rect(launch_rect[i], x, y)) { launch_sel = i; launcher_activate(i); }
+      for (int i = 0; i < 5; i++) if (in_rect(launch_rect[i], x, y)) { launch_sel = i; vibrate_touch(); launcher_activate(i); }
       return;
     }
     if (!touch_visible()) return;
     layout_touch(ww, wh);
     int z = touch_zone(x, y);
+    if (z != TZ_NONE) vibrate_touch();
     if (z == TZ_START && !on_title_screens()) { menu_set_open(1); return; }
     if (z == TZ_START) z = TZ_B1;   // on the title screens START starts the game
     for (int i = 0; i < 10; i++)
@@ -1339,10 +1410,15 @@ static void handle_touch(SDL_Event* e) {
       if (!fingers[i].used || fingers[i].id != e->tfinger.fingerId) continue;
       if (e->type == SDL_FINGERUP) fingers[i].used = 0;
       else {
+        uint8_t before = fingers[i].zone == TZ_DPAD ? dpad_dirs(fingers[i].x, fingers[i].y) : 0;
+        int zone_before = fingers[i].zone;
         fingers[i].x = x; fingers[i].y = y;
         // sliding between the two buttons or out of the cross keeps working
         int z = touch_zone(x, y);
         if (z == TZ_B1 || z == TZ_B2 || z == TZ_B3 || z == TZ_DPAD) fingers[i].zone = z;
+        // a tap is felt when the finger slides onto another button or another direction of the cross
+        if (fingers[i].zone != zone_before) vibrate_touch();
+        else if (z == TZ_DPAD) { uint8_t now = dpad_dirs(x, y); if (now && now != before) vibrate_touch(); }
       }
     }
   }
@@ -1516,11 +1592,6 @@ static void handle_event(SDL_Event* e) {
         if (music_current > 0) mod_music_request(&S, music_current);
       } else show_toast(T("That file has no valid music tracks", "Ese archivo no tiene pistas de música válidas"), 3000);
     }
-    if (waiting_patch) {
-      waiting_patch = 0;
-      uint32_t old = patch_data ? patch_crc : 0;
-      if (load_patch() && patch_crc != old) set_language(1);
-    }
     break;
   case SDL_KEYDOWN:
     if (e->key.repeat && !menu_open) break;
@@ -1676,7 +1747,9 @@ static void error_screen(void) {
 // A snapshot every 2 frames, the last 20 seconds. The enhancement state that decides
 // spawning goes with it, so rewinding does not create or lose enemies.
 #define RW_SLOTS 600
-typedef struct { typeof(E.spawn) spawn; uint8_t seen_in[46]; } rw_extra_t;
+typedef struct { typeof(E.spawn) spawn; uint8_t seen_in[46]; uint32_t slot_entry[46]; int slot_trigger[46], slot_world[46];
+                 uint8_t slot_y[46], slot_list[46]; } rw_extra_t;
+#define RW_SLOT_FIELDS(X) X(slot_entry) X(slot_trigger) X(slot_world) X(slot_y) X(slot_list)
 static uint8_t* rw_buf;
 static rw_extra_t rw_extra[RW_SLOTS];
 static int rw_head, rw_count, rw_tick;
@@ -1688,6 +1761,8 @@ static void rw_push(void) {
   sms_save_state(&S, rw_buf + rw_size * rw_head);
   memcpy(rw_extra[rw_head].spawn, E.spawn, sizeof E.spawn);
   memcpy(rw_extra[rw_head].seen_in, E.seen_in, sizeof E.seen_in);
+#define RW_SAVE(f) memcpy(rw_extra[rw_head].f, E.f, sizeof E.f);
+  RW_SLOT_FIELDS(RW_SAVE)
   if (rw_count < RW_SLOTS) rw_count++;
 }
 
@@ -1696,6 +1771,8 @@ static int rw_pop(void) {
   sms_load_state(&S, rw_buf + rw_size * rw_head, rw_size);
   memcpy(E.spawn, rw_extra[rw_head].spawn, sizeof E.spawn);
   memcpy(E.seen_in, rw_extra[rw_head].seen_in, sizeof E.seen_in);
+#define RW_LOAD(f) memcpy(E.f, rw_extra[rw_head].f, sizeof E.f);
+  RW_SLOT_FIELDS(RW_LOAD)
   rw_head = (rw_head - 1 + RW_SLOTS) % RW_SLOTS;
   rw_count--;
   return 1;
@@ -1738,7 +1815,7 @@ int main(int argc, char** argv) {
   audio_dev = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
   if (audio_dev) SDL_PauseAudioDevice(audio_dev, 0);
 
-  load_patch();
+  if (cfg.lang < 0) cfg.lang = cfg.ui_lang == 1;   // first time: the game text in the language of the menus
   apply_language();
   apply_suit();
   apply_palette();
@@ -1780,6 +1857,7 @@ int main(int argc, char** argv) {
     for (int fr = 0; fr < total; fr++) {
       S.input = 0;
       for (int k = 0; k < ns; k++) if (fr >= spans[k].a && fr <= spans[k].b) S.input |= spans[k].btn;
+      mod_text_frame(&S, lang_active());
       sms_run_frame(&S);
       mod_enhance_frame(&S, &E);
     }
@@ -1830,15 +1908,17 @@ int main(int argc, char** argv) {
         S.cpu_mult = (cfg.turbo && mod_is_gameplay(&S)) ? 2 : 1;
         if (rewinding) {
           // one snapshot back (2 frames) per frame shown, then one frame to get the picture
-          if (rw_pop()) { S.input = 0; sms_run_frame(&S); mod_enhance_frame(&S, &E); }
+          if (rw_pop()) { S.input = 0; mod_text_frame(&S, lang_active()); sms_run_frame(&S); mod_enhance_frame(&S, &E); mod_events_take(&E); }
           continue;
         }
         int steps = fast_forward ? 4 : 1;
         for (int k = 0; k < steps; k++) {
           cheats_frame();
           if (k == 0) suit_frame();
+          mod_text_frame(&S, lang_active());
           sms_run_frame(&S);
           mod_enhance_frame(&S, &E);
+          { uint32_t gev = mod_events_take(&E); if (!fast_forward && gev) vibrate_game(gev); }
           for (int ev; (ev = mod_music_poll(&E)); ) {
             int kind = ev & 0xF00, id = ev & 0xFF;
             if (kind == MOD_MUSIC_PLAY) { music_current = id; music_play(id); }

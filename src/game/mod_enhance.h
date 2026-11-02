@@ -42,7 +42,11 @@ typedef struct {
   int respawn;               // MOD_RESPAWN_*
   uint32_t slot_entry[46];   // spawn-list entry that created the object in each slot (0 = none)
   int slot_trigger[46];      // camera value of that entry
-  struct { uint32_t id; int trigger; } killed[MOD_MAX_KILLED];
+  int slot_world[46];        // where the enemy is placed in the map (camera value + its screen X)
+  uint8_t slot_y[46], slot_list[46];
+  // An enemy is in two spawn lists (one used walking right, one walking left) with different entries:
+  // it is known by section, list group, slot, Y and map position, so it stays dead from both sides.
+  struct { int trigger, world; uint8_t sect, list, slot, y; } killed[MOD_MAX_KILLED];
   int n_killed;
   uint32_t kill_key;         // round the list belongs to
   // difficulty
@@ -63,7 +67,23 @@ typedef struct {
   int ms_draw, ms_coll, ms_wall, ms_upd, ms_spr, ms_vel;   // re-entry state of each extended loop
   uint16_t ms_hl;
   uint8_t ms_saved[8];
+  // moments for the vibration (MOD_EV_*), collected until the app reads them
+  uint32_t events;
+  uint8_t prev_buttons;
+  bool boss_music;
 } mod_enhance_t;
+
+// Moments of the game the app can react to (vibration). Read with mod_events_take.
+#define MOD_EV_SWING      0x001   // the hero attacks (attack button pressed while playing)
+#define MOD_EV_HIT        0x002   // a weapon hits an enemy
+#define MOD_EV_KILL       0x004   // an enemy is destroyed
+#define MOD_EV_HURT       0x008   // the hero takes damage
+#define MOD_EV_DEATH      0x010   // a life is lost
+#define MOD_EV_LAND       0x020   // the hero lands after a jump or fall
+#define MOD_EV_BOSS_START 0x040   // the boss music starts
+#define MOD_EV_BOSS_HIT   0x080   // a boss is hit
+#define MOD_EV_BOSS_DOWN  0x100   // a boss runs out of energy
+uint32_t mod_events_take(mod_enhance_t* e);
 
 #define MOD_HUD_WEAPON 1
 #define MOD_HUD_SUBWEAPON 2
@@ -79,6 +99,7 @@ enum { MOD_DIFF_EASY, MOD_DIFF_NORMAL, MOD_DIFF_HARD };
 int mod_music_poll(mod_enhance_t* e);           // next event or 0
 bool mod_music_paused(const sms_t* s);          // the game has paused its sound (pause screen)
 void mod_respawn_clear(mod_enhance_t* e);       // forget the enemies killed so far
+void mod_respawn_forget_slots(mod_enhance_t* e); // after loading a state: the objects on screen are not known
 void mod_music_request(sms_t* s, int id);       // ask the game to play a track (music test)
 
 bool mod_enhance_compatible(const sms_t* s);

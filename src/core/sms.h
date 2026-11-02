@@ -105,6 +105,11 @@ struct sms {
   // one extra hook in the switchable slot 2 (0x8000-0xBFFF) for a given ROM bank
   uint16_t hook2_pc;
   uint8_t hook2_bank;
+  // extra background tiles drawn instead of VRAM tiles glyph_first.. (letters the game's font lacks);
+  // glyphs[glyph_count + i] is drawn on empty pixels of the tile above tile i (its accent)
+  const uint8_t (*glyphs)[32];   // NULL = off
+  uint16_t glyph_first;
+  uint8_t glyph_count;
 };
 
 void sms_init(sms_t* s, const uint8_t* rom, int size);

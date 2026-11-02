@@ -1,7 +1,12 @@
 package com.juanmote.masterofdarkness;
 
+import android.content.Context;
 import android.content.Intent;
+import android.media.AudioAttributes;
 import android.net.Uri;
+import android.os.Build;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
 
 import org.libsdl.app.SDLActivity;
 
@@ -14,6 +19,8 @@ public class GameActivity extends SDLActivity {
     private static final int MSG_PICK_PATCH = 0x8001;
     private static final int MSG_PICK_MUSIC = 0x8002;
     private static final int MSG_EXIT = 0x8003;
+    private static final int MSG_VIBRATE = 0x8004;   // param: strength (1-255) << 16 | milliseconds
+    private Vibrator vibrator;
     private static boolean exitRequested;
     private static final int PICK_PATCH = 2;
     private static final int PICK_MUSIC = 3;
@@ -27,6 +34,10 @@ public class GameActivity extends SDLActivity {
     /** Messages sent from the game with SDL_AndroidSendMessage. */
     @Override
     protected boolean onUnhandledMessage(int command, Object param) {
+        if (command == MSG_VIBRATE && param instanceof Integer) {
+            vibrate((Integer) param);
+            return true;
+        }
         if (command == MSG_EXIT) {
             // "Exit": close the window, remove it from recents and end the process
             exitRequested = true;
@@ -51,6 +62,27 @@ public class GameActivity extends SDLActivity {
             return true;
         }
         return super.onUnhandledMessage(command, param);
+    }
+
+    /** One vibration of the device's own motor, with its strength when the motor supports it. */
+    @SuppressWarnings("deprecation")
+    private void vibrate(int packed) {
+        try {
+            if (vibrator == null) vibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+            if (vibrator == null || !vibrator.hasVibrator()) return;
+            int amp = (packed >> 16) & 0xFF, ms = packed & 0xFFFF;
+            if (amp < 1) amp = 1;
+            if (ms < 1) return;
+            if (Build.VERSION.SDK_INT >= 26) {
+                AudioAttributes attr = new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_GAME).build();
+                int a = vibrator.hasAmplitudeControl() ? amp : VibrationEffect.DEFAULT_AMPLITUDE;
+                vibrator.vibrate(VibrationEffect.createOneShot(ms, a), attr);
+            } else {
+                vibrator.vibrate(ms);
+            }
+        } catch (Exception e) {
+            // no vibration on this device
+        }
     }
 
     @Override

@@ -1,0 +1,431 @@
+# Traducción al castellano de Master of Darkness — proyecto Re-Master-Ed (Juanmote).
+# Texto propio. Se monta con construir.py, que comprueba que cada página quepa en su sitio.
+#
+# Reglas:
+# - [N01]...[N27] y [OUIJA]: una línea por renglón, en el mismo orden que en el juego.
+#   "9:TEXTO" empieza en la columna 9 (junto al dibujo); sin número, columna 0.
+#   Los renglones 1-4 y 5-9 tienen cada uno su ancho máximo (el del original).
+# - [FINAL]: texto libre; se reparte solo en renglones de 24 letras.
+# - [JEFE xxxx]: diálogos de los jefes, mismos renglones que el original y 15 letras como mucho.
+#   Salen durante la partida, donde no hay tildes: se escriben con tildes y se quitan solas.
+# - El resto (rótulos, marcador, menú oculto): mismo número de letras como mucho.
+# - Tildes, Ñ, ¿ y ¡ solo en las páginas de historia, la introducción y el final.
+# - Un renglón que acaba en espacios se cierra con | para que no se pierdan.
+
+# ---------------------------------------------------------------- introducción
+[N01]
+0:
+0:
+0:
+0:
+0:...Y CUENTA LA LEYENDA...
+
+[N02]
+0:
+0:
+0:
+0:
+0:...QUE LA LUNA LLENA...
+
+[N03]
+0:
+0:
+0:
+0:
+2:...TRAE CONSIGO...
+
+[N04]
+0:
+0:
+0:
+0:
+1:...SUCESOS ATROCES...
+
+[N05]
+9:
+9: ¿NO HAS OÍDO
+9:LA LEYENDA
+9:DEL QUE SE
+9:ALZA CON LA
+0:LUNA LLENA...
+0:   LA LEYENDA DEL
+0:     VAMPIRO?
+
+[N06]
+9:
+9: PUES BIEN,
+9: ESTA HISTORIA
+9:OCURRIÓ DE
+9:VERDAD EN
+0:          INGLATERRA...
+0:           HACE 100 AÑOS.
+
+[N07]
+0: HABÍA UN
+0:INVESTIGADOR DE
+0:LO PARANORMAL,
+0:UN JOVEN PSICÓLOGO
+0:  LLAMADO
+0:   FERDINAND
+0:     SOCIAL.
+
+[N08]
+0:...UNA NOCHE
+0:DE LUNA LLENA,
+0: RECIBIÓ UN MENSAJE
+0:MISTERIOSO
+0:
+0: MIENTRAS
+0:USABA SU
+0:TABLERO OUIJA.
+
+[OUIJA]
+4:CRIMEN
+4:VAMPIRO
+2:AL TAMESIS
+4:CUIDADO
+4:CUIDADO
+0:TRAS EL RASTRO
+2:DE DRACULA
+
+# ---------------------------------------------------------------- antes de la ronda 1
+[N10]
+9:
+9: EN AQUELLA
+9:ÉPOCA, EN
+9: LONDRES, CADA
+9:LUNA LLENA
+0:  ANUNCIABA UN NUEVO Y
+0:  ESPANTOSO ASESINATO.
+
+[N11]
+9:
+9:
+9: A LA MAÑANA
+9:SIGUIENTE
+9:SIEMPRE
+0:   APARECÍA OTRO CUERPO
+0:   SIN UNA SOLA GOTA DE
+0:   SANGRE.
+
+[N12]
+9:
+9:
+9:...EL DR.SOCIAL
+9:SABÍA QUE EN EL
+9:FONDO DEL
+0:MISTERIO HABÍA ALGO
+0:SOBRENATURAL, Y SE PUSO
+0:A INVESTIGAR.
+
+[N13]
+9: INVOCANDO LOS
+9:PODERES DEL
+9:TABLERO OUIJA,
+9:SOCIAL SUPO
+9:QUE EN EL
+0:  RÍO TÁMESIS OCURRÍAN
+0:  HORRORES QUE IBAN MÁS
+0:  ALLÁ DE LA IMAGINACIÓN
+0:  HUMANA.
+
+# ---------------------------------------------------------------- tras la ronda 1 (habla el conde)
+[N14]
+0:JE, JE, JE...
+0:ASÍ QUE HAS VENCIDO A MI
+0:JACK EL DESTRIPADOR.
+0:PUES SÍ... TODO LO QUE
+0:HA OCURRIDO
+0:AQUÍ HA
+0:ESTADO BAJO
+0:MI CONTROL.
+
+[N15]
+0:¡Y LO QUE HAS VISTO
+0:HASTA AHORA SOLO ES EL
+0:COMIENZO DEL HORROR...!
+0:JE, JE, JE...
+0: VE AL MUSEO
+0:DE CERA, SI
+0:TE ATREVES.
+
+[N16]
+0:¡MIS FIGURAS DE CERA
+0:TE ESTARÁN ESPERANDO!
+0:QUIZÁ TÚ SEAS MI PRÓXIMA
+0:OBRA MAESTRA DE CERA.
+0:  AL FIN Y AL
+0:CABO, NECESITO
+0: UN SUSTITUTO
+0: PARA JACK EL
+0: DESTRIPADOR.
+
+# ---------------------------------------------------------------- tras la ronda 2
+[N17]
+0:"...EL CEMENTERIO,
+8:AL ESTE..."
+0:TRAS VENCER A LOS
+0:ESPÍRITUS MALIGNOS, LA
+0:JOVEN MÉDIUM
+0:LOGRÓ SUSURRAR
+0:UN AVISO ANTES
+0:DE DESMAYARSE.
+
+[N18]
+0:JACK EL DESTRIPADOR
+0:REUNÍA CUERPOS Y SANGRE
+0:FRESCA PARA DERRAMARLA
+0:COMO OFRENDA A LAS
+0:FUERZAS
+0:OSCURAS.
+
+[N19]
+0:
+0:"...EL CEMENTERIO,
+0:        AL ESTE..."
+0: NO HABÍA FORMA DE SABER
+0:QUÉ ANUNCIABA
+0:AQUEL AVISO...
+
+[N20]
+0:
+0:PERO EL DR.SOCIAL DEBÍA
+0:ACTUAR RÁPIDO, ASÍ QUE
+0:CORRIÓ HACIA ALLÍ SIN
+0:DEMORA.
+
+# ---------------------------------------------------------------- tras la ronda 3
+[N21]
+0:
+0:
+9:LA FIGURA QUE
+9:FLOTABA EN EL
+9:AIRE LE ERA
+0:FAMILIAR... ¡ERA EL
+0:CONDE MASSEN!
+
+[N22]
+0:
+0:
+9:SE RUMOREABA
+9:QUE EL CONDE
+9:VIVÍA EN UN
+0:VIEJO CASTILLO, LEJOS DE
+0:TODA CIVILIZACIÓN, Y QUE
+0:ESTUDIABA LAS ARTES
+0:OSCURAS.
+
+[N23]
+0:
+0:
+9:
+9:
+9:SÍ, PARECÍA
+0:QUE EL CONDE ANDABA
+0:METIDO EN ASUNTOS
+0:MUY EXTRAÑOS.
+
+[N24]
+0:
+0:
+9:"..MAGIA NEGRA
+9:...LUNA LLENA.
+9:...¿CRIMEN?"
+0:AL FIN COMPRENDIÓ EL
+0:PODER MALIGNO QUE HABÍA
+0:DETRÁS, Y EL DR.SOCIAL
+0:CORRIÓ AL CASTILLO.
+
+# ---------------------------------------------------------------- tras la ronda 4
+[N25]
+0:
+9:UNA EXTRAÑA LUZ
+9:BLANCA BROTÓ
+10:DEL DEDO DEL
+10:CONDE MASSEN.
+0:LO SIGUIENTE QUE SUPO EL
+0:DR.SOCIAL ES QUE ESTABA
+0:ENCERRADO EN UNA JAULA
+0:OSCURA.
+
+[N26]
+9:DESESPERADO, EL
+9:DR.SOCIAL SE
+9:LANZÓ CONTRA
+10:LA PUERTA.
+9:LO INTENTÓ UNA
+0:Y OTRA VEZ, HASTA QUE
+0:LA PUERTA CEDIÓ.
+
+[N27]
+9:PERO AHORA SE
+9:ENCONTRABA EN
+9:MEDIO DE UN
+10:LABERINTO
+9:INCREÍBLEMENTE
+0:COMPLEJO.
+
+# ---------------------------------------------------------------- final (sube por la pantalla)
+[FINAL]
+CON EL SOL NACIENTE, LA OSCURIDAD SE TORNÓ EN LUZ. SOCIAL LLEGÓ A LO ALTO DE UNA LOMA Y SE
+DETUVO. POR FIN VEÍA EL CASTILLO DE DRÁCULA DESDE FUERA. AQUELLO ERA TRANSILVANIA, TAL COMO LA
+HABÍA DESCRITO EL CONDE MASSEN. EL PAISAJE NADA TENÍA QUE VER CON EL DE SU TIERRA. UNA NUBE OSCURA
+TAPÓ LOS RAYOS DEL SOL, SIN DUDA OBRA DEL HECHIZO. AL DISIPARSE EL POLVO, EL CASTILLO, ANTES TAN
+SÓLIDO, APARECIÓ EN RUINAS. SOCIAL BAJÓ DE LA MONTAÑA Y ENCONTRÓ UN CAMINO HACIA EL PUEBLO.
+JONATHAN HARKER LE HABÍA EXPLICADO CÓMO VOLVER A INGLATERRA SANO Y SALVO. GRACIAS A SOCIAL,
+LONDRES QUEDÓ LIBRE DE "LA MALDICIÓN DEL VAMPIRO", Y LA GENTE PUDO POR FIN PASEAR DE NOCHE... SIN
+MIEDO. HOY TENEMOS LUZ ELÉCTRICA QUE NOS HACE SENTIR SEGUROS. PARECE QUE LOS HORRORES DEL PASADO
+SE DESVANECERÁN AL FIN. PERO NUNCA DEBEMOS OLVIDAR QUE LA MALDICIÓN DE DRÁCULA NO SE PUEDE ROMPER.
+DRÁCULA PUEDE VOLVER. LA LUNA LLENA AÚN INQUIETA AL CORAZÓN HUMANO... TEN SIEMPRE CUIDADO AL
+CAMINAR DE NOCHE... CUANDO BRILLE LA LUNA LLENA.
+
+# ---------------------------------------------------------------- jefes (durante la partida, sin tildes)
+[JEFE 58C5]
+ARR! QUIERES
+ESTORBARME?
+
+[JEFE 58E7]
+JI JI JIII!
+SANGRE!...JOVEN
+...Y FRESCA!
+
+[JEFE 591E]
+INTERRUMPES EL
+RITO OSCURO.
+DEBES MORIR!
+
+[JEFE 5953]
+INTRUSO!
+HAS MATADO A
+MIS GUERREROS.
+LO PAGARAS!
+
+[JEFE 5991]
+JA JA! NECIO!
+CREES QUE
+PUEDES HUIR DE
+MI CASTILLO?
+
+[JEFE 59CE]
+MORIRAS A
+MIS PIES!
+
+[JEFE 59EF]
+NO! IMPOSIBLE!
+MI MAGIA...
+...VENCIDA!
+
+[JEFE 5A1E]
+TU...
+DRACULA!
+PRINCIPE OSCURO
+DAME PODER!
+
+[JEFE 5A5C]
+JI JI !!!
+ERES VALIENTE
+AL LLEGAR AQUI,
+
+[JEFE 5A8E]
+PERO NO PODRAS
+DESTRUIR
+ESTE LUGAR.
+
+[JEFE 5ABD]
+ESTO ES
+EL CASTILLO DE
+DRACULA, EN
+TRANSILVANIA.
+
+[JEFE 5AF9]
+ESTAS ATRAPADO
+EN MI TIERRA,
+TRANSILVANIA!
+
+[JEFE 5B2C]
+NUNCA SABRAS
+EL CAMINO DE
+VUELTA A TU
+INGLATERRA.
+
+[JEFE 5B65]
+NO, SOLO HAY
+UNA SALIDA
+DE AQUI.
+LA MUERTE!!
+
+[JEFE 5BA1]
+VAS A MORIR!
+
+[JEFE 5BB9]
+GRAAAAAAH!
+
+[JEFE 5BC7]
+MIS CRIATURAS
+DE LA NOCHE,
+VENCIDAS?
+
+[JEFE 5BF1]
+NO PUEDE SER
+VERDAD!!!
+
+[JEFE 5C0C]
+COMO HAS
+0:PODIDO HACERLO?
+
+[JEFE 5C2E]
+APARECED
+ANTE MI!
+OS INVOCO,
+ESPIRITUS!
+
+# ---------------------------------------------------------------- rótulos y marcador (sin tildes)
+[PAUSE]
+=PAUSA=
+[BOSS]
+JEFE
+[HUD_HISCORE]
+  RECORD
+[HUD_SCORE]
+ PTOS
+[HUD_TIME_LIFE]
+TIEMPO     VIDA
+[HUD_P]
+V
+# Rótulo de cada ronda: 40 letras; "RONDA n" arriba, luego desde la columna 8-13 el nombre y,
+# si hay segunda línea, desde la 30.
+[R1]
+RONDA 1   RIO TAMESIS
+[R2]
+RONDA 2  EL MUSEO             DE CERA|
+[R3]
+RONDA 3      EPITAFIO
+[R4]
+RONDA 4    LABORATORIO
+[R5]
+RONDA 5 TRAS EL RASTRO        DE DRACULA
+[CLEAR]
+RONDA   FASE    FIN
+[TIME_BONUS]
+BONO TIEMPO
+[LIFE_BONUS]
+BONO VIDA
+[TOTAL]
+TOTAL
+[SCORE]
+PTOS.
+# menú oculto de depuración (título: arriba + 1 + 2)
+[DBG_MODE]
+ELIGE MODO
+[DBG_ROUND]
+NUM. RONDA
+[DBG_STAGE]
+NUM. FASE
+[DBG_PLAYER]
+NUM. VIDAS
+[DBG_HIT]
+SIN DANO
+[DBG_SOUND]
+SONIDO
+[DBG_START]
+EMPEZAR

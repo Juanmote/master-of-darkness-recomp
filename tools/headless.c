@@ -3,6 +3,7 @@
 #include "../src/core/sms.h"
 #include "../src/game/mod_wide.h"
 #include "../src/game/mod_enhance.h"
+#include "../src/game/mod_text.h"
 #ifdef MOD_HAVE_RECOMP
 #include "../src/recomp/recomp_rt.h"
 #endif
@@ -10,6 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 int mod_debug_compare(const sms_t* s, uint8_t* mask);
+void mod_debug_kill(sms_t* s, int slot);
 
 static sms_t S;
 static mod_enhance_t E;
@@ -69,6 +71,22 @@ static void h_ramw(sms_t* s, uint16_t a, uint8_t v) {
       printf("O %s slot %04X frame %u pc %04X bank %02X x=%d y=%d cam=%d\n", v ? "NEW " : "FREE", a, s->st.frame, s->st.cpu.pc, s->st.bank[2], x, y, s->st.ram[0x6A0] | (s->st.ram[0x6A1] << 8));
   }
   if (a == watch_addr) printf("W %04X=%02X frame %u pc %04X line %d cyc %lu\n", a, v, s->st.frame, s->st.cpu.pc, s->st.vdp.line, (unsigned long)s->st.cpu.cyc);
+}
+// RESPDBG: an object made by a spawn-list entry disappears without the "enemy destroyed" hooks
+static void h_respdbg(sms_t* s, uint16_t a, uint8_t v) {
+  if (a < 0xCA40 || a >= 0xCA40 + 46 * 0x20 || (a & 0x1F) || v) return;
+  int slot = (a - 0xCA40) >> 5;
+  if (!E.slot_entry[slot]) return;
+  uint8_t* o = &s->st.ram[a & 0x1FFF];
+  printf("GONE frame %u slot %d pc %04X bank %02X entry %08X x=%d type=%02X%02X cam=%d\n", s->st.frame, slot, s->st.cpu.pc, s->st.bank[2],
+         E.slot_entry[slot], (int16_t)(o[4] | (o[5] << 8)), o[7], o[6], s->st.ram[0x6A0] | (s->st.ram[0x6A1] << 8));
+}
+static void h_killpc(sms_t* s, uint16_t pc, int off) {
+  (void)off;
+  if (pc != 0x3DFA && pc != 0x41AE && pc != 0x6198 && pc != 0x3DD6) return;
+  uint16_t ix = s->st.cpu.ix; int slot = ix >= 0xCA40 && ix < 0xCA40 + 46 * 0x20 && !(ix & 0x1F) ? (ix - 0xCA40) >> 5 : -1;
+  uint8_t* o = &s->st.ram[ix & 0x1FFF];
+  printf("KPC %04X frame %u ix %04X slot %d entry %08X type=%02X%02X\n", pc, s->st.frame, ix, slot, slot >= 0 ? E.slot_entry[slot] : 0, o[7], o[6]);
 }
 static unsigned long tr_from, tr_to;
 static void h_exec(sms_t* s, uint16_t pc, int off) {
@@ -147,6 +165,8 @@ int main(int argc, char** argv) {
   if (getenv("SATLINES")) { satlines = 1; S.hooks.on_vram_write = h_vramw; }
   if (getenv("RAMMAP")) S.hooks.on_ram_write = h_rammap;
   if (getenv("OBJLOG")) { objlog = 1; S.hooks.on_ram_write = h_ramw; }
+  if (getenv("RESPDBG")) S.hooks.on_ram_write = h_respdbg;
+  if (getenv("KILLPC")) S.hooks.on_exec = h_killpc;
   if (getenv("WATCH")) { watch_addr = (int)strtol(getenv("WATCH"), NULL, 16); S.hooks.on_ram_write = h_ramw; }
 #ifdef MOD_HAVE_RECOMP
   if (do_verify) { sms_init(&T, rom, n); S.recomp_verify = verify_cb; rt_single = 1; }
@@ -189,10 +209,13 @@ int main(int argc, char** argv) {
         }
         uint8_t h2 = held;
         if (getenv("BOTFLIP") && (fr / atoi(getenv("BOTFLIP"))) % 2 == 1 && (h2 & (BTN_LEFT | BTN_RIGHT))) h2 ^= BTN_LEFT | BTN_RIGHT;
+        if (getenv("BOTATK") && (fr / 4) % 2 == 0) h2 |= atoi(getenv("BOTATK")) == 2 ? (BTN_UP | BTN_1) : BTN_1;   // attack all the time (2: subweapon)
         S.input |= h2;
         if (fr % 600 == 0) S.input |= BTN_1;  // continue screens etc.
       }
     }
+    if (getenv("JUMP")) { int jf, jb; unsigned jp; if (sscanf(getenv("JUMP"), "%d:%x:%x", &jf, &jb, &jp) == 3 && (int)fr == jf) { S.st.bank[2] = (uint8_t)jb; S.st.ram[0x1FFF] = (uint8_t)jb; S.st.cpu.pc = (uint16_t)jp; S.st.cpu.sp = 0xDFE0; } }
+    if (getenv("GLYPHS")) mod_text_frame(&S, true);
     for (int k = 0; k < npokes; k++) if ((int)fr >= pokes[k].from && (int)fr <= pokes[k].to) S.st.ram[pokes[k].addr & 0x1FFF] = pokes[k].val;
     S.cpu_mult = (oc > 1 && mod_is_gameplay(&S)) ? oc : 1;
     if (getenv("MSLOG") && fr % 4 == 0) {
@@ -206,6 +229,14 @@ int main(int argc, char** argv) {
     if (getenv("MUSHOOK")) for (int ev; (ev = mod_music_poll(&E)); ) printf("MUS %u %03X\n", fr, ev);
     { static uint32_t lp; uint32_t p0 = E.passes; sms_run_frame(&S); if (getenv("PASSLOG")) printf("PASS %u %u\n", fr, E.passes - p0); if (getenv("LAGLOG") && E.passes == p0 && lp) printf("LAG %u cam %d\n", fr, S.st.ram[0x6A0] | (S.st.ram[0x6A1] << 8)); lp = E.passes; }
     mod_enhance_frame(&S, &E);
+    if (getenv("EVLOG")) { uint32_t ev = mod_events_take(&E); if (ev) printf("EV %u %03X\n", fr, ev); }
+    if (getenv("FAKEKILL")) for (int k = 2; k < 46; k++) if (E.slot_entry[k]) {
+      uint8_t* o = &S.st.ram[(0xCA40 + k * 0x20) & 0x1FFF]; int x = (int16_t)(o[4] | (o[5] << 8));
+      if (o[0] && x > 60 && x < 200) { printf("FAKEKILL frame %u slot %d world %d list %d\n", fr, k, E.slot_world[k], E.slot_list[k]); mod_debug_kill(&S, k); }
+    }
+    if (getenv("RESPDBG")) for (int k = 0; k < 46; k++) if (E.slot_entry[k]) for (int j = 0; j < E.n_killed; j++)
+      if (E.killed[j].slot == k && E.killed[j].y == E.slot_y[k] && E.killed[j].sect == S.st.ram[0x1FC1] && abs(E.killed[j].world - E.slot_world[k]) <= 112) {
+        static int last[46]; if (last[k] != E.slot_world[k]) { last[k] = E.slot_world[k]; printf("BACK frame %u slot %d world %d list %d\n", fr, k, E.slot_world[k], E.slot_list[k]); } }
     if (getenv("KILLLOG")) { static int lk = -1; if (E.n_killed != lk) { printf("KILL %u n=%d lives=%d round=%d-%d\n", fr, E.n_killed, S.st.ram[0x1FBA], S.st.ram[0x1FC0], S.st.ram[0x1FC1]); lk = E.n_killed; } }
     mod_wide_info_t info;
     mod_render(&S, pix, W, ext, &info, E.wide ? E.shown : NULL, E.wide ? E.n_shown : 0);

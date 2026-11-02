@@ -47,9 +47,10 @@ Se puede cargar un pack de música propio (un .zip con archivos .ogg). Cómo pre
 [docs/PACK_MUSICA.md](docs/PACK_MUSICA.md).
 
 ## Traducción
-El juego puede jugarse traducido con un parche IPS que elige el propio usuario, igual que la ROM
-(Opciones › Parche). El parche no se incluye en el APK ni en el repositorio. Probado con la
-traducción al español v1.2 de **Traducciones Wave** (traduccioneswave.blogspot.com), que se acredita en el menú.
+La app trae su propia traducción al español (Sonido e idioma › Texto del juego), escrita para este proyecto:
+introducción, historia, diálogos de los jefes, final, rótulos y marcador. Incluye tildes, Ñ, ¿ y ¡, que se dibujan
+a partir de la fuente del propio juego. El texto está en [`tools/traduccion/es.txt`](tools/traduccion/es.txt) y
+`tools/traduccion/construir.py` comprueba que cada página quepa en su sitio y genera `src/app/text_es.h`.
 
 ## Bibliotecas de terceros
 - [stb_vorbis](https://github.com/nothings/stb) (dominio público): decodifica los .ogg del pack de música.

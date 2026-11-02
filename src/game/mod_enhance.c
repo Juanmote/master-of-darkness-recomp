@@ -193,36 +193,63 @@ static uint32_t entry_id(sms_t* s, uint16_t entry) {
   return 0x80000000u | ((uint32_t)(ram8(s, 0xDFC1) & 0x7F) << 24) | ((uint32_t)s->st.bank[2] << 16) | entry;
 }
 
-static bool entry_blocked(uint32_t id) {
-  if (g->respawn == MOD_RESPAWN_ON) return false;
-  for (int i = 0; i < g->n_killed; i++) if (g->killed[i].id == id) return true;
+// camera value that made this entry fire (the shifted one in 16:9)
+static int entry_trigger(sms_t* s, int k) { return g->spawn[k].active ? g->spawn[k].next : cam16(s); }
+
+#define KILL_NEAR 112   // the two entries of one enemy place it close (up to 98 px apart in 1-1)
+
+// HL = entry + 3: [Y][X]...; slot = address of its object slot
+static bool entry_blocked(sms_t* s, int k, uint16_t slot_addr, uint16_t hl) {
+  if (g->respawn == MOD_RESPAWN_ON || !g->n_killed) return false;
+  int slot = slot_of(slot_addr);
+  if (slot < 0) return false;
+  uint8_t sect = ram8(s, 0xDFC1), y = sms_peek(s, hl);
+  int world = entry_trigger(s, k) + sms_peek(s, hl + 1);
+  for (int i = 0; i < g->n_killed; i++) {
+    int d = g->killed[i].world - world;
+    if (g->killed[i].slot == slot && g->killed[i].sect == sect && g->killed[i].list == k && g->killed[i].y == y &&
+        d >= -KILL_NEAR && d <= KILL_NEAR) return true;
+  }
   return false;
 }
 
-static void note_spawn(sms_t* s, int k, uint16_t slot_addr, uint16_t entry) {
+static void note_spawn(sms_t* s, int k, uint16_t slot_addr, uint16_t hl) {
   int slot = slot_of(slot_addr);
   if (slot < 0) return;
-  g->slot_entry[slot] = entry_id(s, entry);
-  g->slot_trigger[slot] = g->spawn[k].active ? g->spawn[k].next : cam16(s);
+  g->slot_entry[slot] = entry_id(s, (uint16_t)(hl - 3));
+  g->slot_trigger[slot] = entry_trigger(s, k);
+  g->slot_world[slot] = g->slot_trigger[slot] + sms_peek(s, hl + 1);
+  g->slot_y[slot] = sms_peek(s, hl);
+  g->slot_list[slot] = (uint8_t)k;
 }
 
 void mod_respawn_clear(mod_enhance_t* e) { e->n_killed = 0; }
+void mod_respawn_forget_slots(mod_enhance_t* e) { memset(e->slot_entry, 0, sizeof e->slot_entry); }
 
 // the enemy in this object slot has just been destroyed by the player
-static void note_kill(uint16_t obj) {
+static void note_kill(sms_t* s, uint16_t obj) {
   int slot = slot_of(obj);
   if (slot < 0 || !g->slot_entry[slot]) return;
-  uint32_t id = g->slot_entry[slot];
   g->slot_entry[slot] = 0;   // its death animation may stay in the slot for a while
-  for (int i = 0; i < g->n_killed; i++) if (g->killed[i].id == id) return;
+  uint8_t sect = ram8(s, 0xDFC1);
+  for (int i = 0; i < g->n_killed; i++)
+    if (g->killed[i].slot == slot && g->killed[i].sect == sect && g->killed[i].list == g->slot_list[slot] &&
+        g->killed[i].y == g->slot_y[slot] && g->killed[i].world == g->slot_world[slot]) return;
   if (g->n_killed >= MOD_MAX_KILLED) {   // full: forget the oldest
     memmove(&g->killed[0], &g->killed[1], sizeof g->killed[0] * (MOD_MAX_KILLED - 1));
     g->n_killed--;
   }
-  g->killed[g->n_killed].id = id;
   g->killed[g->n_killed].trigger = g->slot_trigger[slot];
+  g->killed[g->n_killed].world = g->slot_world[slot];
+  g->killed[g->n_killed].sect = sect;
+  g->killed[g->n_killed].list = g->slot_list[slot];
+  g->killed[g->n_killed].slot = (uint8_t)slot;
+  g->killed[g->n_killed].y = g->slot_y[slot];
   g->n_killed++;
 }
+
+// testing (headless): the enemy in this slot is destroyed as if the player had killed it
+void mod_debug_kill(sms_t* s, int slot) { note_kill(s, (uint16_t)(0xCA40 + slot * 0x20)); ram_w(s, (uint16_t)(0xCA40 + slot * 0x20), 0); }
 
 // called at the start of every sprite pass
 static void scan_slots(sms_t* s) {
@@ -407,23 +434,27 @@ static bool on_hook(sms_t* s, uint16_t pc) {
   if (ms_hook_map[pc]) return ms_hook(s, pc);
   switch (pc) {
   case 0x3CD0: case 0x52E7: {  // spawn-list entry: is its slot free? (A = slot byte, HL = entry + 3)
-    if (z->a == 0 && entry_blocked(entry_id(s, (uint16_t)(((z->h << 8) | z->l) - 3))))
+    if (z->a == 0 && entry_blocked(s, pc == 0x3CD0 ? 0 : 1, (uint16_t)((z->d << 8) | z->e), (uint16_t)((z->h << 8) | z->l)))
       z->a = 1;   // treat the slot as busy: the enemy is not created
     return false;
   }
   case 0x3CDD: case 0x52F4:  // object created from a spawn-list entry (DE = slot, HL = entry + 3)
-    note_spawn(s, pc == 0x3CDD ? 0 : 1, (z->d << 8) | z->e, (uint16_t)(((z->h << 8) | z->l) - 3));
+    note_spawn(s, pc == 0x3CDD ? 0 : 1, (z->d << 8) | z->e, (uint16_t)((z->h << 8) | z->l));
     return false;
   case 0x3DFA: case 0x41AE:  // an enemy is destroyed (IX = its slot)
-    note_kill(z->ix);
+    note_kill(s, z->ix);
+    g->events |= MOD_EV_KILL;
     return false;
-  case 0x46F1:  // damage to the player (B)
+  case 0x46F1:  // damage to the player (B), energy in CA3A
     if (g->difficulty != MOD_DIFF_NORMAL) z->b = (uint8_t)scale_damage(z->b, &g->frac_taken, true);
+    if (z->b) g->events |= MOD_EV_HURT;
     return false;
-  case 0x6198:  // damage to a boss (B)
+  case 0x6198:  // damage to a boss (B), energy in CB3A
     if (g->difficulty != MOD_DIFF_NORMAL) z->b = (uint8_t)scale_damage(z->b, &g->frac_dealt, false);
+    if (z->b) g->events |= ram8(s, 0xCB3A) && ram8(s, 0xCB3A) <= z->b ? MOD_EV_BOSS_DOWN : MOD_EV_BOSS_HIT;
     return false;
   case 0x3DD6:  // damage to an enemy: SUB (IY+1), adjusted for this instruction only
+    g->events |= MOD_EV_HIT;
     if (g->difficulty != MOD_DIFF_NORMAL) {
       uint16_t a = z->iy + 1;
       g->saved_dmg_addr = a;
@@ -439,6 +470,9 @@ static bool on_hook(sms_t* s, uint16_t pc) {
       int id = ram8(s, 0xC103);
       int ev = 0;
       if (id == 0x83 || id == 0x87) g->n_killed = 0;   // title / intro: a new game will start
+      if (id == 0x88 || id == 0x8E) { g->events |= MOD_EV_BOSS_START; g->boss_music = true; }
+      else if (id >= 0x81 && id <= 0x8F) g->boss_music = false;
+      if (id == 0x8A) g->events |= MOD_EV_DEATH;
       if (id >= 0x81 && id <= 0x8F) {
         if (g->music_has && g->music_has(id)) {
           // no new sound starts (0x80 = idle) and the music channels go quiet: the driver's own
@@ -629,7 +663,20 @@ static void double_jump(sms_t* s, mod_enhance_t* e) {
   e->prev_state = st;
 }
 
+uint32_t mod_events_take(mod_enhance_t* e) { uint32_t v = e->events; e->events = 0; return v; }
+
+// attack pressed (C701 holds the buttons pressed on this game frame) and landings (state 2/3 -> 0)
+static void frame_events(const sms_t* s, mod_enhance_t* e) {
+  if (!s->hook_map || !mod_is_gameplay(s)) { e->prev_buttons = 0; return; }
+  uint8_t b = s->st.ram[0x0701];
+  if ((b & 0x10) && !(e->prev_buttons & 0x10)) e->events |= MOD_EV_SWING;
+  e->prev_buttons = b;
+  int st = s->st.ram[0x0A31];
+  if (st == 0 && (e->prev_state == 2 || e->prev_state == 3)) e->events |= MOD_EV_LAND;
+}
+
 void mod_enhance_frame(const sms_t* s, mod_enhance_t* e) {
+  frame_events(s, e);
   double_jump((sms_t*)s, e);
   // margins for the next frame's game logic
   if (!e->wide || !mod_visible_margins(s, e->ext, &e->margin_l, &e->margin_r)) {

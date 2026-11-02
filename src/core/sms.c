@@ -215,7 +215,15 @@ static void render_line(sms_t* s, int y) {
     int px = sx & 7, py = sy & 7;
     if (e & 0x200) px = 7 - px;
     if (e & 0x400) py = 7 - py;
-    int c = tile_px(&d->vram[(e & 0x1FF) * 32 + py * 4], 7 - px);
+    unsigned gi = (unsigned)(e & 0x1FF) - s->glyph_first;
+    const uint8_t* tp = s->glyphs && gi < s->glyph_count ? s->glyphs[gi] : &d->vram[(e & 0x1FF) * 32];
+    int c = tile_px(tp + py * 4, 7 - px);
+    if (!c && s->glyphs) {
+      // the accent of an extra letter is drawn in the empty row above it (the second half of the table)
+      const uint8_t* bp = &d->vram[nt + (((row + 1) % 28) * 32 + col) * 2];
+      unsigned g2 = (unsigned)((bp[0] | (bp[1] << 8)) & 0x1FF) - s->glyph_first;
+      if (g2 < s->glyph_count) c = tile_px(s->glyphs[s->glyph_count + g2] + (sy & 7) * 4, 7 - (sx & 7));
+    }
     out[x] = ((e & 0x800) ? 16 : 0) + c;
     prio[x] = (e & 0x1000) && c != 0;
   }
