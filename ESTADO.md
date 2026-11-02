@@ -1,6 +1,6 @@
 # Estado del proyecto — Master of Darkness Re-Master-Ed
 
-Última actualización: 2 de noviembre de 2026. Versión publicada: **v0.9.9**.
+Última actualización: 2 de noviembre de 2026. Versión publicada: **v0.9.10**.
 
 Launcher para Android (y escritorio) que ejecuta *Master of Darkness* (Master System) desde la ROM del
 usuario, con 16:9 real, trucos, opciones de juego, filtros, paletas, pack de música y controles táctiles.
@@ -91,11 +91,8 @@ Probado por el usuario y compañeros en Odin 3 Max, Retroid Pocket Classic y mó
 
 ## Errores y puntos pendientes de comprobar
 
-- **Acentos y signos antes que el texto (abierto, v0.9.9 no lo arregla):** el usuario ve Á É Í Ó Ú Ñ ¿ ¡ antes que el
-  resto del texto al aparecer una página. Sin causa confirmada: hace falta la ROM para mirarlo en el emulador
-  (`GLYPHS=1`). Código en `src/game/mod_text.c` (`build`) y el dibujado en `src/core/sms.c`.
 - **Sin probar en consola:** vibración en móviles sin control de intensidad (solo notan la duración), icono
-  nuevo y ajustes remasterizados de v0.9.9.
+  nuevo y ajustes remasterizados de v0.9.9, acentos de v0.9.10 (comprobados en el emulador).
 - **Confirmado por el usuario (2-11-2026):** OST 2 pista 89, y los enemigos mayores ya no reaparecen. Los menores
   (murciélagos, perros) sí, y le gusta así: no tocar. Traducción revisada y correcta salvo lo de los acentos.
 - **Traducción:** comprobada en el emulador en intro, ouija, historia tras la ronda 0, rótulos, marcador y final.
@@ -202,7 +199,7 @@ apagadas, la huella no debe cambiar.
    - OST 2: la 89 (Ronda 2) se cambió el 2-11-2026 por la buena (antes era la del OST 1); intro 18 s, bucle 56 s.
    - Pendiente: que el usuario pruebe los bucles y diga si alguno se nota. (Pista 89 del OST 2: confirmada.)
 4. **Selector de OST en la app: hecho** (v0.9.7).
-5. **Arreglar acentos y signos** (ver Errores); necesita la ROM.
+5. **Acentos que se adelantaban al texto: arreglado** (v0.9.10), pendiente de verlo en consola.
 6. **Galería en el launcher.** Por definir qué contiene; todo material sin derechos de terceros o aportado por el usuario.
 7. **Huevo de pascua:** en Créditos, al pulsar varias veces en el nombre del usuario, aparece el ticket de compra
    del juego. El usuario pasará la imagen más adelante.

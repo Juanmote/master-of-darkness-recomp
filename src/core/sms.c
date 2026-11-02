@@ -218,13 +218,18 @@ static void render_line(sms_t* s, int y) {
     unsigned gi = (unsigned)(e & 0x1FF) - s->glyph_first;
     const uint8_t* tp = s->glyphs && gi < s->glyph_count ? s->glyphs[gi] : &d->vram[(e & 0x1FF) * 32];
     int c = tile_px(tp + py * 4, 7 - px);
+    uint16_t pal = e & 0x800;
     if (!c && s->glyphs) {
       // the accent of an extra letter is drawn in the empty row above it (the second half of the table)
       const uint8_t* bp = &d->vram[nt + (((row + 1) % 28) * 32 + col) * 2];
-      unsigned g2 = (unsigned)((bp[0] | (bp[1] << 8)) & 0x1FF) - s->glyph_first;
-      if (g2 < s->glyph_count) c = tile_px(s->glyphs[s->glyph_count + g2] + (sy & 7) * 4, 7 - (sx & 7));
+      uint16_t be = bp[0] | (bp[1] << 8);
+      unsigned g2 = (unsigned)(be & 0x1FF) - s->glyph_first;
+      if (g2 < s->glyph_count) {
+        c = tile_px(s->glyphs[s->glyph_count + g2] + (sy & 7) * 4, 7 - (sx & 7));
+        if (c) pal = be & 0x800;   // the accent fades with its letter: the blank tile above has another palette
+      }
     }
-    out[x] = ((e & 0x800) ? 16 : 0) + c;
+    out[x] = (pal ? 16 : 0) + c;
     prio[x] = (e & 0x1000) && c != 0;
   }
   memcpy(s->fb_bg[y], out, SMS_W);

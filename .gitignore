@@ -16,3 +16,4 @@ android/app/jni/SDL/
 android/local.properties
 # Recompiled game code: derived from the ROM, never committed or distributed
 generated/
+out/

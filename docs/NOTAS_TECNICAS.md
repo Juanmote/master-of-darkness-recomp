@@ -349,3 +349,12 @@ Cabecera TMR SEGA válida, checksum 6FE6 correcto, región SMS Export, mapper Se
 - **Versión remasterizada:** añade `multi_shot = 1` y `cfg.vib = vib_recommended`, también en una instalación nueva.
   Un `config.ini` existente conserva sus valores hasta pulsar la opción.
 
+## v0.9.10 — acentos que se adelantaban al texto
+- El texto de las páginas usa la paleta 1 (`0x0941`), que el juego funde a negro y vuelve a encender, y escribe cada
+  página mientras esa paleta está a negro. Las tildes se pintaban en el tile vacío de arriba, cuya entrada usa la
+  paleta 0, donde el color 15 es blanco fijo: se veían antes del fundido. Ahora la tilde toma la paleta de su letra
+  (`src/core/sms.c`). ¿ y ¡ no tenían el fallo: son tiles propios con la paleta correcta.
+- Comprobado con la intro en castellano (`GLYPHS=1`, 16:9), fotogramas 2216-2344 y 3120. Con la ROM original y las
+  letras extra apagadas, la huella `-H` es idéntica a v0.9.9 (3000 fotogramas con bot, 16:9).
+- Confirmado en la ROM que el tablero ouija deletrea KILLER, VAMPIRE, GO TO THAMES, CAUTION, CAUTION, IN THE WAKE OF, DRACULA.
+
