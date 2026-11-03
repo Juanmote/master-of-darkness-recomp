@@ -81,6 +81,16 @@ int main(void) {
   fr(0, 1, 0, 1, 0); fr(0, 2, 0, 1, 0);
   expect("back to the title forgets the game", "");
 
+  // a saved state brings back how the game was going
+  fresh(P);
+  logros_music(0x83); fr(0, 0, 0, 1, 0);
+  { char st[512]; if (logros_run_size() > sizeof st) return 1;
+    logros_run_save(st);
+    fr(MOD_EV_HURT, 0, 0, 1, 0);          // hit after saving...
+    logros_run_load(st);                  // ...undone by loading
+    fr(0, 1, 0, 1, 0);
+    expect("loading a state takes the hit back", "round1 roundclean roundnosub "); }
+
   fresh(P);
   for (int i = 0; i < 1000; i++) fr(MOD_EV_KILL, 0, 0, 1, 0);
   expect("kills", "kill100 kill1000 ");

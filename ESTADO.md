@@ -1,6 +1,6 @@
 # Estado del proyecto — Master of Darkness Re-Master-Ed
 
-Última actualización: 3 de noviembre de 2026. Versión publicada: **v0.10.0**.
+Última actualización: 3 de noviembre de 2026. Versión publicada: **v0.10.1**.
 
 Launcher para Android (y escritorio) que ejecuta *Master of Darkness* (Master System) desde la ROM del
 usuario, con 16:9 real, trucos, opciones de juego, filtros, paletas, pack de música y controles táctiles.
@@ -75,7 +75,8 @@ arranca, pero las mejoras se desactivan solas (se comprueban los bytes de cada p
 **Modos y logros (v0.10.0)**
 - "Jugar" abre una lista: Partida normal, Modo logros, Logros, Exportar perfil e Importar perfil. Cambiar de modo
   empieza una partida nueva; volver al mismo modo la continúa.
-- Modo logros: bloquea rebobinar, acelerar, estados, trucos, doble salto, dificultad y reaparición "No" (también
+- Modo logros: permite guardar y cargar estado, con ranura propia (decisión del usuario: en consola es así, facilita las pruebas y
+  habrá logro de Survivor por no usarlos). Una partida guardada en modo normal no se carga aquí. Bloquea rebobinar, acelerar, trucos, doble salto, dificultad y reaparición "No" (también
   "Subarmas sin límite" e invencibilidad del menú oculto del juego). 16:9, sin ralentizaciones, imagen, música y
   OST son libres. Las partidas que no empiezan en la primera fase no cuentan.
 - 14 logros propios (`src/app/logros.c`): rondas 1-4, terminar el juego, sin continuar, sin perder vida, ronda sin daño,
@@ -216,7 +217,7 @@ apagadas, la huella no debe cambiar.
 6. **Modos extra (diseño acordado con el usuario, con las ventajas bloqueadas):**
    - **Logros: iconos propios pendientes.** Las ideas pueden salir de RetroAchievements; sus insignias no (derivan de la ROM y
      sus normas no aceptan reutilizarlas). Añadir logros a los modos extra.
-   - **Survivor:** todo el juego con una sola vida. Fácil: recupera energía como el juego normal; Normal: solo después de cada
+   - **Survivor:** todo el juego con una sola vida, con guardar y cargar permitidos y un logro por no usarlos. Fácil: recupera energía como el juego normal; Normal: solo después de cada
      jefe; Difícil: nunca. Energía del jugador en `CA3A`. Mirar qué hacer con los objetos de energía que no sirven.
    - **Boss Rush:** todos los jefes seguidos, con cronómetro y récord por dificultad. Vida: Fácil recupera todo tras cada
      jefe, Normal media barra, Difícil nada. Armas: Fácil elige estoque o hacha y bombas o estacas; Normal espada o estoque y

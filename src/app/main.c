@@ -18,7 +18,7 @@
 #define STBI_NO_STDIO
 #include "stb_image.h"
 
-#define APP_VERSION "0.10.0"
+#define APP_VERSION "0.10.1"
 #define KNOWN_CRC 0x96FB4D4Bu
 #define UI_W 640
 #define UI_H 360
@@ -427,8 +427,8 @@ static int start_sel;
 static int warp_pending;   // keep the chosen round in RAM until the level is running
 static int locked_weapon = -1, locked_sub = -1;   // weapon lock cheat (-1: take the current ones)
 
-// Game modes. Every mode but the normal one blocks all the advantages: rewind, fast forward, saved states,
-// cheats, double jump, difficulty and "no respawn". Picture, music and controls stay free.
+// Game modes. Every mode but the normal one blocks the advantages: rewind, fast forward, cheats, double jump,
+// difficulty and "no respawn". Saved states, picture, music and controls stay free.
 enum { GM_NORMAL, GM_LOGROS };
 static int game_mode = GM_NORMAL;
 #define ADVANTAGES_BLOCKED (game_mode != GM_NORMAL)
@@ -537,7 +537,7 @@ static const int page_items[PAGE_COUNT][PAGE_MAX] = {
   {MI_BUTTONS, MI_SUBBTN, MI_TRIGGERS, MI_TOUCH, MI_TOUCHSIZE, MI_VIBRA, MI_BACK, -1},
   {MI_GAME, MI_CHEATS, MI_VIDEO, MI_OPTIONS, MI_BACK, -1},
   {MI_VIB0, MI_VIB0 + 1, MI_VIB0 + 2, MI_VIB0 + 3, MI_VIB0 + 4, MI_VIB0 + 5, MI_BACK, -1},
-  {MI_RESUME, MI_LOGROS_LIST, MI_VIDEO, MI_OPTIONS, MI_CONTROLS, MI_RESET, MI_HOME, MI_QUIT, -1},
+  {MI_RESUME, MI_SAVE, MI_LOAD, MI_LOGROS_LIST, MI_VIDEO, MI_OPTIONS, MI_CONTROLS, MI_RESET, MI_HOME, MI_QUIT, -1},
   {MI_MODE_NORMAL, MI_MODE_LOGROS, MI_LOGROS_LIST, MI_PROFILE_EXPORT, MI_PROFILE_IMPORT, MI_BACK, -1},
 };
 static const char* page_titles[2][PAGE_COUNT] = {
@@ -679,14 +679,16 @@ static void menu_label(int i, char* out, size_t n) {
   }
 }
 
-static void state_file(char* out, size_t n) { cfg_path(out, n, "estado1.sav"); }
+// Each kind of game has its own state: one saved in a normal game (with cheats, at any round) cannot be
+// loaded where achievements count. These also carry how the game was going (logros_run_*).
+static void state_file(char* out, size_t n) { cfg_path(out, n, game_mode == GM_LOGROS ? "estado_logros.sav" : "estado1.sav"); }
 
 static void do_save_state(void) {
-  if (ADVANTAGES_BLOCKED) return;
   char p[1100]; state_file(p, sizeof p);
-  size_t n = sms_state_size();
-  void* buf = malloc(n);
+  size_t base = sms_state_size(), n = base + (game_mode == GM_LOGROS ? logros_run_size() : 0);
+  uint8_t* buf = malloc(n);
   sms_save_state(&S, buf);
+  if (game_mode == GM_LOGROS) logros_run_save(buf + base);
   SDL_RWops* rw = SDL_RWFromFile(p, "wb");
   if (rw) { SDL_RWwrite(rw, buf, 1, n); SDL_RWclose(rw); show_toast(T("State saved", "Estado guardado"), 1500); }
   else show_toast(T("Could not save the state", "No se pudo guardar el estado"), 2000);
@@ -694,11 +696,17 @@ static void do_save_state(void) {
 }
 
 static void do_load_state(void) {
-  if (ADVANTAGES_BLOCKED) return;
   char p[1100]; state_file(p, sizeof p);
   size_t n = 0;
   uint8_t* buf = load_file(p, &n);
-  if (buf && sms_load_state(&S, buf, n)) { music_stop(); mod_respawn_forget_slots(&E); show_toast(T("State loaded", "Estado cargado"), 1500); }
+  int ok = 0;
+  if (buf && game_mode == GM_LOGROS) {
+    // only a state saved in this mode, with its game known
+    size_t base = sms_state_size();
+    ok = n == base + logros_run_size() && sms_load_state(&S, buf, base);
+    if (ok) logros_run_load(buf + base);
+  } else if (buf) ok = sms_load_state(&S, buf, n);
+  if (ok) { music_stop(); mod_respawn_forget_slots(&E); show_toast(T("State loaded", "Estado cargado"), 1500); }
   else show_toast(T("There is no saved state", "No hay ningún estado guardado"), 2000);
   free(buf);
 }
@@ -888,7 +896,7 @@ static void start_mode(int mode) {
   menu_set_open(0);
   in_launcher = 0;
   music_set_paused(false);
-  if (mode == GM_LOGROS) show_toast(T("Achievements mode: no rewind, states or cheats", "Modo logros: sin rebobinado, estados ni trucos"), 3000);
+  if (mode == GM_LOGROS) show_toast(T("Achievements mode: no rewind or cheats", "Modo logros: sin rebobinado ni trucos"), 3000);
   else show_toast(T("Press SELECT or BACK to open the menu", "Pulsa SELECT o ATRÁS para abrir el menú"), 3000);
 }
 
@@ -1074,7 +1082,7 @@ static void draw_ui(void) {
              T("A gamepad with rumble vibrates instead of the phone", "Si el mando vibra, vibra el mando en vez del móvil");
     }
     if (menu_page == PAGE_MODES)
-      foot = menu_sel == 1 ? T("No rewind, states or cheats. Achievements count here", "Sin rebobinado, estados ni trucos. Cuentan los logros") :
+      foot = menu_sel == 1 ? T("No rewind or cheats. Achievements count here", "Sin rebobinado ni trucos. Aquí cuentan los logros") :
              menu_sel == 3 ? T("Saves your achievements to a file", "Guarda tus logros en un archivo") :
              menu_sel == 4 ? T("Adds a saved profile to this one", "Añade un perfil guardado a este") : foot;
     ui_text_center(by + bh - 26, foot, 0x807870);

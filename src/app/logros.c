@@ -42,6 +42,7 @@ static struct {
   int deaths, continues;
   bool round_hurt, round_sub;
   bool boss_on, boss_hurt, last_boss_down;
+  bool state_loaded;          // for achievements earned without loading a state (Survivor)
 } run;
 
 // ---------------------------------------------------------------- profile file
@@ -139,6 +140,10 @@ static void unlock(int i) {
 
 // ---------------------------------------------------------------- what happens in the game
 void logros_reset_run(void) { memset(&run, 0, sizeof run); }
+
+size_t logros_run_size(void) { return sizeof run; }
+void logros_run_save(void* out) { memcpy(out, &run, sizeof run); }
+void logros_run_load(const void* in) { memcpy(&run, in, sizeof run); run.state_loaded = true; }
 
 static void finish_round(int r) {
   if (r < LAST_ROUND) unlock(L_ROUND1 + r);

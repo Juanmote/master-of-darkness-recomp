@@ -373,3 +373,8 @@ Cabecera TMR SEGA válida, checksum 6FE6 correcto, región SMS Export, mapper Se
 - Pruebas: `tools/test/test_logros.c` (partidas simuladas); headless `LOGROS=archivo` con `MUSHOOK=1` mete el juego real en los
   logros; `MOD_LOGROS_LIST=página` en el modo de prueba enseña la lista. Con las opciones normales la huella `-H` es idéntica a v0.9.10.
 
+## v0.10.1 — guardar y cargar en el modo logros
+- El bloqueo ya no incluye los estados. El modo logros usa `estado_logros.sav` (el normal sigue con `estado1.sav`): así no se puede
+  cargar una partida con trucos o empezada en cualquier ronda. El archivo lleva detrás el seguimiento de la partida (`logros_run_*`): al
+  cargar vuelven también las muertes y golpes de ese momento, y `state_loaded` queda marcado para el logro de Survivor sin estados.
+

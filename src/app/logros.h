@@ -2,6 +2,7 @@
 // kept in a small text file (the profile) that can be exported and imported.
 #pragma once
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 typedef struct {
@@ -28,6 +29,11 @@ void logros_music(int id);                // the game asks for this track (0x81-
 void logros_frame(const logros_in_t* in);
 int logros_pop_new(void);                 // next achievement just unlocked, or -1
 void logros_flush(void);                  // writes the profile if anything is pending
+
+// A saved state carries how its game was going, so loading one takes the deaths and hits back too.
+size_t logros_run_size(void);
+void logros_run_save(void* out);
+void logros_run_load(const void* in);     // and notes that this game has used a saved state
 
 // Adds a profile file to the current one (nothing is ever lost). Returns the achievements gained,
 // or -1 if the file is not a valid profile.
