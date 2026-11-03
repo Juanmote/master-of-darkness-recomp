@@ -48,7 +48,7 @@ int main(void) {
   logros_music(0x8D); expect("story before the last boss is not the ending", "");
   boss(4, 3, 15, true);
   logros_music(0x8D); drain();
-  expect("ending after a death: no immortal, no continue is fine", "final nocont ");
+  expect("ending after a death: no immortal, no continue is fine", "stagenosub final nocont ");
 
   fresh(P);
   logros_music(0x87);
@@ -57,7 +57,7 @@ int main(void) {
   got[0] = 0;
   boss(4, 3, 0, false); got[0] = 0;
   logros_music(0x8D); drain();
-  expect("flawless ending", "final nocont nodeath ");
+  expect("flawless ending", "stageclean stagenosub final nocont nodeath ");
 
   fresh(P);
   logros_music(0x87);
@@ -84,11 +84,12 @@ int main(void) {
   fresh(P);
   logros_music(0x87);
   fr(0, 0, 0, 1, 0);
-  logros_music(0x81); expect("a stage clear is not a round clear", "");
-  logros_music(0x86); drain(); expect("round clear music on another stage counts nothing", "");
-  fr(0, 0, 2, 1, 0);
+  logros_music(0x81); drain(); expect("a stage clear is not a round clear", "stageclean stagenosub ");
+  fr(MOD_EV_HURT, 0, 1, 1, 5); fr(0, 0, 1, 1, 4);
+  logros_music(0x81); drain(); expect("nothing new with a hit in the stage", "");
+  fr(0, 0, 2, 1, 4);
   logros_music(0x86); drain();
-  expect("round clear gives them at once", "round1 roundclean roundnosub ");
+  expect("round clear gives them at once, not the hurt ones", "round1 ");
   logros_music(0x83); fr(0, 1, 0, 1, 0);
   expect("and not again on the next round", "");
 

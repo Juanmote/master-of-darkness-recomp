@@ -1,6 +1,6 @@
 # Estado del proyecto — Master of Darkness Re-Master-Ed
 
-Última actualización: 3 de noviembre de 2026. Versión publicada: **v0.10.3**.
+Última actualización: 3 de noviembre de 2026. Versión publicada: **v0.10.4**.
 
 Launcher para Android (y escritorio) que ejecuta *Master of Darkness* (Master System) desde la ROM del
 usuario, con 16:9 real, trucos, opciones de juego, filtros, paletas, pack de música y controles táctiles.
@@ -79,7 +79,7 @@ arranca, pero las mejoras se desactivan solas (se comprueban los bytes de cada p
   habrá logro de Survivor por no usarlos). Una partida guardada en modo normal no se carga aquí. Bloquea rebobinar, acelerar, trucos, doble salto, dificultad y reaparición "No" (también
   "Subarmas sin límite" e invencibilidad del menú oculto del juego). 16:9, sin ralentizaciones, imagen, música y
   OST son libres. Las partidas que no empiezan en la primera fase no cuentan.
-- 14 logros propios (`src/app/logros.c`): rondas 1-4, terminar el juego, sin continuar, sin perder vida, ronda sin daño,
+- 16 logros propios (`src/app/logros.c`): rondas 1-4, terminar el juego, sin continuar, sin perder vida, fase sin daño, fase sin subarma, ronda sin daño,
   ronda sin subarma, jefe sin daño, jefe con cuchillo, jefe con hacha, 100 y 1000 enemigos.
 - Perfil `logros.txt` con comprobación: exportar a un archivo; importar suma lo que falte, nunca quita nada.
 
@@ -125,6 +125,7 @@ Probado por el usuario y compañeros en Odin 3 Max, Retroid Pocket Classic y mó
 
 ## Decisiones importantes y por qué
 
+- **Logros para disfrutar:** el usuario quiere logros fáciles además de los difíciles; no le gustan los sets puñeteros.
 - **100 % legal.** El APK no lleva la ROM ni música con derechos. La traducción es texto nuestro (no la de Wave,
   que se dejó de usar para no depender de permisos); las letras con tilde se dibujan en el momento a partir de la
   fuente del juego, sin gráficos sacados de la ROM.

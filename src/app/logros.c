@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-enum { L_ROUND1, L_ROUND2, L_ROUND3, L_ROUND4, L_FINAL, L_NOCONT, L_NODEATH, L_ROUND_CLEAN, L_ROUND_NOSUB,
+enum { L_ROUND1, L_ROUND2, L_ROUND3, L_ROUND4, L_FINAL, L_NOCONT, L_NODEATH, L_STAGE_CLEAN, L_STAGE_NOSUB, L_ROUND_CLEAN, L_ROUND_NOSUB,
        L_BOSS_CLEAN, L_BOSS_KNIFE, L_BOSS_AXE, L_KILL100, L_KILL1000, L_COUNT };
 
 static const logro_t list[L_COUNT] = {
@@ -15,6 +15,8 @@ static const logro_t list[L_COUNT] = {
   {"final", {"End of the curse", "Fin de la maldición"}, {"Finish the game", "Termina el juego"}},
   {"nocont", {"No second chances", "Sin segundas oportunidades"}, {"Finish the game without continuing", "Termina el juego sin continuar"}},
   {"nodeath", {"Immortal", "Inmortal"}, {"Finish the game without losing a life", "Termina el juego sin perder una vida"}},
+  {"stageclean", {"A quiet walk", "Paseo tranquilo"}, {"Clear a stage without taking damage", "Supera una fase sin recibir daño"}},
+  {"stagenosub", {"Saving ammo", "Ahorrando munición"}, {"Clear a stage without using a subweapon", "Supera una fase sin gastar subarma"}},
   {"roundclean", {"Not a scratch", "Ni un rasguño"}, {"Clear a whole round without taking damage", "Supera una ronda entera sin recibir daño"}},
   {"roundnosub", {"Bare hands", "A cuerpo limpio"}, {"Clear a whole round without using a subweapon", "Supera una ronda entera sin gastar subarma"}},
   {"bossclean", {"Untouchable", "Intocable"}, {"Beat a boss without taking damage", "Vence a un jefe sin recibir daño"}},
@@ -27,6 +29,7 @@ static const logro_t list[L_COUNT] = {
 #define LAST_ROUND 4          // rounds are 0..4 in the game's RAM
 #define MUS_STORY 0x8D        // story pages, and the ending
 #define MUS_CONTINUE 0x82
+#define MUS_STAGE_CLEAR 0x81
 #define MUS_ROUND_CLEAR 0x86  // the boss of a round's last stage has fallen
 #define LAST_STAGE 2          // of rounds 0..3 (B9CB in the game's stage table)
 #define MUS_INTRO 0x87        // a new game: the title music (83) also sounds between rounds
@@ -42,9 +45,10 @@ static struct {
   int round, stage, prev_ammo;
   bool round_done;            // its achievements were already given
   int deaths, continues;
-  bool round_hurt, round_sub;
+  bool round_hurt, round_sub, stage_hurt, stage_sub;
   bool boss_on, boss_hurt, last_boss_down;
   bool state_loaded;          // for achievements earned without loading a state (Survivor)
+  uint8_t spare[32];          // room for new fields: saved states keep their size
 } run;
 
 // ---------------------------------------------------------------- profile file
@@ -147,6 +151,11 @@ size_t logros_run_size(void) { return sizeof run; }
 void logros_run_save(void* out) { memcpy(out, &run, sizeof run); }
 void logros_run_load(const void* in) { memcpy(&run, in, sizeof run); run.state_loaded = true; }
 
+static void finish_stage(void) {
+  if (!run.stage_hurt) unlock(L_STAGE_CLEAN);
+  if (!run.stage_sub) unlock(L_STAGE_NOSUB);
+}
+
 static void finish_round(int r) {
   if (r < LAST_ROUND) unlock(L_ROUND1 + r);
   if (!run.round_hurt) unlock(L_ROUND_CLEAN);
@@ -154,14 +163,16 @@ static void finish_round(int r) {
 }
 
 void logros_music(int id) {
-  if (id == MUS_INTRO) logros_reset_run();
-  else if (id == MUS_ROUND_CLEAR && run.valid && run.round < LAST_ROUND && run.stage == LAST_STAGE && !run.round_done) {
+  if (id == MUS_INTRO) { logros_reset_run(); return; }
+  if ((id == MUS_STAGE_CLEAR || id == MUS_ROUND_CLEAR) && run.valid) finish_stage();
+  if (id == MUS_ROUND_CLEAR && run.valid && run.round < LAST_ROUND && run.stage == LAST_STAGE && !run.round_done) {
     finish_round(run.round);
     run.round_done = true;
   }
   else if (id == MUS_CONTINUE) run.continues++;
   else if (id == MUS_STORY && run.valid && run.round == LAST_ROUND && run.last_boss_down) {
     // there are no story pages after the last round: this is the ending
+    finish_stage();
     finish_round(LAST_ROUND);
     unlock(L_FINAL);
     if (!run.continues) unlock(L_NOCONT);
@@ -183,10 +194,12 @@ void logros_frame(const logros_in_t* in) {
       run.round = in->round;
       run.round_done = false;
       run.round_hurt = run.round_sub = false;
+      run.stage_hurt = run.stage_sub = false;
       run.boss_on = run.last_boss_down = false;
     }
+    if (in->stage != run.stage) run.stage_hurt = run.stage_sub = false;
     run.stage = in->stage;
-    if (in->ammo < run.prev_ammo) run.round_sub = true;
+    if (in->ammo < run.prev_ammo) run.round_sub = run.stage_sub = true;
     run.prev_ammo = in->ammo;
   }
   uint32_t ev = in->events;
@@ -197,8 +210,8 @@ void logros_frame(const logros_in_t* in) {
     if (kills >= 100) unlock(L_KILL100);
     if (kills >= 1000) unlock(L_KILL1000);
   }
-  if (ev & MOD_EV_HURT) run.round_hurt = run.boss_hurt = true;
-  if (ev & MOD_EV_DEATH) { run.deaths++; run.round_hurt = run.boss_hurt = true; }
+  if (ev & MOD_EV_HURT) run.round_hurt = run.stage_hurt = run.boss_hurt = true;
+  if (ev & MOD_EV_DEATH) { run.deaths++; run.round_hurt = run.stage_hurt = run.boss_hurt = true; }
   if (ev & MOD_EV_BOSS_START) { run.boss_on = true; run.boss_hurt = false; }
   if ((ev & MOD_EV_BOSS_DOWN) && run.boss_on) {
     run.boss_on = false;

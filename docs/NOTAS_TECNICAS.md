@@ -391,3 +391,7 @@ Cabecera TMR SEGA válida, checksum 6FE6 correcto, región SMS Export, mapper Se
 - Antes saltaban al empezar la ronda siguiente, tras el recuento y las páginas de historia. Ahora, con la música 86 (ronda superada) en la última
   fase de la ronda. Una ronda son sus 3 fases (`R1-1` a `R1-3`); la 81 es fase superada y no da nada.
 
+## v0.10.4 — logros de fase
+- `stageclean` y `stagenosub`: con la música 81 (fase superada) o 86, sin daño o sin gastar subarma desde que empezó la fase. `run` lleva 32 bytes libres
+  para añadir campos sin invalidar los estados guardados del modo logros.
+
