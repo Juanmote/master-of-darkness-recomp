@@ -358,3 +358,18 @@ Cabecera TMR SEGA válida, checksum 6FE6 correcto, región SMS Export, mapper Se
   letras extra apagadas, la huella `-H` es idéntica a v0.9.9 (3000 fotogramas con bot, 16:9).
 - Confirmado en la ROM que el tablero ouija deletrea KILLER, VAMPIRE, GO TO THAMES, CAUTION, CAUTION, IN THE WAKE OF, DRACULA.
 
+## v0.10.0 — menú de modos, modo logros y perfil
+- `game_mode` y `ADVANTAGES_BLOCKED` en `main.c`: un único bloqueo para este modo y los futuros. Con él `apply_game_options` fuerza
+  dificultad normal, reaparición sí, sin doble salto ni subarmas sin límite, `cheats_frame` pone `DFB4` a 0 en cada fotograma
+  (también tapa el menú oculto del juego) y no corre nada más, y no hay rebobinado, acelerar ni estados. El menú en partida es
+  `PAGE_MAIN_LOCKED`.
+- Lógica en `src/app/logros.c`, sin SDL, alimentada por `MOD_EV_*`, RAM y música. Partida nueva: música 83/87. Continuar: 82.
+  Solo cuenta una partida que empieza en ronda 0, fase 0 y avanza de una en una. Ronda superada: `DFC0` sube.
+  Final: `AC35` (banco 3) pide 8D, igual que las páginas de historia, y no hay enganche posible ahí (`hook_map` solo cubre hasta
+  7FFF), así que se reconoce como 8D en la última ronda después de vencer a su jefe; esa ronda no tiene páginas de historia.
+- Perfil `logros.txt`: texto con comprobación FNV al final; se escribe por archivo temporal y `rename`. Un archivo dañado o
+  editado se rechaza. Importar une logros y coge el mayor número de enemigos. Android: mensajes 0x8005/0x8006 a `GameActivity`; lo
+  importado queda como `perfil_importado.txt` y se revisa al volver a primer plano.
+- Pruebas: `tools/test/test_logros.c` (partidas simuladas); headless `LOGROS=archivo` con `MUSHOOK=1` mete el juego real en los
+  logros; `MOD_LOGROS_LIST=página` en el modo de prueba enseña la lista. Con las opciones normales la huella `-H` es idéntica a v0.9.10.
+

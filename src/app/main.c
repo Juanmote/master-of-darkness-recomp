@@ -9,6 +9,7 @@
 #include "../game/mod_enhance.h"
 #include "font_data.h"
 #include "music.h"
+#include "logros.h"
 #include "text_es.h"
 #include "../game/mod_text.h"
 #define STB_IMAGE_IMPLEMENTATION
@@ -17,7 +18,7 @@
 #define STBI_NO_STDIO
 #include "stb_image.h"
 
-#define APP_VERSION "0.9.10"
+#define APP_VERSION "0.10.0"
 #define KNOWN_CRC 0x96FB4D4Bu
 #define UI_W 640
 #define UI_H 360
@@ -426,10 +427,17 @@ static int start_sel;
 static int warp_pending;   // keep the chosen round in RAM until the level is running
 static int locked_weapon = -1, locked_sub = -1;   // weapon lock cheat (-1: take the current ones)
 
+// Game modes. Every mode but the normal one blocks all the advantages: rewind, fast forward, saved states,
+// cheats, double jump, difficulty and "no respawn". Picture, music and controls stay free.
+enum { GM_NORMAL, GM_LOGROS };
+static int game_mode = GM_NORMAL;
+#define ADVANTAGES_BLOCKED (game_mode != GM_NORMAL)
+
 static int cheats_ok(void) { return rom_crc == KNOWN_CRC && mod_is_gameplay(&S); }
 
 static void cheats_frame(void) {
   if (rom_crc != KNOWN_CRC) return;
+  if (ADVANTAGES_BLOCKED) { gram_w(RAM_INVINCIBLE, 0); return; }   // also the debug menu hidden in the game
   if (warp_pending) {
     gram_w(RAM_ROUND, start_points[start_sel][0]);
     gram_w(RAM_STAGE, start_points[start_sel][1]);
@@ -515,9 +523,10 @@ enum {
   MI_VOLUME, MI_BUTTONS, MI_SUBBTN, MI_TURBO, MI_TRIGGERS, MI_LANG, MI_MUSIC, MI_MUSPACK, MI_MUSTEST,
   MI_INV, MI_LIVES, MI_WEAPON, MI_SUB, MI_AMMO, MI_MULTI, MI_LOCK, MI_START, MI_WARP, MI_UILANG, MI_ORIGINAL,
   MI_REMASTER, MI_VIBRA, MI_VIB0, MI_VIB_LAST = MI_VIB0 + VIB_COUNT - 1,
+  MI_MODE_NORMAL, MI_MODE_LOGROS, MI_LOGROS_LIST, MI_PROFILE_EXPORT, MI_PROFILE_IMPORT,
   MI_BACK
 };
-enum { PAGE_MAIN, PAGE_VIDEO, PAGE_OPTIONS, PAGE_CHEATS, PAGE_GAME, PAGE_CONTROLS, PAGE_HOME, PAGE_VIBRA, PAGE_COUNT };
+enum { PAGE_MAIN, PAGE_VIDEO, PAGE_OPTIONS, PAGE_CHEATS, PAGE_GAME, PAGE_CONTROLS, PAGE_HOME, PAGE_VIBRA, PAGE_MAIN_LOCKED, PAGE_MODES, PAGE_COUNT };
 #define PAGE_MAX 12
 static const int page_items[PAGE_COUNT][PAGE_MAX] = {
   {MI_RESUME, MI_SAVE, MI_LOAD, MI_GAME, MI_CHEATS, MI_VIDEO, MI_OPTIONS, MI_CONTROLS, MI_RESET, MI_HOME, MI_QUIT, -1},
@@ -528,10 +537,12 @@ static const int page_items[PAGE_COUNT][PAGE_MAX] = {
   {MI_BUTTONS, MI_SUBBTN, MI_TRIGGERS, MI_TOUCH, MI_TOUCHSIZE, MI_VIBRA, MI_BACK, -1},
   {MI_GAME, MI_CHEATS, MI_VIDEO, MI_OPTIONS, MI_BACK, -1},
   {MI_VIB0, MI_VIB0 + 1, MI_VIB0 + 2, MI_VIB0 + 3, MI_VIB0 + 4, MI_VIB0 + 5, MI_BACK, -1},
+  {MI_RESUME, MI_LOGROS_LIST, MI_VIDEO, MI_OPTIONS, MI_CONTROLS, MI_RESET, MI_HOME, MI_QUIT, -1},
+  {MI_MODE_NORMAL, MI_MODE_LOGROS, MI_LOGROS_LIST, MI_PROFILE_EXPORT, MI_PROFILE_IMPORT, MI_BACK, -1},
 };
 static const char* page_titles[2][PAGE_COUNT] = {
-  {"MASTER OF DARKNESS", "VIDEO", "SOUND & LANGUAGE", "CHEATS", "GAME", "CONTROLS", "OPTIONS", "VIBRATION"},
-  {"MASTER OF DARKNESS", "IMAGEN", "SONIDO E IDIOMA", "TRUCOS", "JUEGO", "CONTROLES", "OPCIONES", "VIBRACIÓN"}};
+  {"MASTER OF DARKNESS", "VIDEO", "SOUND & LANGUAGE", "CHEATS", "GAME", "CONTROLS", "OPTIONS", "VIBRATION", "ACHIEVEMENTS MODE", "PLAY"},
+  {"MASTER OF DARKNESS", "IMAGEN", "SONIDO E IDIOMA", "TRUCOS", "JUEGO", "CONTROLES", "OPCIONES", "VIBRACIÓN", "MODO LOGROS", "JUGAR"}};
 static const char* touch_names[2][3] = {{"No", "Yes", "Only without a gamepad"}, {"No", "Sí", "Solo sin mando"}};
 static const char* touch_size_names[2][3] = {{"Small", "Normal", "Big"}, {"Pequeños", "Normales", "Grandes"}};
 static int in_launcher = 1;   // the start screen is shown (the game waits)
@@ -540,10 +551,10 @@ static const char* diff_names[2][3] = {{"Easy", "Normal", "Hard"}, {"Fácil", "N
 static const char* respawn_names[2][3] = {{"Yes (original)", "No", "When coming back"}, {"Sí (original)", "No", "Al volver a la zona"}};
 
 static void apply_game_options(void) {
-  E.difficulty = cfg.difficulty;
-  E.respawn = cfg.respawn;
-  E.double_jump = cfg.dbl_jump != 0;
-  E.multi_shot = cfg.multi_shot != 0;
+  E.difficulty = ADVANTAGES_BLOCKED ? MOD_DIFF_NORMAL : cfg.difficulty;
+  E.respawn = ADVANTAGES_BLOCKED ? MOD_RESPAWN_ON : cfg.respawn;
+  E.double_jump = !ADVANTAGES_BLOCKED && cfg.dbl_jump != 0;
+  E.multi_shot = !ADVANTAGES_BLOCKED && cfg.multi_shot != 0;
 }
 static int menu_page;
 static int confirm_original;   // "back to the original game" (1) or "remastered" (2) was chosen once: the next press confirms
@@ -592,6 +603,11 @@ static void menu_label(int i, char* out, size_t n) {
   case MI_OPTIONS: snprintf(out, n, "%s  ›", T("Sound & language", "Sonido e idioma")); break;
   case MI_CONTROLS: snprintf(out, n, "%s  ›", T("Controls", "Controles")); break;
   case MI_HOME: snprintf(out, n, "%s", T("Start screen", "Pantalla de inicio")); break;
+  case MI_MODE_NORMAL: snprintf(out, n, "%s", T("Normal game", "Partida normal")); break;
+  case MI_MODE_LOGROS: snprintf(out, n, "%s", T("Achievements mode", "Modo logros")); break;
+  case MI_LOGROS_LIST: snprintf(out, n, "%s (%d/%d)  ›", T("Achievements", "Logros"), logros_unlocked_count(), logros_count()); break;
+  case MI_PROFILE_EXPORT: snprintf(out, n, "%s", T("Export profile", "Exportar perfil")); break;
+  case MI_PROFILE_IMPORT: snprintf(out, n, "%s", T("Import profile", "Importar perfil")); break;
   case MI_TOUCH: snprintf(out, n, "%s ← %s →", T("Touch controls:", "Controles táctiles:"), touch_names[L][cfg.touch]); break;
   case MI_TOUCHSIZE: snprintf(out, n, "%s ← %s →", T("Touch size:", "Tamaño táctil:"), touch_size_names[L][cfg.touch_size]); break;
   case MI_RESET: snprintf(out, n, "%s", T("Reset game", "Reiniciar juego")); break;
@@ -666,6 +682,7 @@ static void menu_label(int i, char* out, size_t n) {
 static void state_file(char* out, size_t n) { cfg_path(out, n, "estado1.sav"); }
 
 static void do_save_state(void) {
+  if (ADVANTAGES_BLOCKED) return;
   char p[1100]; state_file(p, sizeof p);
   size_t n = sms_state_size();
   void* buf = malloc(n);
@@ -677,6 +694,7 @@ static void do_save_state(void) {
 }
 
 static void do_load_state(void) {
+  if (ADVANTAGES_BLOCKED) return;
   char p[1100]; state_file(p, sizeof p);
   size_t n = 0;
   uint8_t* buf = load_file(p, &n);
@@ -787,7 +805,7 @@ static void menu_open_at(int page) {
 }
 
 static void menu_set_open(int open) {
-  if (open) { menu_open_at(in_launcher ? PAGE_HOME : PAGE_MAIN); return; }
+  if (open) { menu_open_at(in_launcher ? PAGE_HOME : ADVANTAGES_BLOCKED ? PAGE_MAIN_LOCKED : PAGE_MAIN); return; }
   menu_open = 0;
   capture_jump = 0;
 }
@@ -850,8 +868,65 @@ static void apply_remaster(void) {
   show_toast(T("Remastered version restored", "Versión remasterizada restablecida"), 3000);
 }
 
+static int rw_count_reset;   // the rewind history no longer applies (see the main loop)
+static int show_logros, logros_page;
+static int waiting_import;
+
+// Plays a mode: the current game goes on if it is the same mode, otherwise a new one starts
+static void start_mode(int mode) {
+  if (mode != game_mode) {
+    game_mode = mode;
+    music_stop();
+    sms_reset(&S);
+    warp_pending = 0;
+    locked_weapon = locked_sub = -1;
+    rw_count_reset = 1;
+    logros_reset_run();
+    if (rom_crc == KNOWN_CRC) gram_w(RAM_INVINCIBLE, 0);
+    apply_game_options();
+  }
+  menu_set_open(0);
+  in_launcher = 0;
+  music_set_paused(false);
+  if (mode == GM_LOGROS) show_toast(T("Achievements mode: no rewind, states or cheats", "Modo logros: sin rebobinado, estados ni trucos"), 3000);
+  else show_toast(T("Press SELECT or BACK to open the menu", "Pulsa SELECT o ATRÁS para abrir el menú"), 3000);
+}
+
+static void profile_transfer(int import) {
+#ifdef __ANDROID__
+  logros_flush();
+  if (import) waiting_import = 1;
+  SDL_AndroidSendMessage(import ? 0x8006 : 0x8005, 0);
+#else
+  (void)import;
+  show_toast(T("Only on Android", "Solo en Android"), 2000);
+#endif
+}
+
+static void import_profile_file(void) {
+  char p[1100]; cfg_path(p, sizeof p, "perfil_importado.txt");
+  FILE* f = fopen(p, "rb");
+  if (!f) return;   // nothing was chosen
+  fclose(f);
+  int gained = logros_merge_file(p);
+  remove(p);
+  char t[96];
+  if (gained < 0) snprintf(t, sizeof t, "%s", T("That file is not a valid profile", "Ese archivo no es un perfil válido"));
+  else snprintf(t, sizeof t, T("Profile imported: %d new achievements", "Perfil importado: %d logros nuevos"), gained);
+  show_toast(t, 3000);
+}
+
 static void menu_activate(void) {
   switch (cur_item()) {
+  case MI_MODE_NORMAL:
+    if (rom_crc != KNOWN_CRC && game_mode != GM_NORMAL) break;
+    start_mode(GM_NORMAL); break;
+  case MI_MODE_LOGROS:
+    if (rom_crc != KNOWN_CRC) { show_toast(T("Achievements need the original ROM", "Los logros necesitan la ROM original"), 2500); break; }
+    start_mode(GM_LOGROS); break;
+  case MI_LOGROS_LIST: show_logros = 1; logros_page = 0; break;
+  case MI_PROFILE_EXPORT: profile_transfer(0); break;
+  case MI_PROFILE_IMPORT: profile_transfer(1); break;
   case MI_RESUME: menu_set_open(0); break;
   case MI_SAVE: do_save_state(); menu_set_open(0); break;
   case MI_LOAD: do_load_state(); menu_set_open(0); break;
@@ -875,6 +950,7 @@ static void menu_activate(void) {
     show_toast(ES ? music_tracks[music_test_sel].name : music_tracks[music_test_sel].name_en, 2000);
     break;
   case MI_WARP:
+    game_mode = GM_NORMAL; apply_game_options();   // chosen from the cheats: this is a normal game
     music_stop(); sms_reset(&S); warp_pending = 1; menu_set_open(0); in_launcher = 0;
     show_toast(T("Press START: the game will begin at that round", "Pulsa START: la partida empezará en esa ronda"), 3000);
     break;
@@ -921,9 +997,32 @@ static void draw_credits(void) {
   ui_text_center(UI_H - 34, T("Press any button to go back", "Pulsa cualquier botón para volver"), 0x807870);
 }
 
+#define LOGROS_PER_PAGE 7
+static int logros_pages(void) { return (logros_count() + LOGROS_PER_PAGE - 1) / LOGROS_PER_PAGE; }
+
+static void draw_logros(void) {
+  ui_rect(0, 0, UI_W, UI_H, 0xF0100A14);
+  char t[96];
+  snprintf(t, sizeof t, T("ACHIEVEMENTS  %d/%d", "LOGROS  %d/%d"), logros_unlocked_count(), logros_count());
+  ui_text_center(8, t, 0xE8C060);
+  int y = 34;
+  for (int i = logros_page * LOGROS_PER_PAGE; i < logros_count() && i < (logros_page + 1) * LOGROS_PER_PAGE; i++) {
+    const logro_t* l = logros_get(i);
+    int on = logros_has(i);
+    ui_rect(26, y + 5, 28, 28, on ? 0xFFE8C060 : 0xFF3A3440);
+    ui_rect(29, y + 8, 22, 22, on ? 0xFFB0302A : 0xFF1C1820);
+    ui_text(68, y - 1, l->name[ES], on ? 0xFFFFFF : 0x8C8490);
+    ui_text(68, y + 18, l->desc[ES], on ? 0xB8B0A8 : 0x6C6470);
+    y += 41;
+  }
+  snprintf(t, sizeof t, T("‹ Page %d/%d ›   Enemies: %u", "‹ Página %d/%d ›   Enemigos: %u"), logros_page + 1, logros_pages(), logros_kills());
+  ui_text_center(UI_H - 26, t, 0x807870);
+}
+
 static void draw_ui(void) {
   ui_clear();
-  if (show_credits) draw_credits();
+  if (show_logros) draw_logros();
+  else if (show_credits) draw_credits();
   else if (menu_open) {
     int n = page_count(menu_page);
     ui_rect(0, 0, UI_W, UI_H, 0xA0000000);
@@ -974,6 +1073,10 @@ static void draw_ui(void) {
              it == MI_VIB0 + 5 ? T("Boss appears, is hit and is defeated", "Aparece el jefe, le aciertas y lo derrotas") :
              T("A gamepad with rumble vibrates instead of the phone", "Si el mando vibra, vibra el mando en vez del móvil");
     }
+    if (menu_page == PAGE_MODES)
+      foot = menu_sel == 1 ? T("No rewind, states or cheats. Achievements count here", "Sin rebobinado, estados ni trucos. Cuentan los logros") :
+             menu_sel == 3 ? T("Saves your achievements to a file", "Guarda tus logros en un archivo") :
+             menu_sel == 4 ? T("Adds a saved profile to this one", "Añade un perfil guardado a este") : foot;
     ui_text_center(by + bh - 26, foot, 0x807870);
   } else if (rewinding || fast_forward) {
     const char* t = rewinding ? "◄◄" : "►►";
@@ -1223,11 +1326,7 @@ static void draw_launcher(int ww, int wh) {
 
 static void launcher_activate(int i) {
   switch (launch_art[i]) {
-  case ART_PLAY:
-    in_launcher = 0;
-    music_set_paused(false);
-    show_toast(T("Press SELECT or BACK to open the menu", "Pulsa SELECT o ATRÁS para abrir el menú"), 3000);
-    break;
+  case ART_PLAY: menu_open_at(PAGE_MODES); menu_sel = game_mode == GM_LOGROS ? 1 : 0; break;
   case ART_OPTIONS: menu_open_at(PAGE_HOME); break;
   case ART_CONTROLS: menu_open_at(PAGE_CONTROLS); break;
   case ART_CREDITS: show_credits = 1; break;
@@ -1555,6 +1654,19 @@ static int pad_slot(SDL_JoystickID id) {
 }
 
 static void handle_event(SDL_Event* e) {
+  // list of achievements: left and right change the page, anything else closes it
+  if (show_logros && (e->type == SDL_KEYDOWN || e->type == SDL_CONTROLLERBUTTONDOWN || e->type == SDL_FINGERDOWN)) {
+    int d = 0;
+    if (e->type == SDL_KEYDOWN) d = e->key.keysym.sym == SDLK_LEFT || e->key.keysym.sym == SDLK_UP ? -1 : e->key.keysym.sym == SDLK_RIGHT || e->key.keysym.sym == SDLK_DOWN ? 1 : 0;
+    else if (e->type == SDL_CONTROLLERBUTTONDOWN) {
+      int b = e->cbutton.button;
+      d = b == SDL_CONTROLLER_BUTTON_DPAD_LEFT || b == SDL_CONTROLLER_BUTTON_DPAD_UP ? -1 : b == SDL_CONTROLLER_BUTTON_DPAD_RIGHT || b == SDL_CONTROLLER_BUTTON_DPAD_DOWN ? 1 : 0;
+    } else d = e->tfinger.x < 0.3f ? -1 : e->tfinger.x > 0.7f ? 1 : 0;
+    if (e->type == SDL_KEYDOWN && e->key.repeat) return;
+    if (d) logros_page = (logros_page + d + logros_pages()) % logros_pages();
+    else show_logros = 0;
+    return;
+  }
   // start screen: any button closes the credits, directions move between buttons
   if (in_launcher && !menu_open && art_ok) {
     int act = 0, dx = 0, quit = 0;
@@ -1582,8 +1694,9 @@ static void handle_event(SDL_Event* e) {
   switch (e->type) {
   case SDL_FINGERDOWN: case SDL_FINGERUP: case SDL_FINGERMOTION: handle_touch(e); break;
   case SDL_QUIT: running = 0; break;
-  case SDL_APP_WILLENTERBACKGROUND: cfg_save(); if (!menu_open) menu_set_open(1); break;
+  case SDL_APP_WILLENTERBACKGROUND: cfg_save(); logros_flush(); if (!menu_open) menu_set_open(1); break;
   case SDL_APP_DIDENTERFOREGROUND:
+    if (waiting_import) { waiting_import = 0; import_profile_file(); }
     if (waiting_music) {
       cfg.music_pack = waiting_music;
       waiting_music = 0;
@@ -1793,6 +1906,7 @@ int main(int argc, char** argv) {
   }
   char* pp = SDL_GetPrefPath("Juanmote", "MasterOfDarkness");
   snprintf(pref_path, sizeof pref_path, "%s", pp ? pp : "./");
+  { char lp[1100]; cfg_path(lp, sizeof lp, "logros.txt"); logros_init(lp); }
   SDL_free(pp);
   cfg_load();
   detect_ui_lang();
@@ -1865,6 +1979,7 @@ int main(int argc, char** argv) {
       sms_run_frame(&S);
       mod_enhance_frame(&S, &E);
     }
+    if (getenv("MOD_LOGROS_LIST")) { show_logros = 1; logros_page = atoi(getenv("MOD_LOGROS_LIST")); }
     if (getenv("MOD_MENU")) { menu_open = 1; menu_sel = atoi(getenv("MOD_MENU")); if (getenv("MOD_PAGE")) menu_page = atoi(getenv("MOD_PAGE")); }
     toast_until = 0;
     if (getenv("MOD_SUB")) { gram_w(RAM_SUBWEAPON, (uint8_t)atoi(getenv("MOD_SUB"))); gram_w(RAM_AMMO, getenv("MOD_AMMO") ? (uint8_t)atoi(getenv("MOD_AMMO")) : 9); }
@@ -1893,8 +2008,9 @@ int main(int argc, char** argv) {
     last = now;
     if (dt > 0.1) dt = 0.1;
     if (in_launcher && !art_ok) in_launcher = 0;   // no start screen art: straight to the game
-    rewinding = !menu_open && !in_launcher && cfg.triggers && (any_trigger(trig_l) || key_rewind);
-    fast_forward = !menu_open && !rewinding && !in_launcher && cfg.triggers && (any_trigger(trig_r) || key_ff);
+    if (rw_count_reset) { rw_count = 0; rw_count_reset = 0; }
+    rewinding = !menu_open && !in_launcher && cfg.triggers && !ADVANTAGES_BLOCKED && (any_trigger(trig_l) || key_rewind);
+    fast_forward = !menu_open && !rewinding && !in_launcher && cfg.triggers && !ADVANTAGES_BLOCKED && (any_trigger(trig_r) || key_ff);
     if (!menu_open && !in_launcher) {
       // keep the audio queue around 3 frames by nudging the emulation speed slightly
       double queued = audio_dev ? SDL_GetQueuedAudioSize(audio_dev) / 2.0 / SMS_SAMPLES_PER_FRAME : 3.0;
@@ -1922,14 +2038,27 @@ int main(int argc, char** argv) {
           mod_text_frame(&S, lang_active());
           sms_run_frame(&S);
           mod_enhance_frame(&S, &E);
-          { uint32_t gev = mod_events_take(&E); if (!fast_forward && gev) vibrate_game(gev); }
+          { uint32_t gev = mod_events_take(&E);
+            if (!fast_forward && gev) vibrate_game(gev);
+            if (game_mode == GM_LOGROS) {
+              logros_in_t li = {gev, mod_is_gameplay(&S), gram(RAM_ROUND), gram(RAM_STAGE), (uint8_t)(gram(RAM_WEAPON) & 3), gram(RAM_AMMO)};
+              logros_frame(&li);
+            }
+          }
           for (int ev; (ev = mod_music_poll(&E)); ) {
             int kind = ev & 0xF00, id = ev & 0xFF;
+            if (game_mode == GM_LOGROS && id) logros_music(id);
             if (kind == MOD_MUSIC_PLAY) { music_current = id; music_play(id); }
             else if (kind == MOD_MUSIC_STOP) { if (id) music_current = id; music_stop(); }
             else if (kind == MOD_MUSIC_FADE) music_fade();
           }
-          if (cfg.triggers && (++rw_tick & 1) == 0) rw_push();
+          if (cfg.triggers && !ADVANTAGES_BLOCKED && (++rw_tick & 1) == 0) rw_push();
+          if (game_mode == GM_LOGROS)
+            for (int nl; (nl = logros_pop_new()) >= 0; ) {
+              char t[96]; snprintf(t, sizeof t, T("Achievement: %s", "Logro: %s"), logros_get(nl)->name[ES]);
+              show_toast(t, 4000);
+              vibrate_sample(VIB_BOSS);
+            }
         }
         music_set_paused(mod_music_paused(&S));
         if (audio_dev && queued < 8 && !fast_forward) {
@@ -1944,6 +2073,7 @@ int main(int argc, char** argv) {
     if (menu_open || in_launcher) SDL_Delay(1);
   }
   cfg_save();
+  logros_flush();
 #ifdef __ANDROID__
   // "Exit" ends the whole app, not only the game thread
   SDL_AndroidSendMessage(0x8003, 0);

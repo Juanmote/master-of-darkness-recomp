@@ -1,6 +1,6 @@
 # Estado del proyecto — Master of Darkness Re-Master-Ed
 
-Última actualización: 2 de noviembre de 2026. Versión publicada: **v0.9.10**.
+Última actualización: 3 de noviembre de 2026. Versión publicada: **v0.10.0**.
 
 Launcher para Android (y escritorio) que ejecuta *Master of Darkness* (Master System) desde la ROM del
 usuario, con 16:9 real, trucos, opciones de juego, filtros, paletas, pack de música y controles táctiles.
@@ -72,6 +72,16 @@ arranca, pero las mejoras se desactivan solas (se comprueban los bytes de cada p
   toques en menús), al atacar, al acertar (más al destruir), al recibir golpes (más al perder una vida), al caer al
   suelo y jefes (aparece, le aciertas, lo derrotas). Si el mando vibra, vibra el mando; si no, el aparato.
 
+**Modos y logros (v0.10.0)**
+- "Jugar" abre una lista: Partida normal, Modo logros, Logros, Exportar perfil e Importar perfil. Cambiar de modo
+  empieza una partida nueva; volver al mismo modo la continúa.
+- Modo logros: bloquea rebobinar, acelerar, estados, trucos, doble salto, dificultad y reaparición "No" (también
+  "Subarmas sin límite" e invencibilidad del menú oculto del juego). 16:9, sin ralentizaciones, imagen, música y
+  OST son libres. Las partidas que no empiezan en la primera fase no cuentan.
+- 14 logros propios (`src/app/logros.c`): rondas 1-4, terminar el juego, sin continuar, sin perder vida, ronda sin daño,
+  ronda sin subarma, jefe sin daño, jefe con cuchillo, jefe con hacha, 100 y 1000 enemigos.
+- Perfil `logros.txt` con comprobación: exportar a un archivo; importar suma lo que falte, nunca quita nada.
+
 **Sonido**
 - Volumen.
 - **Texto del juego: inglés o español con nuestra propia traducción**, incluida en la app (sin parches externos).
@@ -91,6 +101,9 @@ Probado por el usuario y compañeros en Odin 3 Max, Retroid Pocket Classic y mó
 
 ## Errores y puntos pendientes de comprobar
 
+- **Logros sin confirmar con una partida real:** jefes y final no se han podido alcanzar en el emulador (el bot no
+  llega). La lógica está probada con partidas simuladas (`tools/test/test_logros.c`) y el paso de ronda con el juego real
+  forzando la ronda. Exportar e importar solo existe en Android y no se ha probado en un aparato.
 - **Sin probar en consola:** vibración en móviles sin control de intensidad (solo notan la duración), icono
   nuevo y ajustes remasterizados de v0.9.9, acentos de v0.9.10 (comprobados en el emulador).
 - **Confirmado por el usuario (2-11-2026):** OST 2 pista 89, y los enemigos mayores ya no reaparecen. Los menores
@@ -200,6 +213,18 @@ apagadas, la huella no debe cambiar.
    - Pendiente: que el usuario pruebe los bucles y diga si alguno se nota. (Pista 89 del OST 2: confirmada.)
 4. **Selector de OST en la app: hecho** (v0.9.7).
 5. **Acentos que se adelantaban al texto: arreglado** (v0.9.10), pendiente de verlo en consola.
-6. **Galería en el launcher.** Por definir qué contiene; todo material sin derechos de terceros o aportado por el usuario.
-7. **Huevo de pascua:** en Créditos, al pulsar varias veces en el nombre del usuario, aparece el ticket de compra
+6. **Modos extra (diseño acordado con el usuario, con las ventajas bloqueadas):**
+   - **Logros: iconos propios pendientes.** Las ideas pueden salir de RetroAchievements; sus insignias no (derivan de la ROM y
+     sus normas no aceptan reutilizarlas). Añadir logros a los modos extra.
+   - **Survivor:** todo el juego con una sola vida. Fácil: recupera energía como el juego normal; Normal: solo después de cada
+     jefe; Difícil: nunca. Energía del jugador en `CA3A`. Mirar qué hacer con los objetos de energía que no sirven.
+   - **Boss Rush:** todos los jefes seguidos, con cronómetro y récord por dificultad. Vida: Fácil recupera todo tras cada
+     jefe, Normal media barra, Difícil nada. Armas: Fácil elige estoque o hacha y bombas o estacas; Normal espada o estoque y
+     pistola o bumerán; Difícil cuchillo y pistola o bumerán. La subarma se recarga tras cada jefe con una carga normal
+     (16 pistola y bumerán, 8 bombas y estacas). Dificultad: Fácil 0, Normal 1, Difícil 2 en cada eje; suma 0 = Fácil,
+     1-2 = Normal, 3-4 = Difícil. Los jefes no dan objetos. Probar antes si se puede saltar de jefe en jefe; no usar estados
+     guardados en el APK (llevan datos de la ROM). Oleadas descartadas.
+   - **Narración de voz aparcada:** el usuario teme desvirtuar el juego y no encaja con la OST. Si acaso, algún extra en la galería.
+7. **Galería en el launcher.** Por definir qué contiene; todo material sin derechos de terceros o aportado por el usuario.
+8. **Huevo de pascua:** en Créditos, al pulsar varias veces en el nombre del usuario, aparece el ticket de compra
    del juego. El usuario pasará la imagen más adelante.

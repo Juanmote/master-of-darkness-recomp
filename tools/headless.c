@@ -2,6 +2,7 @@
 // usage: headless rom.sms -f FRAMES [-i input.txt] [-s f1,f2] [-x ext] [-o dir] [-l state] [-S frame:state] [-a audio.raw]
 #include "../src/core/sms.h"
 #include "../src/game/mod_wide.h"
+#include "../src/app/logros.h"
 #include "../src/game/mod_enhance.h"
 #include "../src/game/mod_text.h"
 #ifdef MOD_HAVE_RECOMP
@@ -226,9 +227,19 @@ int main(int argc, char** argv) {
       printf("MS %u %d %s ammo=%d\n", fr, n, b, S.st.ram[0x1FB9]);
     }
     if (getenv("WPN") && (int)fr == atoi(getenv("WPN"))) { S.st.ram[0x1FB7] = 2; S.st.ram[0x1FB8] = 3; S.st.ram[0x1FB9] = 99; S.st.ram[0x1FBA] = 9; mod_request_hud(&E, 7); }
-    if (getenv("MUSHOOK")) for (int ev; (ev = mod_music_poll(&E)); ) printf("MUS %u %03X\n", fr, ev);
+    if (getenv("MUSHOOK")) for (int ev; (ev = mod_music_poll(&E)); ) {
+      printf("MUS %u %03X\n", fr, ev);
+      if (getenv("LOGROS") && (ev & 0xFF)) logros_music(ev & 0xFF);
+    }
     { static uint32_t lp; uint32_t p0 = E.passes; sms_run_frame(&S); if (getenv("PASSLOG")) printf("PASS %u %u\n", fr, E.passes - p0); if (getenv("LAGLOG") && E.passes == p0 && lp) printf("LAG %u cam %d\n", fr, S.st.ram[0x6A0] | (S.st.ram[0x6A1] << 8)); lp = E.passes; }
     mod_enhance_frame(&S, &E);
+    if (getenv("LOGROS")) {   // real events into the achievements; LOGROS=profile file
+      static int init; if (!init) { init = 1; logros_init(getenv("LOGROS")); }
+      logros_in_t li = {mod_events_take(&E), mod_is_gameplay(&S), S.st.ram[0x1FC0], S.st.ram[0x1FC1], (uint8_t)(S.st.ram[0x1FB7] & 3), S.st.ram[0x1FB9]};
+      logros_frame(&li);
+      for (int nl; (nl = logros_pop_new()) >= 0; ) printf("LOGRO %u %s\n", fr, logros_get(nl)->id);
+      logros_flush();
+    }
     if (getenv("EVLOG")) { uint32_t ev = mod_events_take(&E); if (ev) printf("EV %u %03X\n", fr, ev); }
     if (getenv("FAKEKILL")) for (int k = 2; k < 46; k++) if (E.slot_entry[k]) {
       uint8_t* o = &S.st.ram[(0xCA40 + k * 0x20) & 0x1FFF]; int x = (int16_t)(o[4] | (o[5] << 8));

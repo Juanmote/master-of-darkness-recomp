@@ -7,19 +7,26 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
+import android.widget.Toast;
 
 import org.libsdl.app.SDLActivity;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.io.OutputStream;
 
 public class GameActivity extends SDLActivity {
     private static final int MSG_PICK_PATCH = 0x8001;
     private static final int MSG_PICK_MUSIC = 0x8002;
     private static final int MSG_EXIT = 0x8003;
     private static final int MSG_VIBRATE = 0x8004;   // param: strength (1-255) << 16 | milliseconds
+    private static final int MSG_EXPORT_PROFILE = 0x8005;
+    private static final int MSG_IMPORT_PROFILE = 0x8006;
+    private static final int EXPORT_PROFILE = 4;
+    private static final int IMPORT_PROFILE = 5;
     private Vibrator vibrator;
     private static boolean exitRequested;
     private static final int PICK_PATCH = 2;
@@ -44,6 +51,19 @@ public class GameActivity extends SDLActivity {
             runOnUiThread(new Runnable() {
                 @Override public void run() {
                     if (android.os.Build.VERSION.SDK_INT >= 21) finishAndRemoveTask(); else finish();
+                }
+            });
+            return true;
+        }
+        if (command == MSG_EXPORT_PROFILE || command == MSG_IMPORT_PROFILE) {
+            final boolean export = command == MSG_EXPORT_PROFILE;
+            runOnUiThread(new Runnable() {
+                @Override public void run() {
+                    Intent i = new Intent(export ? Intent.ACTION_CREATE_DOCUMENT : Intent.ACTION_OPEN_DOCUMENT);
+                    i.addCategory(Intent.CATEGORY_OPENABLE);
+                    i.setType(export ? "text/plain" : "*/*");
+                    if (export) i.putExtra(Intent.EXTRA_TITLE, "MasterOfDarkness_perfil.txt");
+                    startActivityForResult(i, export ? EXPORT_PROFILE : IMPORT_PROFILE);
                 }
             });
             return true;
@@ -97,6 +117,8 @@ public class GameActivity extends SDLActivity {
         super.onActivityResult(requestCode, resultCode, data);
         if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
         if (requestCode == PICK_MUSIC) { copyMusicPack(data.getData()); return; }
+        if (requestCode == EXPORT_PROFILE) { exportProfile(data.getData()); return; }
+        if (requestCode == IMPORT_PROFILE) { importProfile(data.getData()); return; }
         if (requestCode != PICK_PATCH) return;
         try {
             byte[] p = readAll(data.getData());
@@ -132,6 +154,39 @@ public class GameActivity extends SDLActivity {
             else tmp.delete();
         } catch (Exception e) {
             tmp.delete();
+        }
+    }
+
+    /** The profile (logros.txt) goes to the file the player chose. */
+    private void exportProfile(Uri uri) {
+        boolean ok = false;
+        try {
+            File src = new File(getFilesDir(), "logros.txt");
+            if (!src.exists()) new FileOutputStream(src, true).close();
+            FileInputStream in = new FileInputStream(src);
+            OutputStream out = getContentResolver().openOutputStream(uri, "wt");
+            byte[] buf = new byte[4096];
+            int n;
+            while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+            in.close();
+            out.close();
+            ok = true;
+        } catch (Exception e) {
+            // told below
+        }
+        Toast.makeText(this, ok ? "OK" : "Error", Toast.LENGTH_SHORT).show();
+    }
+
+    /** The chosen file is left for the game, which checks it and adds it to the profile. */
+    private void importProfile(Uri uri) {
+        try {
+            byte[] p = readAll(uri);
+            if (p.length > 65536) p = new byte[0];   // a profile is tiny: the game will refuse this
+            FileOutputStream out = new FileOutputStream(new File(getFilesDir(), "perfil_importado.txt"));
+            out.write(p);
+            out.close();
+        } catch (Exception e) {
+            // no file: nothing is imported
         }
     }
 
