@@ -395,3 +395,7 @@ Cabecera TMR SEGA válida, checksum 6FE6 correcto, región SMS Export, mapper Se
 - `stageclean` y `stagenosub`: con la música 81 (fase superada) o 86, sin daño o sin gastar subarma desde que empezó la fase. `run` lleva 32 bytes libres
   para añadir campos sin invalidar los estados guardados del modo logros.
 
+## v0.10.5 — subarma y avisos de logros
+- Se cuenta como gastada solo si baja una unidad con la misma subarma: coger otra podía bajar el contador y anular "A cuerpo limpio" y "Ahorrando munición".
+- Los logros conseguidos a la vez salen en cola, uno cada 3 s: antes cada aviso tapaba al anterior.
+

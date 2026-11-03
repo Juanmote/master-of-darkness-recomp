@@ -14,7 +14,7 @@ typedef struct {
 typedef struct {
   uint32_t events;   // MOD_EV_* of this frame
   bool gameplay;     // a level is running
-  uint8_t round, stage, weapon, ammo;
+  uint8_t round, stage, weapon, sub, ammo;
 } logros_in_t;
 
 void logros_init(const char* profile_path);

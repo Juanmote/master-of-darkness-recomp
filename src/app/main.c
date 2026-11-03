@@ -18,7 +18,7 @@
 #define STBI_NO_STDIO
 #include "stb_image.h"
 
-#define APP_VERSION "0.10.4"
+#define APP_VERSION "0.10.5"
 #define KNOWN_CRC 0x96FB4D4Bu
 #define UI_W 640
 #define UI_H 360
@@ -2068,7 +2068,7 @@ int main(int argc, char** argv) {
           { uint32_t gev = mod_events_take(&E);
             if (!fast_forward && gev) vibrate_game(gev);
             if (game_mode == GM_LOGROS) {
-              logros_in_t li = {gev, mod_is_gameplay(&S), gram(RAM_ROUND), gram(RAM_STAGE), (uint8_t)(gram(RAM_WEAPON) & 3), gram(RAM_AMMO)};
+              logros_in_t li = {gev, mod_is_gameplay(&S), gram(RAM_ROUND), gram(RAM_STAGE), (uint8_t)(gram(RAM_WEAPON) & 3), (uint8_t)(gram(RAM_SUBWEAPON) & 3), gram(RAM_AMMO)};
               logros_frame(&li);
             }
           }
@@ -2080,12 +2080,17 @@ int main(int argc, char** argv) {
             else if (kind == MOD_MUSIC_FADE) music_fade();
           }
           if (cfg.triggers && !ADVANTAGES_BLOCKED && (++rw_tick & 1) == 0) rw_push();
-          if (game_mode == GM_LOGROS)
-            for (int nl; (nl = logros_pop_new()) >= 0; ) {
+          // several at once are shown one after another
+          static Uint32 logro_shown_until;
+          if (game_mode == GM_LOGROS && (Sint32)(SDL_GetTicks() - logro_shown_until) >= 0) {
+            int nl = logros_pop_new();
+            if (nl >= 0) {
               char t[96]; snprintf(t, sizeof t, T("Achievement: %s", "Logro: %s"), logros_get(nl)->name[ES]);
-              show_toast(t, 4000);
+              show_toast(t, 3000);
+              logro_shown_until = SDL_GetTicks() + 3000;
               vibrate_sample(VIB_BOSS);
             }
+          }
         }
         music_set_paused(mod_music_paused(&S));
         if (audio_dev && queued < 8 && !fast_forward) {

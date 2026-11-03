@@ -235,7 +235,7 @@ int main(int argc, char** argv) {
     mod_enhance_frame(&S, &E);
     if (getenv("LOGROS")) {   // real events into the achievements; LOGROS=profile file
       static int init; if (!init) { init = 1; logros_init(getenv("LOGROS")); }
-      logros_in_t li = {mod_events_take(&E), mod_is_gameplay(&S), S.st.ram[0x1FC0], S.st.ram[0x1FC1], (uint8_t)(S.st.ram[0x1FB7] & 3), S.st.ram[0x1FB9]};
+      logros_in_t li = {mod_events_take(&E), mod_is_gameplay(&S), S.st.ram[0x1FC0], S.st.ram[0x1FC1], (uint8_t)(S.st.ram[0x1FB7] & 3), (uint8_t)(S.st.ram[0x1FB8] & 3), S.st.ram[0x1FB9]};
       logros_frame(&li);
       for (int nl; (nl = logros_pop_new()) >= 0; ) printf("LOGRO %u %s\n", fr, logros_get(nl)->id);
       logros_flush();

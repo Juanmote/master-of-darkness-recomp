@@ -9,8 +9,9 @@
 static int fails;
 static char got[1024];
 static void drain(void) { for (int n; (n = logros_pop_new()) >= 0; ) { strcat(got, logros_get(n)->id); strcat(got, " "); } }
+static int cur_sub;
 static void fr(uint32_t ev, int round, int stage, int weapon, int ammo) {
-  logros_in_t in = {ev, true, (uint8_t)round, (uint8_t)stage, (uint8_t)weapon, (uint8_t)ammo};
+  logros_in_t in = {ev, true, (uint8_t)round, (uint8_t)stage, (uint8_t)weapon, (uint8_t)cur_sub, (uint8_t)ammo};
   logros_frame(&in); drain();
 }
 static void expect(const char* name, const char* want) {
@@ -99,6 +100,20 @@ int main(void) {
   logros_music(0x83);                    // the title music sounds between rounds too
   fr(0, 1, 0, 1, 0);
   expect("title music between rounds keeps the game", "round1 roundclean roundnosub ");
+
+  // picking up another subweapon with a lower counter is not using one
+  fresh(P);
+  logros_music(0x87);
+  cur_sub = 0; fr(0, 0, 0, 1, 16);
+  cur_sub = 3; fr(0, 0, 0, 1, 8);
+  logros_music(0x81); drain();
+  expect("swapping subweapon does not count as using it", "stageclean stagenosub ");
+  cur_sub = 0;
+  fresh(P);
+  logros_music(0x87);
+  fr(0, 0, 0, 1, 16); fr(0, 0, 0, 1, 15);
+  logros_music(0x81); drain();
+  expect("throwing one does", "stageclean ");
 
   // a saved state brings back how the game was going
   fresh(P);

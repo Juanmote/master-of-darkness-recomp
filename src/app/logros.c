@@ -42,7 +42,7 @@ static int pending[L_COUNT], n_pending;
 
 static struct {
   bool started, valid;        // valid: this game began at the first stage
-  int round, stage, prev_ammo;
+  int round, stage, prev_ammo, prev_sub;
   bool round_done;            // its achievements were already given
   int deaths, continues;
   bool round_hurt, round_sub, stage_hurt, stage_sub;
@@ -188,6 +188,7 @@ void logros_frame(const logros_in_t* in) {
       run.valid = in->round == 0 && in->stage == 0;
       run.round = in->round;
       run.prev_ammo = in->ammo;
+      run.prev_sub = in->sub;
     } else if (in->round != run.round) {
       if (run.valid && in->round == run.round + 1) { if (!run.round_done) finish_round(run.round); }
       else run.valid = false;
@@ -199,8 +200,10 @@ void logros_frame(const logros_in_t* in) {
     }
     if (in->stage != run.stage) run.stage_hurt = run.stage_sub = false;
     run.stage = in->stage;
-    if (in->ammo < run.prev_ammo) run.round_sub = run.stage_sub = true;
+    // one less of the same subweapon: picking up another one can also lower the counter
+    if (in->sub == run.prev_sub && in->ammo + 1 == run.prev_ammo) run.round_sub = run.stage_sub = true;
     run.prev_ammo = in->ammo;
+    run.prev_sub = in->sub;
   }
   uint32_t ev = in->events;
   if (ev & MOD_EV_KILL) {
