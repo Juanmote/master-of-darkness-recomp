@@ -1,6 +1,6 @@
 # Estado del proyecto — Master of Darkness Re-Master-Ed
 
-Última actualización: 3 de noviembre de 2026. Versión publicada: **v0.10.2**.
+Última actualización: 3 de noviembre de 2026. Versión publicada: **v0.10.3**.
 
 Launcher para Android (y escritorio) que ejecuta *Master of Darkness* (Master System) desde la ROM del
 usuario, con 16:9 real, trucos, opciones de juego, filtros, paletas, pack de música y controles táctiles.

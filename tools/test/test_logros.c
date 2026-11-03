@@ -82,6 +82,17 @@ int main(void) {
   expect("back to the intro forgets the game", "");
 
   fresh(P);
+  logros_music(0x87);
+  fr(0, 0, 0, 1, 0);
+  logros_music(0x81); expect("a stage clear is not a round clear", "");
+  logros_music(0x86); drain(); expect("round clear music on another stage counts nothing", "");
+  fr(0, 0, 2, 1, 0);
+  logros_music(0x86); drain();
+  expect("round clear gives them at once", "round1 roundclean roundnosub ");
+  logros_music(0x83); fr(0, 1, 0, 1, 0);
+  expect("and not again on the next round", "");
+
+  fresh(P);
   logros_music(0x87); logros_music(0x83);
   fr(0, 0, 0, 1, 0);
   logros_music(0x83);                    // the title music sounds between rounds too

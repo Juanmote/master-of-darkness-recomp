@@ -15,8 +15,8 @@ static const logro_t list[L_COUNT] = {
   {"final", {"End of the curse", "Fin de la maldición"}, {"Finish the game", "Termina el juego"}},
   {"nocont", {"No second chances", "Sin segundas oportunidades"}, {"Finish the game without continuing", "Termina el juego sin continuar"}},
   {"nodeath", {"Immortal", "Inmortal"}, {"Finish the game without losing a life", "Termina el juego sin perder una vida"}},
-  {"roundclean", {"Not a scratch", "Ni un rasguño"}, {"Clear a round without taking damage", "Supera una ronda sin recibir daño"}},
-  {"roundnosub", {"Bare hands", "A cuerpo limpio"}, {"Clear a round without using a subweapon", "Supera una ronda sin gastar subarma"}},
+  {"roundclean", {"Not a scratch", "Ni un rasguño"}, {"Clear a whole round without taking damage", "Supera una ronda entera sin recibir daño"}},
+  {"roundnosub", {"Bare hands", "A cuerpo limpio"}, {"Clear a whole round without using a subweapon", "Supera una ronda entera sin gastar subarma"}},
   {"bossclean", {"Untouchable", "Intocable"}, {"Beat a boss without taking damage", "Vence a un jefe sin recibir daño"}},
   {"bossknife", {"They got you", "Te la colaron"}, {"Beat a boss with the knife", "Vence a un jefe con el cuchillo"}},
   {"bossaxe", {"Lumberjack", "Leñador"}, {"Beat a boss with the axe", "Vence a un jefe con el hacha"}},
@@ -27,6 +27,8 @@ static const logro_t list[L_COUNT] = {
 #define LAST_ROUND 4          // rounds are 0..4 in the game's RAM
 #define MUS_STORY 0x8D        // story pages, and the ending
 #define MUS_CONTINUE 0x82
+#define MUS_ROUND_CLEAR 0x86  // the boss of a round's last stage has fallen
+#define LAST_STAGE 2          // of rounds 0..3 (B9CB in the game's stage table)
 #define MUS_INTRO 0x87        // a new game: the title music (83) also sounds between rounds
 
 static char path[1200];
@@ -37,7 +39,8 @@ static int pending[L_COUNT], n_pending;
 
 static struct {
   bool started, valid;        // valid: this game began at the first stage
-  int round, prev_ammo;
+  int round, stage, prev_ammo;
+  bool round_done;            // its achievements were already given
   int deaths, continues;
   bool round_hurt, round_sub;
   bool boss_on, boss_hurt, last_boss_down;
@@ -152,6 +155,10 @@ static void finish_round(int r) {
 
 void logros_music(int id) {
   if (id == MUS_INTRO) logros_reset_run();
+  else if (id == MUS_ROUND_CLEAR && run.valid && run.round < LAST_ROUND && run.stage == LAST_STAGE && !run.round_done) {
+    finish_round(run.round);
+    run.round_done = true;
+  }
   else if (id == MUS_CONTINUE) run.continues++;
   else if (id == MUS_STORY && run.valid && run.round == LAST_ROUND && run.last_boss_down) {
     // there are no story pages after the last round: this is the ending
@@ -171,12 +178,14 @@ void logros_frame(const logros_in_t* in) {
       run.round = in->round;
       run.prev_ammo = in->ammo;
     } else if (in->round != run.round) {
-      if (run.valid && in->round == run.round + 1) finish_round(run.round);
+      if (run.valid && in->round == run.round + 1) { if (!run.round_done) finish_round(run.round); }
       else run.valid = false;
       run.round = in->round;
+      run.round_done = false;
       run.round_hurt = run.round_sub = false;
       run.boss_on = run.last_boss_down = false;
     }
+    run.stage = in->stage;
     if (in->ammo < run.prev_ammo) run.round_sub = true;
     run.prev_ammo = in->ammo;
   }

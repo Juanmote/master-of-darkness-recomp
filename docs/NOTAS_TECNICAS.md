@@ -387,3 +387,7 @@ Cabecera TMR SEGA válida, checksum 6FE6 correcto, región SMS Export, mapper Se
 - **Para probar jefes:** `-p F-F:DFC1=02 -p F-F:C90E=03` lleva al jefe de la ronda, con su diálogo (hay que pulsar botón). Estados de `C90E`: 1 fase
   superada, 3 jefe. Tabla de ronda y fase a `B9BE` (fase+1), `B9CB` (ronda+1) y `B9DC` (final).
 
+## v0.10.3 — los logros de ronda saltan al vencer al jefe
+- Antes saltaban al empezar la ronda siguiente, tras el recuento y las páginas de historia. Ahora, con la música 86 (ronda superada) en la última
+  fase de la ronda. Una ronda son sus 3 fases (`R1-1` a `R1-3`); la 81 es fase superada y no da nada.
+
