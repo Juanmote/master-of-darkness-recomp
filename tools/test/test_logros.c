@@ -29,7 +29,7 @@ static void boss(int round, int weapon, int ammo, bool hurt) {
 int main(void) {
   const char* P = "test_perfil.txt", *Q = "test_perfil2.txt";
   fresh(P);
-  logros_music(0x83);
+  logros_music(0x87);
   fr(0, 0, 0, 0, 0); fr(MOD_EV_HURT, 0, 0, 0, 0);
   boss(0, 1, 0, false);
   expect("boss without damage (the round was hurt)", "bossclean ");
@@ -60,30 +60,37 @@ int main(void) {
   expect("flawless ending", "final nocont nodeath ");
 
   fresh(P);
-  logros_music(0x83);
+  logros_music(0x87);
   fr(0, 2, 0, 3, 0);   // a game started from the hidden menu
   boss(2, 3, 0, false);
   fr(0, 3, 0, 3, 0);
   expect("a game not started at the first stage earns nothing", "");
 
   fresh(P);
-  logros_music(0x83);
+  logros_music(0x87);
   fr(0, 0, 0, 3, 0);
   logros_music(0x82);
   fr(0, 3, 0, 3, 0);
   expect("skipping rounds earns nothing", "");
 
   fresh(P);
-  logros_music(0x83);
+  logros_music(0x87);
   fr(0, 0, 0, 1, 0);
   fr(0, 1, 0, 1, 0); got[0] = 0;
-  logros_music(0x83);
+  logros_music(0x87);
   fr(0, 1, 0, 1, 0); fr(0, 2, 0, 1, 0);
-  expect("back to the title forgets the game", "");
+  expect("back to the intro forgets the game", "");
+
+  fresh(P);
+  logros_music(0x87); logros_music(0x83);
+  fr(0, 0, 0, 1, 0);
+  logros_music(0x83);                    // the title music sounds between rounds too
+  fr(0, 1, 0, 1, 0);
+  expect("title music between rounds keeps the game", "round1 roundclean roundnosub ");
 
   // a saved state brings back how the game was going
   fresh(P);
-  logros_music(0x83); fr(0, 0, 0, 1, 0);
+  logros_music(0x87); fr(0, 0, 0, 1, 0);
   { char st[512]; if (logros_run_size() > sizeof st) return 1;
     logros_run_save(st);
     fr(MOD_EV_HURT, 0, 0, 1, 0);          // hit after saving...
@@ -101,7 +108,7 @@ int main(void) {
   // a second profile merges: nothing is lost
   rename(P, Q);
   fresh(P);
-  logros_music(0x83); fr(0, 0, 0, 1, 0); boss(0, 1, 0, true); fr(0, 1, 0, 1, 0); got[0] = 0;
+  logros_music(0x87); fr(0, 0, 0, 1, 0); boss(0, 1, 0, true); fr(0, 1, 0, 1, 0); got[0] = 0;
   int g = logros_merge_file(Q);
   if (g != 2 || logros_kills() != 1000 || logros_unlocked_count() != 4) { printf("FAIL merge %d %u %d\n", g, logros_kills(), logros_unlocked_count()); fails++; } else printf("ok   merge\n");
   logros_init(P);

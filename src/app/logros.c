@@ -27,8 +27,7 @@ static const logro_t list[L_COUNT] = {
 #define LAST_ROUND 4          // rounds are 0..4 in the game's RAM
 #define MUS_STORY 0x8D        // story pages, and the ending
 #define MUS_CONTINUE 0x82
-#define MUS_TITLE 0x83
-#define MUS_INTRO 0x87
+#define MUS_INTRO 0x87        // a new game: the title music (83) also sounds between rounds
 
 static char path[1200];
 static bool got[L_COUNT];
@@ -152,7 +151,7 @@ static void finish_round(int r) {
 }
 
 void logros_music(int id) {
-  if (id == MUS_TITLE || id == MUS_INTRO) logros_reset_run();
+  if (id == MUS_INTRO) logros_reset_run();
   else if (id == MUS_CONTINUE) run.continues++;
   else if (id == MUS_STORY && run.valid && run.round == LAST_ROUND && run.last_boss_down) {
     // there are no story pages after the last round: this is the ending

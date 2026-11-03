@@ -1,6 +1,6 @@
 # Estado del proyecto — Master of Darkness Re-Master-Ed
 
-Última actualización: 3 de noviembre de 2026. Versión publicada: **v0.10.1**.
+Última actualización: 3 de noviembre de 2026. Versión publicada: **v0.10.2**.
 
 Launcher para Android (y escritorio) que ejecuta *Master of Darkness* (Master System) desde la ROM del
 usuario, con 16:9 real, trucos, opciones de juego, filtros, paletas, pack de música y controles táctiles.
@@ -102,9 +102,8 @@ Probado por el usuario y compañeros en Odin 3 Max, Retroid Pocket Classic y mó
 
 ## Errores y puntos pendientes de comprobar
 
-- **Logros sin confirmar con una partida real:** jefes y final no se han podido alcanzar en el emulador (el bot no
-  llega). La lógica está probada con partidas simuladas (`tools/test/test_logros.c`) y el paso de ronda con el juego real
-  forzando la ronda. Exportar e importar solo existe en Android y no se ha probado en un aparato.
+- **Logros:** jefe real, recuento y paso de ronda comprobados en el emulador (se llega a un jefe poniendo `DFC1=02` y `C90E=03` en
+  plena partida, en `headless` con `-p`). Sin comprobar con una partida real: el final y el jefe de la ronda 5, y exportar e importar en un aparato.
 - **Sin probar en consola:** vibración en móviles sin control de intensidad (solo notan la duración), icono
   nuevo y ajustes remasterizados de v0.9.9, acentos de v0.9.10 (comprobados en el emulador).
 - **Confirmado por el usuario (2-11-2026):** OST 2 pista 89, y los enemigos mayores ya no reaparecen. Los menores
@@ -226,6 +225,8 @@ apagadas, la huella no debe cambiar.
      1-2 = Normal, 3-4 = Difícil. Los jefes no dan objetos. Probar antes si se puede saltar de jefe en jefe; no usar estados
      guardados en el APK (llevan datos de la ROM). Oleadas descartadas.
    - **Narración de voz aparcada:** el usuario teme desvirtuar el juego y no encaja con la OST. Si acaso, algún extra en la galería.
-7. **Galería en el launcher.** Por definir qué contiene; todo material sin derechos de terceros o aportado por el usuario.
-8. **Huevo de pascua:** en Créditos, al pulsar varias veces en el nombre del usuario, aparece el ticket de compra
+7. **Subir y bajar de las escaleras al saltar** (salto + arriba para agarrarse, salto + abajo para soltarse): petición del usuario, para más
+   adelante. Debe ser opcional o quedar claro cómo afecta a logros y modos.
+8. **Galería en el launcher.** Por definir qué contiene; todo material sin derechos de terceros o aportado por el usuario.
+9. **Huevo de pascua:** en Créditos, al pulsar varias veces en el nombre del usuario, aparece el ticket de compra
    del juego. El usuario pasará la imagen más adelante.

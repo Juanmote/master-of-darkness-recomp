@@ -18,7 +18,7 @@
 #define STBI_NO_STDIO
 #include "stb_image.h"
 
-#define APP_VERSION "0.10.1"
+#define APP_VERSION "0.10.2"
 #define KNOWN_CRC 0x96FB4D4Bu
 #define UI_W 640
 #define UI_H 360
@@ -683,31 +683,50 @@ static void menu_label(int i, char* out, size_t n) {
 // loaded where achievements count. These also carry how the game was going (logros_run_*).
 static void state_file(char* out, size_t n) { cfg_path(out, n, game_mode == GM_LOGROS ? "estado_logros.sav" : "estado1.sav"); }
 
+// After the state itself: how the achievements game was going (only in that mode) and the music.
+typedef struct { int32_t id, from_pack; } state_music_t;
+
 static void do_save_state(void) {
   char p[1100]; state_file(p, sizeof p);
-  size_t base = sms_state_size(), n = base + (game_mode == GM_LOGROS ? logros_run_size() : 0);
+  size_t base = sms_state_size(), run = game_mode == GM_LOGROS ? logros_run_size() : 0;
+  size_t n = base + run + sizeof(state_music_t);
   uint8_t* buf = malloc(n);
   sms_save_state(&S, buf);
-  if (game_mode == GM_LOGROS) logros_run_save(buf + base);
+  if (run) logros_run_save(buf + base);
+  state_music_t m = {music_current, cfg.music_pack > 0 && music_has(music_current)};
+  memcpy(buf + base + run, &m, sizeof m);
   SDL_RWops* rw = SDL_RWFromFile(p, "wb");
   if (rw) { SDL_RWwrite(rw, buf, 1, n); SDL_RWclose(rw); show_toast(T("State saved", "Estado guardado"), 1500); }
   else show_toast(T("Could not save the state", "No se pudo guardar el estado"), 2000);
   free(buf);
 }
 
+// The game's own music comes back with the state; a track of a music pack has to be started again.
+static void restore_state_music(const state_music_t* m) {
+  music_stop();
+  if (m->id <= 0) return;
+  music_current = m->id;
+  int pack_now = cfg.music_pack > 0 && music_has(m->id);
+  if (pack_now != (m->from_pack != 0)) mod_music_request(&S, m->id);   // the source changed since it was saved
+  else if (pack_now) music_play(m->id);
+}
+
 static void do_load_state(void) {
   char p[1100]; state_file(p, sizeof p);
   size_t n = 0;
   uint8_t* buf = load_file(p, &n);
-  int ok = 0;
-  if (buf && game_mode == GM_LOGROS) {
-    // only a state saved in this mode, with its game known
-    size_t base = sms_state_size();
-    ok = n == base + logros_run_size() && sms_load_state(&S, buf, base);
-    if (ok) logros_run_load(buf + base);
-  } else if (buf) ok = sms_load_state(&S, buf, n);
-  if (ok) { music_stop(); mod_respawn_forget_slots(&E); show_toast(T("State loaded", "Estado cargado"), 1500); }
-  else show_toast(T("There is no saved state", "No hay ningún estado guardado"), 2000);
+  size_t base = sms_state_size(), run = game_mode == GM_LOGROS ? logros_run_size() : 0;
+  state_music_t m = {0, 0};
+  // states saved by v0.10.1 and earlier have no music after them
+  int has_music = n == base + run + sizeof m;
+  int ok = buf && (has_music || n == base + run) && sms_load_state(&S, buf, base);
+  if (ok) {
+    if (run) logros_run_load(buf + base);
+    if (has_music) memcpy(&m, buf + base + run, sizeof m);
+    restore_state_music(&m);
+    mod_respawn_forget_slots(&E);
+    show_toast(T("State loaded", "Estado cargado"), 1500);
+  } else show_toast(T("There is no saved state", "No hay ningún estado guardado"), 2000);
   free(buf);
 }
 

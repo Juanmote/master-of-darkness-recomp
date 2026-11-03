@@ -378,3 +378,12 @@ Cabecera TMR SEGA válida, checksum 6FE6 correcto, región SMS Export, mapper Se
   cargar una partida con trucos o empezada en cualquier ronda. El archivo lleva detrás el seguimiento de la partida (`logros_run_*`): al
   cargar vuelven también las muertes y golpes de ese momento, y `state_loaded` queda marcado para el logro de Survivor sin estados.
 
+## v0.10.2 — logros de ronda y música al cargar
+- **Logros:** la música 83 no es solo la del título: también suena entre rondas (81 o 86, recuento, 83, 85, música de la ronda). Se tomaba
+  por partida nueva, y la partida quedaba como no empezada en la primera fase: ni ronda superada, ni ninguno de los logros de partida
+  posteriores. Partida nueva es solo la 87 (arranque, o responder NO en continuar; SÍ no la pide y deja la ronda, y pone fase 0 y armas a 0).
+- **Música al cargar:** el estado guarda la pista pedida y si venía de un pack. Al cargar, una pista de pack se vuelve a empezar; la original
+  vuelve con el estado. Si la fuente cambió desde que se guardó, se le pide la pista al juego. Los estados anteriores se siguen cargando.
+- **Para probar jefes:** `-p F-F:DFC1=02 -p F-F:C90E=03` lleva al jefe de la ronda, con su diálogo (hay que pulsar botón). Estados de `C90E`: 1 fase
+  superada, 3 jefe. Tabla de ronda y fase a `B9BE` (fase+1), `B9CB` (ronda+1) y `B9DC` (final).
+
