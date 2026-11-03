@@ -228,6 +228,16 @@ apagadas, la huella no debe cambiar.
    - **Narración de voz aparcada:** el usuario teme desvirtuar el juego y no encaja con la OST. Si acaso, algún extra en la galería.
 7. **Subir y bajar de las escaleras al saltar** (salto + arriba para agarrarse, salto + abajo para soltarse): petición del usuario, para más
    adelante. Debe ser opcional o quedar claro cómo afecta a logros y modos.
-8. **Galería en el launcher.** Por definir qué contiene; todo material sin derechos de terceros o aportado por el usuario.
-9. **Huevo de pascua:** en Créditos, al pulsar varias veces en el nombre del usuario, aparece el ticket de compra
+8. **Descripciones en el menú "Jugar":** que todas las opciones tengan su descripción abajo, aunque sea obvia. Hoy solo la tienen tres.
+9. **Tres logros más, para la próxima versión con más cosas:**
+   - Descubrir un objeto secreto en una pared (hay una poción nada más empezar y un hacha más adelante). Falta localizar en el juego cómo salen
+     esos objetos y distinguirlos de los normales.
+   - Usar las 4 armas principales (momento de atacar con cada `DFB7`) y usar las 4 subarmas (lanzar con cada `DFB8`). Propuesta: acumulado entre
+     partidas, guardado en el perfil.
+10. **Pantalla de inicio con 7 secciones, con Jugar en el medio:** añadir Galería y Manual. Hacen falta los botones en español e inglés.
+   - **Galería:** el usuario pasará el material.
+   - **Manual:** el usuario escaneará el suyo original.
+   - **Ojo con el 100 % legal:** material con derechos de Sega (manual, carátula...) no debería ir dentro del APK. Propuesta: pack opcional aparte, como la
+     música, y dentro del APK solo lo que sea del usuario. Pendiente de que decida.
+11. **Huevo de pascua:** en Créditos, al pulsar varias veces en el nombre del usuario, aparece el ticket de compra
    del juego. El usuario pasará la imagen más adelante.
