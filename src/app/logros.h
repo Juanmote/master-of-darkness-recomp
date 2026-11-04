@@ -18,6 +18,7 @@ typedef struct {
 } logros_in_t;
 
 void logros_init(const char* profile_path);
+void logros_switch_profile(const char* profile_path);   // another profile file; the game being played goes on
 int logros_count(void);
 int logros_unlocked_count(void);
 const logro_t* logros_get(int i);

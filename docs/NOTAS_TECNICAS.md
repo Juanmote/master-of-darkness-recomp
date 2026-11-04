@@ -433,3 +433,14 @@ Cabecera TMR SEGA válida, checksum 6FE6 correcto, región SMS Export, mapper Se
   Difícil: siempre. Estados propios por dificultad (`estado_survivor_N.sav`).
 - headless: `SVLOCK=1` (bloqueo de Difícil), `GPLOG=1` (cambios de partida/energía). Modo de prueba: `MOD_SVOVER=dificultad`.
 - Huellas `-H` idénticas a v0.11.0 con y sin mejoras.
+
+## v0.12.1 (4-11-2026)
+- **8:7 sin deformar:** vuelve a Ajustar al elegirlo. Llenar una pantalla casi cuadrada sin deformar no se puede: la imagen 8:7 es más ancha que la
+  pantalla y, al contrario que a los lados en 16:9, encima y debajo del escenario no hay nada en el mapa (el tramo tiene 10 filas de metatiles, la
+  altura exacta de la pantalla). Opción nueva **Imagen › Bandas vacías: Negras / Ambiente** (`cfg.bands`, al elegir 8:7 se pone Ambiente): la imagen
+  se reduce a 16x12 bloques de color medio (`draw_ambient`, en CPU para que no parpadee) y se estira oscurecida detrás. Vale para cualquier formato.
+- **Survivor sin guardar ni cargar a mano** (menú `PAGE_MAIN_SURVIVOR`). Al empezar cada fase se guarda solo (`survivor_fase_N.sav`, primer fotograma
+  de partida con otra ronda/fase). Al perder la vida: A repetir fase (carga ese guardado; cuenta como estado cargado y quita "Sin red"), X reiniciar,
+  B inicio. Boss Rush: sin guardados (decisión del usuario).
+- **TEMPORAL, quitar antes de la versión final:** `test_inv` / "Invencible (pruebas)" en los menús de modo logros y Survivor: `DFB4` a FF en partida,
+  R2 acelera, y los logros van a `logros_pruebas.txt` (`logros_switch_profile`) para no mezclarse con el perfil real.

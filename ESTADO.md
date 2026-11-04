@@ -1,6 +1,6 @@
 # Estado del proyecto — Master of Darkness Re-Master-Ed
 
-Última actualización: 4 de noviembre de 2026. Versión publicada: **v0.12.0**.
+Última actualización: 4 de noviembre de 2026. Versión publicada: **v0.12.1**.
 
 Launcher para Android (y escritorio) que ejecuta *Master of Darkness* (Master System) desde la ROM del
 usuario, con 16:9 real, trucos, opciones de juego, filtros, paletas, pack de música y controles táctiles.
@@ -37,8 +37,9 @@ arranca, pero las mejoras se desactivan solas (se comprueban los bytes de cada p
 
 **Imagen**
 - Formatos 16:9 panorámico real (43 px de escenario extra por lado, reconstruidos del mapa del juego en RAM),
-  4:3 y 8:7 (tele de tubo). Al elegir 8:7 el escalado pasa a Estirar (v0.12.0, petición del usuario): llena la pantalla sin
-  mantener la proporción; con "Ajustar" se conserva.
+  4:3 y 8:7 (tele de tubo). Al elegir 8:7 se pone Ajustar (sin deformar) y "Bandas vacías: Ambiente" (v0.12.1): las bandas
+  que quedan en pantallas casi cuadradas toman los colores de la escena, difuminados y oscuros. Llenarla sin deformar no es posible (encima
+  y debajo del escenario no hay mapa). Bandas vacías: Negras o Ambiente, en cualquier formato.
 - En 4:3 y 8:7 se rellena la columna de 8 px que el juego tapa a la izquierda. Fuera de la partida (v0.12.0) se rellena si el fondo
   junto a ella es de un color liso (pantalla roja del final).
 - Escalado: ajustar, entero, estirar. Margen de pantalla para móviles: no, pequeño o mediano.
@@ -97,8 +98,11 @@ arranca, pero las mejoras se desactivan solas (se comprueban los bytes de cada p
   Fácil, Normal y Difícil, cada uno da también los más fáciles, y terminar sin cargar estados).
 - **Modo Survivor (v0.12.0):** todo el juego con una sola vida (marcador V=00; las vidas extra no suman). Mismos bloqueos que el modo logros y
   los logros cuentan. Se elige dificultad: Fácil, la energía se recupera como siempre; Normal, solo al empezar la ronda siguiente a cada jefe;
-  Difícil, nunca. Donde no cura, la poción no hace nada (solo suena) y cada fase empieza con la energía que se tenía. Al perder la vida sale
-  "Has perdido tu única vida" con la ronda alcanzada: A otra vez, B pantalla de inicio. Guardar y cargar permitidos, con ranura por dificultad.
+  Difícil, nunca. Donde no cura, la poción no hace nada (solo suena) y cada fase empieza con la energía que se tenía. Sin guardar ni cargar a mano (v0.12.1):
+  se guarda solo al empezar cada fase. Al perder la vida sale "Has perdido tu única vida" con la ronda alcanzada: A repetir fase, X reiniciar,
+  B pantalla de inicio. Repetir fase quita el logro "Sin red".
+- **TEMPORAL (quitar antes de la versión final):** "Invencible (pruebas)" en el menú del modo logros y de Survivor, para que el usuario pueda
+  comprobar los logros difíciles. R2 acelera y los logros van a un perfil de pruebas aparte (`logros_pruebas.txt`); al apagarlo vuelve el suyo.
 - Perfil `logros.txt` con comprobación: exportar a un archivo; importar suma lo que falte, nunca quita nada.
 
 **Sonido**
@@ -120,9 +124,11 @@ Probado por el usuario y compañeros en Odin 3 Max, Retroid Pocket Classic y mó
 
 ## Errores y puntos pendientes de comprobar
 
+- **v0.12.1 sin probar en consola:** bandas Ambiente en 8:7, guardado de Survivor al empezar fase y repetir fase, modo pruebas.
 - **v0.12.0 sin probar en consola:** Survivor (sobre todo Normal y Difícil en las fases y con pociones), letras sueltas del jefe 4-3 (en el
   emulador ya no salen, y los acentos siguen en intro, historia y final), franja del final (no se llegó a esa pantalla en el emulador: el arreglo
   vale para cualquier fondo liso), visor con botones abajo, 8:7 con Estirar.
+- **Boss Rush (decisión del usuario):** sin guardar ni cargar.
 - **Survivor, por decidir con el usuario:** qué hacer con las pociones que no curan (ahora no hacen nada; podrían dar puntos).
 - **Logros (4-11-2026):** el usuario ha terminado el juego en la Classic y tiene todos menos 1000 enemigos (el del bloque oculto lo sacó enseguida).
 - **Logros:** falta probar exportar e importar en un aparato.
@@ -253,3 +259,4 @@ apagadas, la huella no debe cambiar.
 8. **Hecho en v0.11.0:** descripciones del menú "Jugar", 4 logros nuevos, pantalla de inicio con Galería y Manual, huevo de pascua.
 9. **Hecho en v0.12.0:** letras sueltas en diálogos de jefe, franja del final, visor, 8:7 con Estirar, logros ordenados, modo Survivor.
    Siguiente: probar Survivor en consola, luego iconos de logros, Boss Rush (y sus logros) y escaleras.
+10. **Antes de la versión final:** quitar "Invencible (pruebas)" (`test_inv` en `main.c`).

@@ -19,7 +19,7 @@
 #include "stb_image.h"
 
 #include "miniz.h"
-#define APP_VERSION "0.12.0"
+#define APP_VERSION "0.12.1"
 #define KNOWN_CRC 0x96FB4D4Bu
 #define UI_W 640
 #define UI_H 360
@@ -63,11 +63,12 @@ typedef struct {
   int margin;      // empty border around the picture: 0 none, 1 small, 2 medium (rounded corners, notches)
   int palette;     // PAL_*: how the console's 64 colours are shown
   int vib[6];      // vibration strength per kind of moment (VIB_*): 0 off, 1 soft, 2 medium, 3 strong
+  int bands;       // empty screen around the picture: 0 black, 1 "ambient" (the picture's own colours, blurred and dark)
 } config_t;
 
 // A new installation starts as the "remastered" version (see apply_remaster)
 static config_t cfg = {1, 0, SCALE_FIT, FILTER_SCANLINES, 8, SDL_CONTROLLER_BUTTON_A, SDL_CONTROLLER_BUTTON_Y, 1, -1, 0, 0, 0, 1, MOD_DIFF_NORMAL, MOD_RESPAWN_ON, 0, 0, 2, 1, -1, 0, 0, 1, 0, PAL_ORIGINAL,
-                       {1, 1, 2, 3, 1, 3}};
+                       {1, 1, 2, 3, 1, 3}, 0};
 enum { VIB_TOUCH, VIB_SWING, VIB_HIT, VIB_HURT, VIB_LAND, VIB_BOSS, VIB_COUNT };
 static const char* vib_keys[VIB_COUNT] = {"vib_touch", "vib_swing", "vib_hit", "vib_hurt", "vib_land", "vib_boss"};
 static const int vib_recommended[VIB_COUNT] = {1, 1, 2, 3, 1, 3};   // same as the initial cfg.vib
@@ -110,6 +111,7 @@ static void cfg_load(void) {
     else if (sscanf(line, "multi_shot=%d", &v) == 1) cfg.multi_shot = v ? 1 : 0;
     else if (sscanf(line, "margin=%d", &v) == 1 && v >= 0 && v <= 2) cfg.margin = v;
     else if (sscanf(line, "palette=%d", &v) == 1 && v >= 0 && v < PAL_COUNT) cfg.palette = v;
+    else if (sscanf(line, "bands=%d", &v) == 1) cfg.bands = v ? 1 : 0;
     else {
       for (int k = 0; k < VIB_COUNT; k++) {
         char fmt[24]; snprintf(fmt, sizeof fmt, "%s=%%d", vib_keys[k]);
@@ -127,10 +129,10 @@ static void cfg_save(void) {
   if (!f) return;
   fprintf(f, "widescreen=%d\ncrt=%d\nscale=%d\nfilter=%d\nvolume=%d\njump_btn=%d\nsub_btn=%d\nturbo=%d\nlang=%d\n"
              "suit=%d\ncheat_inv=%d\ncheat_lives=%d\ntriggers=%d\ndifficulty=%d\nrespawn=%d\ndbl_jump=%d\nmusic_pack=%d\ntouch=%d\ntouch_size=%d\n"
-             "ui_lang=%d\nammo_inf=%d\nlock_weapon=%d\nmulti_shot=%d\nmargin=%d\npalette=%d\n",
+             "ui_lang=%d\nammo_inf=%d\nlock_weapon=%d\nmulti_shot=%d\nmargin=%d\npalette=%d\nbands=%d\n",
           cfg.widescreen, cfg.crt, cfg.scale, cfg.filter, cfg.volume, cfg.jump_btn, cfg.sub_btn, cfg.turbo, cfg.lang,
           cfg.suit, cfg.cheat_inv, cfg.cheat_lives, cfg.triggers, cfg.difficulty, cfg.respawn, cfg.dbl_jump, cfg.music_pack, cfg.touch, cfg.touch_size,
-          cfg.ui_lang, cfg.ammo_inf, cfg.lock_weapon, cfg.multi_shot, cfg.margin, cfg.palette);
+          cfg.ui_lang, cfg.ammo_inf, cfg.lock_weapon, cfg.multi_shot, cfg.margin, cfg.palette, cfg.bands);
   for (int k = 0; k < VIB_COUNT; k++) fprintf(f, "%s=%d\n", vib_keys[k], cfg.vib[k]);
   fclose(f);
 }
@@ -435,6 +437,9 @@ static int locked_weapon = -1, locked_sub = -1;   // weapon lock cheat (-1: take
 enum { GM_NORMAL, GM_LOGROS, GM_SURVIVOR };
 static int game_mode = GM_NORMAL;
 static int sv_diff = 1;    // difficulty of the Survivor game
+// TEMPORARY, for testing the achievements (remove before the final version): invincible in the modes with
+// achievements, R2 fast forwards, and everything goes to a separate profile (logros_pruebas.txt)
+static int test_inv;
 #define ADVANTAGES_BLOCKED (game_mode != GM_NORMAL)
 #define LOGROS_ON (game_mode != GM_NORMAL)
 
@@ -442,7 +447,7 @@ static int cheats_ok(void) { return rom_crc == KNOWN_CRC && mod_is_gameplay(&S);
 
 static void cheats_frame(void) {
   if (rom_crc != KNOWN_CRC) return;
-  if (ADVANTAGES_BLOCKED) { gram_w(RAM_INVINCIBLE, 0); return; }   // also the debug menu hidden in the game
+  if (ADVANTAGES_BLOCKED) { gram_w(RAM_INVINCIBLE, test_inv && mod_is_gameplay(&S) ? 0xFF : 0); return; }   // also the game's hidden debug menu
   if (warp_pending) {
     gram_w(RAM_ROUND, start_points[start_sel][0]);
     gram_w(RAM_STAGE, start_points[start_sel][1]);
@@ -524,32 +529,33 @@ enum {
   MI_RESUME, MI_SAVE, MI_LOAD, MI_GAME, MI_CHEATS, MI_VIDEO, MI_OPTIONS, MI_RESET, MI_QUIT,
   MI_CONTROLS, MI_HOME, MI_TOUCH, MI_TOUCHSIZE,
   MI_DIFF, MI_RESPAWN, MI_DJUMP,
-  MI_FORMAT, MI_SCALE, MI_FILTER, MI_PALETTE, MI_SUIT, MI_MARGIN,
+  MI_FORMAT, MI_SCALE, MI_FILTER, MI_PALETTE, MI_SUIT, MI_MARGIN, MI_BANDS,
   MI_VOLUME, MI_BUTTONS, MI_SUBBTN, MI_TURBO, MI_TRIGGERS, MI_LANG, MI_MUSIC, MI_MUSPACK, MI_MUSTEST,
   MI_INV, MI_LIVES, MI_WEAPON, MI_SUB, MI_AMMO, MI_MULTI, MI_LOCK, MI_START, MI_WARP, MI_UILANG, MI_ORIGINAL,
   MI_REMASTER, MI_VIBRA, MI_VIB0, MI_VIB_LAST = MI_VIB0 + VIB_COUNT - 1,
   MI_MODE_NORMAL, MI_MODE_LOGROS, MI_LOGROS_LIST, MI_PROFILE_EXPORT, MI_PROFILE_IMPORT,
-  MI_MODE_SURVIVOR, MI_SV_EASY, MI_SV_NORMAL, MI_SV_HARD,
+  MI_MODE_SURVIVOR, MI_SV_EASY, MI_SV_NORMAL, MI_SV_HARD, MI_TESTINV,
   MI_BACK
 };
-enum { PAGE_MAIN, PAGE_VIDEO, PAGE_OPTIONS, PAGE_CHEATS, PAGE_GAME, PAGE_CONTROLS, PAGE_HOME, PAGE_VIBRA, PAGE_MAIN_LOCKED, PAGE_MODES, PAGE_SURVIVOR, PAGE_COUNT };
+enum { PAGE_MAIN, PAGE_VIDEO, PAGE_OPTIONS, PAGE_CHEATS, PAGE_GAME, PAGE_CONTROLS, PAGE_HOME, PAGE_VIBRA, PAGE_MAIN_LOCKED, PAGE_MODES, PAGE_SURVIVOR, PAGE_MAIN_SURVIVOR, PAGE_COUNT };
 #define PAGE_MAX 12
 static const int page_items[PAGE_COUNT][PAGE_MAX] = {
   {MI_RESUME, MI_SAVE, MI_LOAD, MI_GAME, MI_CHEATS, MI_VIDEO, MI_OPTIONS, MI_CONTROLS, MI_RESET, MI_HOME, MI_QUIT, -1},
-  {MI_FORMAT, MI_SCALE, MI_FILTER, MI_PALETTE, MI_MARGIN, MI_SUIT, MI_BACK, -1},
+  {MI_FORMAT, MI_SCALE, MI_BANDS, MI_FILTER, MI_PALETTE, MI_MARGIN, MI_SUIT, MI_BACK, -1},
   {MI_UILANG, MI_VOLUME, MI_LANG, MI_MUSIC, MI_MUSPACK, MI_MUSTEST, MI_BACK, -1},
   {MI_INV, MI_LIVES, MI_WEAPON, MI_SUB, MI_AMMO, MI_MULTI, MI_LOCK, MI_START, MI_WARP, MI_BACK, -1},
   {MI_DIFF, MI_RESPAWN, MI_DJUMP, MI_TURBO, MI_REMASTER, MI_ORIGINAL, MI_BACK, -1},
   {MI_BUTTONS, MI_SUBBTN, MI_TRIGGERS, MI_TOUCH, MI_TOUCHSIZE, MI_VIBRA, MI_BACK, -1},
   {MI_GAME, MI_CHEATS, MI_VIDEO, MI_OPTIONS, MI_BACK, -1},
   {MI_VIB0, MI_VIB0 + 1, MI_VIB0 + 2, MI_VIB0 + 3, MI_VIB0 + 4, MI_VIB0 + 5, MI_BACK, -1},
-  {MI_RESUME, MI_SAVE, MI_LOAD, MI_LOGROS_LIST, MI_VIDEO, MI_OPTIONS, MI_CONTROLS, MI_RESET, MI_HOME, MI_QUIT, -1},
+  {MI_RESUME, MI_SAVE, MI_LOAD, MI_LOGROS_LIST, MI_VIDEO, MI_OPTIONS, MI_CONTROLS, MI_TESTINV, MI_RESET, MI_HOME, MI_QUIT, -1},
   {MI_MODE_NORMAL, MI_MODE_LOGROS, MI_MODE_SURVIVOR, MI_LOGROS_LIST, MI_PROFILE_EXPORT, MI_PROFILE_IMPORT, MI_BACK, -1},
   {MI_SV_EASY, MI_SV_NORMAL, MI_SV_HARD, MI_BACK, -1},
+  {MI_RESUME, MI_LOGROS_LIST, MI_VIDEO, MI_OPTIONS, MI_CONTROLS, MI_TESTINV, MI_RESET, MI_HOME, MI_QUIT, -1},
 };
 static const char* page_titles[2][PAGE_COUNT] = {
-  {"MASTER OF DARKNESS", "VIDEO", "SOUND & LANGUAGE", "CHEATS", "GAME", "CONTROLS", "OPTIONS", "VIBRATION", "ACHIEVEMENTS MODE", "PLAY", "SURVIVOR MODE"},
-  {"MASTER OF DARKNESS", "IMAGEN", "SONIDO E IDIOMA", "TRUCOS", "JUEGO", "CONTROLES", "OPCIONES", "VIBRACIÓN", "MODO LOGROS", "JUGAR", "MODO SURVIVOR"}};
+  {"MASTER OF DARKNESS", "VIDEO", "SOUND & LANGUAGE", "CHEATS", "GAME", "CONTROLS", "OPTIONS", "VIBRATION", "ACHIEVEMENTS MODE", "PLAY", "SURVIVOR MODE", "SURVIVOR"},
+  {"MASTER OF DARKNESS", "IMAGEN", "SONIDO E IDIOMA", "TRUCOS", "JUEGO", "CONTROLES", "OPCIONES", "VIBRACIÓN", "MODO LOGROS", "JUGAR", "MODO SURVIVOR", "SURVIVOR"}};
 static const char* touch_names[2][3] = {{"No", "Yes", "Only without a gamepad"}, {"No", "Sí", "Solo sin mando"}};
 static const char* touch_size_names[2][3] = {{"Small", "Normal", "Big"}, {"Pequeños", "Normales", "Grandes"}};
 static int in_launcher = 1;   // the start screen is shown (the game waits)
@@ -614,6 +620,7 @@ static void menu_label(int i, char* out, size_t n) {
   case MI_MODE_LOGROS: snprintf(out, n, "%s", T("Achievements mode", "Modo logros")); break;
   case MI_MODE_SURVIVOR: snprintf(out, n, "%s  ›", T("Survivor mode", "Modo Survivor")); break;
   case MI_SV_EASY: case MI_SV_NORMAL: case MI_SV_HARD: snprintf(out, n, "%s", diff_names[L][i - MI_SV_EASY]); break;
+  case MI_TESTINV: snprintf(out, n, "%s ← %s →", T("Invincible (testing):", "Invencible (pruebas):"), test_inv ? T("Yes", "Sí") : "No"); break;
   case MI_LOGROS_LIST: snprintf(out, n, "%s (%d/%d)  ›", T("Achievements", "Logros"), logros_unlocked_count(), logros_count()); break;
   case MI_PROFILE_EXPORT: snprintf(out, n, "%s", T("Export profile", "Exportar perfil")); break;
   case MI_PROFILE_IMPORT: snprintf(out, n, "%s", T("Import profile", "Importar perfil")); break;
@@ -639,6 +646,7 @@ static void menu_label(int i, char* out, size_t n) {
   case MI_SCALE: snprintf(out, n, "%s ← %s →", T("Scaling:", "Escalado:"), scale_names[L][cfg.scale]); break;
   case MI_FILTER: snprintf(out, n, "%s   ← %s →", T("Filter:", "Filtro:"), filter_names[L][cfg.filter]); break;
   case MI_PALETTE: snprintf(out, n, "%s ← %s →", T("Colours:", "Colores:"), palette_names[L][cfg.palette]); break;
+  case MI_BANDS: snprintf(out, n, "%s ← %s →", T("Empty bands:", "Bandas vacías:"), cfg.bands ? T("Ambient", "Ambiente") : T("Black", "Negras")); break;
   case MI_MARGIN: {
     static const char* mn[2][3] = {{"None", "Small", "Medium"}, {"No", "Pequeño", "Mediano"}};
     snprintf(out, n, "%s ← %s →", T("Screen margin:", "Margen de pantalla:"), mn[L][cfg.margin]);
@@ -695,12 +703,14 @@ static void state_file(char* out, size_t n) {
   cfg_path(out, n, game_mode == GM_LOGROS ? "estado_logros.sav" : game_mode == GM_SURVIVOR ? sv[sv_diff] : "estado1.sav");
 }
 static void sv_reset(void);
+static void sv_after_load(void);
 
 // After the state itself: how the achievements game was going (only in that mode) and the music.
 typedef struct { int32_t id, from_pack; } state_music_t;
 
-static void do_save_state(void) {
-  char p[1100]; state_file(p, sizeof p);
+static void save_state_to(const char* p, int quiet);
+static void do_save_state(void) { char p[1100]; state_file(p, sizeof p); save_state_to(p, 0); }
+static void save_state_to(const char* p, int quiet) {
   size_t base = sms_state_size(), run = LOGROS_ON ? logros_run_size() : 0;
   size_t n = base + run + sizeof(state_music_t);
   uint8_t* buf = malloc(n);
@@ -709,8 +719,8 @@ static void do_save_state(void) {
   state_music_t m = {music_current, cfg.music_pack > 0 && music_has(music_current)};
   memcpy(buf + base + run, &m, sizeof m);
   SDL_RWops* rw = SDL_RWFromFile(p, "wb");
-  if (rw) { SDL_RWwrite(rw, buf, 1, n); SDL_RWclose(rw); show_toast(T("State saved", "Estado guardado"), 1500); }
-  else show_toast(T("Could not save the state", "No se pudo guardar el estado"), 2000);
+  if (rw) { SDL_RWwrite(rw, buf, 1, n); SDL_RWclose(rw); if (!quiet) show_toast(T("State saved", "Estado guardado"), 1500); }
+  else if (!quiet) show_toast(T("Could not save the state", "No se pudo guardar el estado"), 2000);
   free(buf);
 }
 
@@ -724,8 +734,9 @@ static void restore_state_music(const state_music_t* m) {
   else if (pack_now) music_play(m->id);
 }
 
-static void do_load_state(void) {
-  char p[1100]; state_file(p, sizeof p);
+static int load_state_from(const char* p, const char* done);
+static void do_load_state(void) { char p[1100]; state_file(p, sizeof p); load_state_from(p, T("State loaded", "Estado cargado")); }
+static int load_state_from(const char* p, const char* done) {
   size_t n = 0;
   uint8_t* buf = load_file(p, &n);
   size_t base = sms_state_size(), run = LOGROS_ON ? logros_run_size() : 0;
@@ -735,13 +746,14 @@ static void do_load_state(void) {
   int ok = buf && (has_music || n == base + run) && sms_load_state(&S, buf, base);
   if (ok) {
     if (run) logros_run_load(buf + base);
-    if (game_mode == GM_SURVIVOR) sv_reset();   // energy and lives are read again from the state
+    if (game_mode == GM_SURVIVOR) sv_after_load();   // energy is read again from the state
     if (has_music) memcpy(&m, buf + base + run, sizeof m);
     restore_state_music(&m);
     mod_respawn_forget_slots(&E);
-    show_toast(T("State loaded", "Estado cargado"), 1500);
+    show_toast(done, 1500);
   } else show_toast(T("There is no saved state", "No hay ningún estado guardado"), 2000);
   free(buf);
+  return ok;
 }
 
 static void set_language(int lang) {
@@ -754,6 +766,15 @@ static void set_language(int lang) {
   show_toast(lang ? T("Game translated (restarted)", "Juego traducido (reiniciado)") : T("Game in English (restarted)", "Juego en inglés (reiniciado)"), 2500);
 }
 
+// TEMPORARY test switch (see test_inv)
+static void set_test_inv(int on) {
+  test_inv = on;
+  char lp[1100]; cfg_path(lp, sizeof lp, on ? "logros_pruebas.txt" : "logros.txt");
+  logros_switch_profile(lp);
+  show_toast(on ? T("Testing: invincible, R2 speeds up, test profile", "Pruebas: invencible, R2 acelera, perfil de pruebas")
+                : T("Testing off: your own profile again", "Pruebas apagadas: vuelve tu perfil"), 3000);
+}
+
 static void menu_change(int dir) {
   switch (cur_item()) {
   case MI_FORMAT: {
@@ -762,7 +783,8 @@ static void menu_change(int dir) {
     f = (f + dir + 3) % 3;
     cfg.widescreen = f == 0;
     cfg.crt = f == 2;
-    if (cfg.crt) cfg.scale = SCALE_STRETCH;   // 8:7 fills the whole screen (user's choice); Scaling can still change it
+    // 8:7 keeps its shape (fit) and the bands left on a square screen take the picture's colours
+    if (cfg.crt) { cfg.scale = SCALE_FIT; cfg.bands = 1; }
     mod_enhance_set_wide(&E, cfg.widescreen, MOD_WIDE_EXT);
     break;
   }
@@ -770,6 +792,8 @@ static void menu_change(int dir) {
   case MI_FILTER: cfg.filter = (cfg.filter + dir + FILTER_COUNT) % FILTER_COUNT; break;
   case MI_SUIT: cfg.suit = (cfg.suit + dir + SUIT_COUNT) % SUIT_COUNT; apply_suit(); break;
   case MI_MARGIN: cfg.margin = (cfg.margin + dir + 3) % 3; break;
+  case MI_BANDS: cfg.bands = !cfg.bands; break;
+  case MI_TESTINV: set_test_inv(!test_inv); break;
   case MI_PALETTE: cfg.palette = (cfg.palette + dir + PAL_COUNT) % PAL_COUNT; apply_palette(); break;
 
   case MI_VOLUME: cfg.volume += dir; if (cfg.volume < 0) cfg.volume = 0; if (cfg.volume > 10) cfg.volume = 10; break;
@@ -847,7 +871,7 @@ static void menu_open_at(int page) {
 }
 
 static void menu_set_open(int open) {
-  if (open) { menu_open_at(in_launcher ? PAGE_HOME : ADVANTAGES_BLOCKED ? PAGE_MAIN_LOCKED : PAGE_MAIN); return; }
+  if (open) { menu_open_at(in_launcher ? PAGE_HOME : game_mode == GM_SURVIVOR ? PAGE_MAIN_SURVIVOR : ADVANTAGES_BLOCKED ? PAGE_MAIN_LOCKED : PAGE_MAIN); return; }
   menu_open = 0;
   capture_jump = 0;
 }
@@ -923,10 +947,20 @@ static int sv_over;            // the game has ended: the result screen is shown
 static Uint32 sv_over_at;      // the life was lost: the screen comes after the fall
 static int sv_refill_round = -1;   // normal: energy comes back once, at the start of this round
 static int sv_end_round, sv_end_stage;
+// No saving or loading by hand in Survivor: the game is saved by itself when each stage starts, and after
+// losing the life that stage can be tried again (it costs the "No safety net" achievement).
+static int sv_ck_round = -1, sv_ck_stage = -1;
 
-static void sv_reset(void) {
+static void sv_ck_file(char* out, size_t n) { char nm[40]; snprintf(nm, sizeof nm, "survivor_fase_%d.sav", sv_diff); cfg_path(out, n, nm); }
+
+static void sv_after_load(void) {
   sv_over = 0; sv_over_at = 0; sv_refill_round = -1;
   E.energy_lock = false; E.energy_keep = 0;
+}
+
+static void sv_reset(void) {
+  sv_after_load();
+  sv_ck_round = sv_ck_stage = -1;
 }
 
 static void sv_game_over(void) {
@@ -948,6 +982,13 @@ static void sv_frame(uint32_t ev) {
     sv_over_at = SDL_GetTicks() + 2500;   // the fall is seen, then the game ends
   }
   if (!playing) return;
+  // a new stage: saved by itself, to try it again if the life is lost
+  if (!sv_over_at && (gram(RAM_ROUND) != sv_ck_round || gram(RAM_STAGE) != sv_ck_stage)) {
+    if (gram(RAM_LIVES) != 1) { gram_w(RAM_LIVES, 1); mod_request_hud(&E, MOD_HUD_LIVES); }
+    sv_ck_round = gram(RAM_ROUND); sv_ck_stage = gram(RAM_STAGE);
+    char p[1100]; sv_ck_file(p, sizeof p);
+    save_state_to(p, 1);
+  }
   // a single life: the counter shows 0 lives left, also after picking up an extra life
   if (gram(RAM_LIVES) != 1) { gram_w(RAM_LIVES, 1); mod_request_hud(&E, MOD_HUD_LIVES); }
   // energy: easy as in the game; normal only at the start of the round after a boss; hard never
@@ -972,6 +1013,13 @@ static void sv_retry(void) {
   start_mode(GM_SURVIVOR);
 }
 
+static void sv_retry_stage(void) {
+  char p[1100]; sv_ck_file(p, sizeof p);
+  int r = sv_ck_round, st = sv_ck_stage;
+  if (r < 0 || !load_state_from(p, T("Trying the stage again", "Repites la fase"))) { sv_retry(); return; }
+  sv_ck_round = r; sv_ck_stage = st;
+}
+
 static void draw_sv_over(void) {
   ui_rect(0, 0, UI_W, UI_H, 0xC8000000);
   int by = UI_H / 2 - 90;
@@ -984,27 +1032,33 @@ static void draw_sv_over(void) {
   ui_text_center(by + 48, T("Your only life is gone", "Has perdido tu única vida"), 0xFFFFFF);
   snprintf(t, sizeof t, T("You reached round %d-%d", "Llegaste a la ronda %d-%d"), sv_end_round + 1, sv_end_stage + 1);
   ui_text_center(by + 74, t, 0xB8B0A8);
-  ui_rect(UI_W / 2 - 250, by + 116, 240, 40, 0xFF5A1A1A);
-  ui_rect(UI_W / 2 + 10, by + 116, 240, 40, 0xFF2A2430);
-  ui_text(UI_W / 2 - 225, by + 125, T("A: Try again", "A: Otra vez"), 0xFFFFFF);
-  ui_text(UI_W / 2 + 40, by + 125, T("B: Start screen", "B: Pantalla de inicio"), 0xFFFFFF);
+  // three choices: the stage again, the whole game again, the start screen
+  const char* lab[3] = {T("A: Retry stage", "A: Repetir fase"), T("X: Start over", "X: Reiniciar"), T("B: Start screen", "B: Inicio")};
+  for (int i = 0; i < 3; i++) {
+    int x = UI_W / 2 - 270 + i * 182;
+    ui_rect(x, by + 116, 174, 40, i == 0 ? 0xFF5A1A1A : 0xFF2A2430);
+    ui_text(x + (174 - text_width(lab[i])) / 2, by + 125, lab[i], 0xFFFFFF);
+  }
 }
 
-// the result screen takes every button: A plays again, B goes to the start screen
+// the result screen takes every button: A the stage again, X the whole game again, B the start screen
 static int sv_over_event(SDL_Event* e) {
-  int ok = 0, back = 0;
+  int ok = 0, back = 0, over = 0;
   if (e->type == SDL_KEYDOWN && !e->key.repeat) {
     SDL_Keycode k = e->key.keysym.sym;
     ok = k == SDLK_RETURN || k == SDLK_z || k == SDLK_SPACE;
     back = k == SDLK_ESCAPE || k == SDLK_AC_BACK || k == SDLK_x || k == SDLK_BACKSPACE;
+    over = k == SDLK_c;
   } else if (e->type == SDL_CONTROLLERBUTTONDOWN) {
     int b = e->cbutton.button;
     ok = b == SDL_CONTROLLER_BUTTON_A || b == SDL_CONTROLLER_BUTTON_START;
     back = b == SDL_CONTROLLER_BUTTON_B || b == SDL_CONTROLLER_BUTTON_BACK;
+    over = b == SDL_CONTROLLER_BUTTON_X;
   } else if (e->type == SDL_FINGERDOWN) {
-    ok = e->tfinger.x < 0.5f; back = !ok;
+    ok = e->tfinger.x < 0.4f; over = !ok && e->tfinger.x < 0.6f; back = !ok && !over;
   } else return e->type == SDL_KEYUP || e->type == SDL_CONTROLLERBUTTONUP || e->type == SDL_FINGERUP || e->type == SDL_FINGERMOTION;
-  if (ok) sv_retry();
+  if (ok) sv_retry_stage();
+  else if (over) sv_retry();
   else if (back) { sv_retry(); in_launcher = 1; music_set_paused(true); SDL_ClearQueuedAudio(audio_dev); }
   return 1;
 }
@@ -1087,7 +1141,7 @@ static void menu_activate(void) {
   case MI_BACK: if (menu_page == PAGE_VIBRA) { menu_goto(PAGE_CONTROLS); menu_sel = 5; } else if (menu_page == menu_root) menu_set_open(0); else menu_goto(menu_root); break;
   case MI_CONTROLS: menu_goto(PAGE_CONTROLS); break;
   case MI_HOME: menu_set_open(0); in_launcher = 1; music_set_paused(true); SDL_ClearQueuedAudio(audio_dev); break;
-  case MI_RESET: music_stop(); sms_reset(&S); menu_set_open(0); show_toast(T("Game reset", "Juego reiniciado"), 1500); break;
+  case MI_RESET: music_stop(); sms_reset(&S); if (game_mode == GM_SURVIVOR) sv_reset(); menu_set_open(0); show_toast(T("Game reset", "Juego reiniciado"), 1500); break;
   case MI_MUSTEST:
     if (rom_crc != KNOWN_CRC) break;
     if (in_launcher) { show_toast(T("Try the music while playing", "Prueba la música durante la partida"), 2000); break; }
@@ -1152,7 +1206,7 @@ static int logros_pages(void) { return (logros_count() + LOGROS_PER_PAGE - 1) / 
 static void draw_logros(void) {
   ui_rect(0, 0, UI_W, UI_H, 0xF0100A14);
   char t[96];
-  snprintf(t, sizeof t, T("ACHIEVEMENTS  %d/%d", "LOGROS  %d/%d"), logros_unlocked_count(), logros_count());
+  snprintf(t, sizeof t, test_inv ? T("ACHIEVEMENTS (TESTING)  %d/%d", "LOGROS (PRUEBAS)  %d/%d") : T("ACHIEVEMENTS  %d/%d", "LOGROS  %d/%d"), logros_unlocked_count(), logros_count());
   ui_text_center(8, t, 0xE8C060);
   int y = 34;
   for (int i = logros_page * LOGROS_PER_PAGE; i < logros_count() && i < (logros_page + 1) * LOGROS_PER_PAGE; i++) {
@@ -1185,7 +1239,7 @@ static void draw_ui(void) {
     ui_rect(bx, by, bw, bh, 0xE0140C18);
     ui_rect(bx, by, bw, 2, 0xFFB0302A);
     ui_rect(bx, by + bh - 2, bw, 2, 0xFFB0302A);
-    if (menu_page == PAGE_MAIN_LOCKED && game_mode == GM_SURVIVOR) {
+    if (menu_page == PAGE_MAIN_SURVIVOR) {
       char tt[64]; snprintf(tt, sizeof tt, "SURVIVOR  ·  %s", diff_names[ES][sv_diff]);
       ui_text_center(by + 10, tt, 0xE8C060);
     } else ui_text_center(by + 10, page_titles[ES][menu_page], 0xE8C060);
@@ -1370,6 +1424,33 @@ static void draw_crt(SDL_Rect dst, int gw, int curved) {
       idx[n++] = a; idx[n++] = b; idx[n++] = c; idx[n++] = b; idx[n++] = d; idx[n++] = c;
     }
   SDL_RenderGeometry(ren, tex_crt, v, (GX + 1) * (GY + 1), idx, n);
+}
+
+// "Ambient" bands: the picture shrunk to a few blocks of average colour, spread over the whole screen and darkened,
+// so the space the game cannot fill without changing its shape takes the colours of the scene
+#define AMB_W 16
+#define AMB_H 12
+static SDL_Texture* tex_amb;
+static void draw_ambient(int gw, int ww, int wh) {
+  if (!tex_amb) {
+    tex_amb = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, AMB_W, AMB_H);
+    if (!tex_amb) return;
+    SDL_SetTextureScaleMode(tex_amb, SDL_ScaleModeLinear);
+  }
+  static uint32_t px[AMB_W * AMB_H];
+  for (int by = 0; by < AMB_H; by++)
+    for (int bx = 0; bx < AMB_W; bx++) {
+      int x0 = bx * gw / AMB_W, x1 = (bx + 1) * gw / AMB_W, y0 = by * SMS_H / AMB_H, y1 = (by + 1) * SMS_H / AMB_H;
+      unsigned r = 0, g = 0, b = 0, n = 0;
+      for (int y = y0; y < y1; y += 2)
+        for (int x = x0; x < x1; x += 2) { uint32_t c = pix[y * gw + x]; r += (c >> 16) & 255; g += (c >> 8) & 255; b += c & 255; n++; }
+      if (!n) n = 1;
+      px[by * AMB_W + bx] = 0xFF000000u | ((r / n) << 16) | ((g / n) << 8) | (b / n);
+    }
+  SDL_UpdateTexture(tex_amb, NULL, px, AMB_W * 4);
+  SDL_SetTextureColorMod(tex_amb, 110, 110, 110);
+  SDL_Rect all = {0, 0, ww, wh};
+  SDL_RenderCopy(ren, tex_amb, NULL, &all);
 }
 
 static SDL_Rect dest_rect(int ww, int wh, int gw) {
@@ -2034,7 +2115,7 @@ static void handle_touch(SDL_Event* e) {
       vibrate_touch();
       // value rows: left half goes back, right half forward; other rows activate
       int it = cur_item();
-      int value_row = it == MI_FORMAT || it == MI_SCALE || it == MI_FILTER || it == MI_SUIT || it == MI_MARGIN || it == MI_PALETTE || it == MI_VOLUME ||
+      int value_row = it == MI_FORMAT || it == MI_SCALE || it == MI_BANDS || it == MI_TESTINV || it == MI_FILTER || it == MI_SUIT || it == MI_MARGIN || it == MI_PALETTE || it == MI_VOLUME ||
                       it == MI_TURBO || it == MI_TRIGGERS || it == MI_DIFF || it == MI_RESPAWN || it == MI_DJUMP ||
                       it == MI_TOUCH || it == MI_TOUCHSIZE || it == MI_INV || it == MI_LIVES || it == MI_WEAPON ||
                       it == MI_SUB || it == MI_START || it == MI_MUSTEST || it == MI_MUSIC || it == MI_AMMO || it == MI_LOCK || it == MI_UILANG || it == MI_MULTI ||
@@ -2102,6 +2183,7 @@ static void present(void) {
   SDL_Rect dst = dest_rect(ww, wh, gw);
   SDL_SetRenderDrawColor(ren, 0, 0, 0, 255);
   SDL_RenderClear(ren);
+  if (cfg.bands && (dst.w < ww - 2 || dst.h < wh - 2)) draw_ambient(gw, ww, wh);
   if (cfg.filter == FILTER_SHARP_SMOOTH) {
     // integer nearest prescale, then linear down to the final size
     int k = (int)ceil((double)dst.h / SMS_H);
@@ -2602,7 +2684,7 @@ int main(int argc, char** argv) {
     if (in_launcher && !art_ok) in_launcher = 0;   // no start screen art: straight to the game
     if (rw_count_reset) { rw_count = 0; rw_count_reset = 0; }
     rewinding = !menu_open && !in_launcher && cfg.triggers && !ADVANTAGES_BLOCKED && (any_trigger(trig_l) || key_rewind);
-    fast_forward = !menu_open && !rewinding && !in_launcher && cfg.triggers && !ADVANTAGES_BLOCKED && (any_trigger(trig_r) || key_ff);
+    fast_forward = !menu_open && !rewinding && !in_launcher && cfg.triggers && (!ADVANTAGES_BLOCKED || test_inv) && (any_trigger(trig_r) || key_ff);
     if (!menu_open && !in_launcher && !sv_over) {
       // keep the audio queue around 3 frames by nudging the emulation speed slightly
       double queued = audio_dev ? SDL_GetQueuedAudioSize(audio_dev) / 2.0 / SMS_SAMPLES_PER_FRAME : 3.0;

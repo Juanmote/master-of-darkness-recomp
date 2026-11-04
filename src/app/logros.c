@@ -41,7 +41,7 @@ static const logro_t list[L_COUNT] = {
   {"sv_easy", {"Survivor", "Superviviente"}, {"Finish Survivor mode on Easy (or harder)", "Termina el modo Survivor en Fácil (o más difícil)"}},
   {"sv_normal", {"Hard to kill", "Duro de matar"}, {"Finish Survivor mode on Normal (or harder)", "Termina el modo Survivor en Normal (o más difícil)"}},
   {"sv_hard", {"Legend of London", "Leyenda de Londres"}, {"Finish Survivor mode on Hard", "Termina el modo Survivor en Difícil"}},
-  {"sv_nostate", {"No safety net", "Sin red"}, {"Finish Survivor mode without loading a state", "Termina el modo Survivor sin cargar estados"}},
+  {"sv_nostate", {"No safety net", "Sin red"}, {"Finish Survivor mode without retrying a stage", "Termina el modo Survivor sin repetir ninguna fase"}},
 };
 
 #define LAST_ROUND 4          // rounds are 0..4 in the game's RAM
@@ -136,6 +136,18 @@ void logros_init(const char* profile_path) {
   if (parse_file(path, got, &c)) { kills = c.kills; masks = c.masks; weapons_used = c.weapons; subs_used = c.subs; }
   else memset(got, 0, sizeof got);
   logros_reset_run();
+}
+
+void logros_switch_profile(const char* profile_path) {
+  logros_flush();
+  snprintf(path, sizeof path, "%s", profile_path);
+  memset(got, 0, sizeof got);
+  kills = masks = weapons_used = subs_used = 0;
+  dirty = false;
+  n_pending = 0;
+  counts_t c;
+  if (parse_file(path, got, &c)) { kills = c.kills; masks = c.masks; weapons_used = c.weapons; subs_used = c.subs; }
+  else memset(got, 0, sizeof got);
 }
 
 int logros_merge_file(const char* p) {
