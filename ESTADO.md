@@ -272,4 +272,8 @@ apagadas, la huella no debe cambiar.
 9. **Hecho en v0.12.0:** letras sueltas en diálogos de jefe, franja del final, visor, 8:7 con Estirar, logros ordenados, modo Survivor.
    Siguiente: probar Survivor en consola, luego iconos de logros, Boss Rush (y sus logros) y escaleras.
 11. **Hecho en v0.13.1:** Boss Rush con jefes desbloqueados y sus logros, logro Miniyo. Siguiente: probar Boss Rush en consola, iconos de logros, escaleras.
+12. **Plan del usuario para el final (4-11-2026):** la versión pública se queda con los jefes desbloqueables. Al terminar el proyecto, una
+    **versión completa privada** solo para su uso y recuerdo, en un repositorio privado de GitHub: APK con todo dentro (su ROM, packs de música,
+    galería, manual y las salas de los jefes ya desbloqueadas). Ahí también, si se quiere, que exportar/importar perfil lleve las salas de los
+    jefes. Nada de eso va en el repositorio público.
 10. **Antes de la versión final:** quitar "Invencible (pruebas)" (`test_inv` en `main.c`).
