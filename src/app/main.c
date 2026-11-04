@@ -18,7 +18,8 @@
 #define STBI_NO_STDIO
 #include "stb_image.h"
 
-#define APP_VERSION "0.10.5"
+#include "miniz.h"
+#define APP_VERSION "0.11.0"
 #define KNOWN_CRC 0x96FB4D4Bu
 #define UI_W 640
 #define UI_H 360
@@ -500,7 +501,7 @@ static void vibrate_touch(void) { vibrate(VIB_TOUCH, 18, 0.65f, 0); }
 static void vibrate_game(uint32_t ev) {
   static const struct { uint32_t bit; int kind, ms; float power; } m[] = {
     {MOD_EV_BOSS_DOWN, VIB_BOSS, 900, 1.0f}, {MOD_EV_DEATH, VIB_HURT, 380, 1.0f}, {MOD_EV_BOSS_START, VIB_BOSS, 450, 0.6f},
-    {MOD_EV_HURT, VIB_HURT, 110, 1.0f}, {MOD_EV_BOSS_HIT, VIB_BOSS, 80, 0.9f}, {MOD_EV_KILL, VIB_HIT, 60, 0.9f},
+    {MOD_EV_HURT, VIB_HURT, 110, 1.0f}, {MOD_EV_BOSS_HIT, VIB_BOSS, 80, 0.9f}, {MOD_EV_KILL, VIB_HIT, 60, 0.9f}, {MOD_EV_PICKUP, VIB_HIT, 60, 0.9f},
     {MOD_EV_HIT, VIB_HIT, 40, 0.7f}, {MOD_EV_LAND, VIB_LAND, 35, 0.55f}, {MOD_EV_SWING, VIB_SWING, 25, 0.45f}};
   for (unsigned i = 0; i < sizeof m / sizeof m[0]; i++)
     if ((ev & m[i].bit) && cfg.vib[m[i].kind]) { vibrate(m[i].kind, m[i].ms, m[i].power, 1); return; }
@@ -1007,21 +1008,24 @@ static void menu_nav(int dy, int dx, int ok, int back) {
 }
 
 static int rewinding, fast_forward;
+#define CREDITS_NAME_Y 96
 static int show_credits;
+static int credits_taps;           // presses on the author's name: three show the ticket
+static Uint32 credits_tap_time;
 
 static void draw_credits(void) {
   ui_rect(0, 0, UI_W, UI_H, 0xC8000000);
   int y = 34;
   ui_text_center(y, "RE-MASTER-ED OF DARKNESS", 0xE8C060); y += 22;
   ui_text_center(y, "A RECOMP PROJECT  ·  v" APP_VERSION, 0xB8B0A8); y += 40;
-  ui_text_center(y, T("Recomp and launcher by Juanmote", "Recomp y launcher por Juanmote"), 0xFFFFFF); y += 26;
+  ui_text_center(y, T("Recomp and launcher by Juanmote", "Recomp y launcher por Juanmote"), SDL_GetTicks() - credits_tap_time < 200 && credits_taps ? 0xE8C060 : 0xFFFFFF); y += 26;
   ui_text_center(y, T("Spanish translation of the game: Re-Master-Ed", "Traducción del juego al español: Re-Master-Ed"), 0xFFFFFF); y += 26;
   y += 8;
   ui_text_center(y, "Master of Darkness © 1992 Sega / SIMS", 0xB8B0A8); y += 22;
   ui_text_center(y, T("The app does not include the game: use your own ROM", "La app no incluye el juego: usa tu propia ROM"), 0xB8B0A8); y += 34;
   ui_text_center(y, T("SDL2 (zlib) · stb (public domain) · miniz (MIT)", "SDL2 (zlib) · stb (dominio público) · miniz (MIT)"), 0x807870); y += 22;
   ui_text_center(y, T("DejaVu font (free license)", "Fuente DejaVu (licencia libre)"), 0x807870);
-  ui_text_center(UI_H - 34, T("Press any button to go back", "Pulsa cualquier botón para volver"), 0x807870);
+  ui_text_center(UI_H - 34, T("Press B or tap to go back", "Pulsa B o toca para volver"), 0x807870);
 }
 
 #define LOGROS_PER_PAGE 7
@@ -1042,13 +1046,17 @@ static void draw_logros(void) {
     ui_text(68, y + 18, l->desc[ES], on ? 0xB8B0A8 : 0x6C6470);
     y += 41;
   }
-  snprintf(t, sizeof t, T("‹ Page %d/%d ›   Enemies: %u", "‹ Página %d/%d ›   Enemigos: %u"), logros_page + 1, logros_pages(), logros_kills());
+  snprintf(t, sizeof t, T("‹ Page %d/%d ›   Enemies: %u   Masks: %u", "‹ Página %d/%d ›   Enemigos: %u   Máscaras: %u"), logros_page + 1, logros_pages(), logros_kills(), logros_masks());
   ui_text_center(UI_H - 26, t, 0x807870);
 }
 
+static void draw_viewer_ui(void);
+static int viewer_active(void);
+
 static void draw_ui(void) {
   ui_clear();
-  if (show_logros) draw_logros();
+  if (viewer_active()) draw_viewer_ui();
+  else if (show_logros) draw_logros();
   else if (show_credits) draw_credits();
   else if (menu_open) {
     int n = page_count(menu_page);
@@ -1101,9 +1109,12 @@ static void draw_ui(void) {
              T("A gamepad with rumble vibrates instead of the phone", "Si el mando vibra, vibra el mando en vez del móvil");
     }
     if (menu_page == PAGE_MODES)
-      foot = menu_sel == 1 ? T("No rewind or cheats. Achievements count here", "Sin rebobinado ni trucos. Aquí cuentan los logros") :
+      foot = menu_sel == 0 ? T("Every option and cheat. Achievements do not count", "Con todas las opciones y trucos. Los logros no cuentan") :
+             menu_sel == 1 ? T("No rewind or cheats. Achievements count here", "Sin rebobinado ni trucos. Aquí cuentan los logros") :
+             menu_sel == 2 ? T("See the ones you have and the ones left", "Mira los que tienes y los que te faltan") :
              menu_sel == 3 ? T("Saves your achievements to a file", "Guarda tus logros en un archivo") :
-             menu_sel == 4 ? T("Adds a saved profile to this one", "Añade un perfil guardado a este") : foot;
+             menu_sel == 4 ? T("Adds a saved profile to this one", "Añade un perfil guardado a este") :
+             T("Back to the start screen", "Vuelve a la pantalla de inicio");
     ui_text_center(by + bh - 26, foot, 0x807870);
   } else if (rewinding || fast_forward) {
     const char* t = rewinding ? "◄◄" : "►►";
@@ -1247,11 +1258,12 @@ static SDL_Rect dest_rect(int ww, int wh, int gw) {
 
 // ---------------------------------------------------------------- start screen and touch controls
 enum { ART_BG, ART_PLAY, ART_OPTIONS, ART_CONTROLS, ART_CREDITS, ART_QUIT, ART_DPAD, ART_B1, ART_B2, ART_START, ART_PAUSE,
-       ART_B3, ART_B3_SUB, ART_EN_PLAY = ART_B3_SUB + 4, ART_COUNT = ART_EN_PLAY + 5 };
+       ART_B3, ART_B3_SUB, ART_EN_PLAY = ART_B3_SUB + 4, ART_GALLERY = ART_EN_PLAY + 5, ART_MANUAL, ART_EN_GALLERY, ART_EN_MANUAL, ART_COUNT };
 static const char* art_files[ART_COUNT] = {"fondo.jpg", "jugar.png", "opciones.png", "controles.png", "creditos.png",
                                            "salir.png", "dpad.png", "b1.png", "b2.png", "start.png", "pause.png", "b3.png",
                                            "b3_pistola.png", "b3_bumeran.png", "b3_estacas.png", "b3_bombas.png",
-                                           "en_jugar.png", "en_opciones.png", "en_controles.png", "en_creditos.png", "en_salir.png"};
+                                           "en_jugar.png", "en_opciones.png", "en_controles.png", "en_creditos.png", "en_salir.png",
+                                           "galeria.png", "manual.png", "en_galeria.png", "en_manual.png"};
 static SDL_Texture* art[ART_COUNT];
 static int art_w[ART_COUNT], art_h[ART_COUNT];
 static int art_ok;
@@ -1295,24 +1307,27 @@ static void load_art(void) {
 }
 
 // start screen buttons, left to right
-static const int launch_art[5] = {ART_OPTIONS, ART_CONTROLS, ART_PLAY, ART_CREDITS, ART_QUIT};
-static int launch_sel = 2;
-static SDL_Rect launch_rect[5];
+#define LAUNCH_N 7
+#define LAUNCH_QUIT (LAUNCH_N - 1)
+static const int launch_art[LAUNCH_N] = {ART_OPTIONS, ART_CONTROLS, ART_GALLERY, ART_PLAY, ART_MANUAL, ART_CREDITS, ART_QUIT};
+static int launch_sel = 3;
+static SDL_Rect launch_rect[LAUNCH_N];
 
 // texture of a launcher button in the menu language (the English art is optional)
 static int lart(int a) {
   if (!ES && a >= ART_PLAY && a <= ART_QUIT && art[ART_EN_PLAY + a - ART_PLAY]) return ART_EN_PLAY + a - ART_PLAY;
+  if (!ES && (a == ART_GALLERY || a == ART_MANUAL) && art[a + ART_EN_GALLERY - ART_GALLERY]) return a + ART_EN_GALLERY - ART_GALLERY;
   return a;
 }
 
 static void layout_launcher(int ww, int wh) {
   // widths relative to a 1920-wide screen, in a row at the bottom
-  static const int base_w[5] = {300, 300, 420, 300, 330};
+  static const int base_w[LAUNCH_N] = {236, 236, 236, 340, 236, 236, 250};
   double k = ww / 1920.0 < wh / 1080.0 ? ww / 1920.0 : wh / 1080.0;
   int total = 0;
-  for (int i = 0; i < 5; i++) total += (int)(base_w[i] * k);
-  int gap = (int)(20 * k), x = (ww - total - 4 * gap) / 2, cy = wh - (int)(110 * k);
-  for (int i = 0; i < 5; i++) {
+  for (int i = 0; i < LAUNCH_N; i++) total += (int)(base_w[i] * k);
+  int gap = (int)(14 * k), x = (ww - total - (LAUNCH_N - 1) * gap) / 2, cy = wh - (int)(110 * k);
+  for (int i = 0; i < LAUNCH_N; i++) {
     int a = lart(launch_art[i]), w = (int)(base_w[i] * k), h = art_w[a] ? w * art_h[a] / art_w[a] : 0;
     launch_rect[i] = (SDL_Rect){x, cy - h / 2 - (launch_art[i] == ART_PLAY ? (int)(20 * k) : 0), w, h};
     x += w + gap;
@@ -1346,9 +1361,370 @@ static void draw_launcher(int ww, int wh) {
   bg.x = (ww - bg.w) / 2; bg.y = bg.h > wh ? 0 : (wh - bg.h) / 2;
   SDL_RenderCopy(ren, art[ART_BG], NULL, &bg);
   layout_launcher(ww, wh);
-  for (int i = 0; i < 5; i++)
+  for (int i = 0; i < LAUNCH_N; i++)
     if (i != launch_sel) draw_art(lart(launch_art[i]), launch_rect[i], 0, !menu_open && !show_credits);
   draw_art(lart(launch_art[launch_sel]), launch_rect[launch_sel], !menu_open && !show_credits, 0);
+}
+
+// ---------------------------------------------------------------- image viewer: gallery, manual, ticket
+// The gallery and the manual are optional packs (.zip of .jpg/.png, like the music) chosen once with the file
+// picker and copied inside the app. The name of each file, without a leading number, is its caption.
+// The ticket is one picture inside the APK.
+enum { PACK_GALLERY = 1, PACK_MANUAL = 2, VIEW_TICKET = 3 };
+#define VIEW_MAX 256
+static struct {
+  int kind;            // what is open: PACK_*, VIEW_TICKET or 0
+  int prompt;          // no pack yet: asks for it (PACK_*)
+  int waiting;         // the file picker is open for this PACK_*
+  mz_zip_archive zip; int zip_open;
+  int n, entry[VIEW_MAX]; char name[VIEW_MAX][80];
+  int cur;
+  SDL_Texture* tex; int tw, th;
+  double zoom, cx, cy; // zoom over "fits the screen"; picture point at the centre (0..1)
+  Uint32 hud_until;
+  // touch
+  int fingers; float dx, dy; float down_x, down_y; int moved; Uint32 last_tap;
+  int stick_dir;
+} viewer;
+
+static int viewer_active(void) { return viewer.kind || viewer.prompt; }
+static void viewer_hud(void) { viewer.hud_until = SDL_GetTicks() + 3000; }
+
+static void pack_path(int kind, char* out, size_t n) {
+  const char* f = kind == PACK_MANUAL ? "manual.zip" : "galeria.zip";
+#ifdef __ANDROID__
+  snprintf(out, n, "%s/%s", SDL_AndroidGetInternalStoragePath(), f);
+#else
+  cfg_path(out, n, f);
+#endif
+}
+
+static int ui_scale_xy(float x, float y, int ww, int wh, float* ux, float* uy);
+
+static void viewer_set_picture(uint8_t* data, size_t size) {
+  if (viewer.tex) { SDL_DestroyTexture(viewer.tex); viewer.tex = NULL; }
+  int w = 0, h = 0, c;
+  uint8_t* px = data ? stbi_load_from_memory(data, (int)size, &w, &h, &c, 4) : NULL;
+  if (!px) return;
+  // a picture larger than the GPU allows is halved until it fits
+  SDL_RendererInfo ri;
+  int maxs = SDL_GetRendererInfo(ren, &ri) == 0 && ri.max_texture_width > 0 ? ri.max_texture_width : 4096;
+  while (w > maxs || h > maxs) {
+    int nw = w / 2, nh = h / 2;
+    for (int y = 0; y < nh; y++) for (int x = 0; x < nw; x++) memcpy(px + (y * nw + x) * 4, px + (y * 2 * w + x * 2) * 4, 4);
+    w = nw; h = nh;
+  }
+  viewer.tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STATIC, w, h);
+  if (viewer.tex) {
+    SDL_UpdateTexture(viewer.tex, NULL, px, w * 4);
+    SDL_SetTextureBlendMode(viewer.tex, SDL_BLENDMODE_BLEND);
+    SDL_SetTextureScaleMode(viewer.tex, SDL_ScaleModeLinear);
+  }
+  viewer.tw = w; viewer.th = h;
+  stbi_image_free(px);
+}
+
+static void viewer_show(int i) {
+  if (!viewer.n) return;
+  viewer.cur = (i + viewer.n) % viewer.n;
+  viewer.zoom = 1; viewer.cx = viewer.cy = 0.5;
+  size_t size = 0;
+  void* d = mz_zip_reader_extract_to_heap(&viewer.zip, (mz_uint)viewer.entry[viewer.cur], &size, 0);
+  viewer_set_picture(d, size);
+  if (d) mz_free(d);
+  viewer_hud();
+}
+
+static void viewer_close_zip(void) {
+  if (viewer.zip_open) mz_zip_reader_end(&viewer.zip);
+  viewer.zip_open = 0;
+  viewer.n = 0;
+}
+
+static void viewer_close(void) {
+  viewer_close_zip();
+  if (viewer.tex) SDL_DestroyTexture(viewer.tex);
+  viewer.tex = NULL;
+  viewer.kind = viewer.prompt = 0;
+  viewer.fingers = 0;
+}
+
+static int viewer_name_cmp(const void* a, const void* b) {
+  const int* x = a; const int* y = b;
+  return strcmp(viewer.name[*x], viewer.name[*y]);
+}
+
+// opens a pack; false if the file is missing or holds no pictures
+static int viewer_load_pack(int kind) {
+  viewer_close_zip();
+  char p[1100];
+  pack_path(kind, p, sizeof p);
+  memset(&viewer.zip, 0, sizeof viewer.zip);
+  if (!mz_zip_reader_init_file(&viewer.zip, p, 0)) return 0;
+  viewer.zip_open = 1;
+  int total = (int)mz_zip_reader_get_num_files(&viewer.zip), order[VIEW_MAX], n = 0;
+  for (int i = 0; i < total && n < VIEW_MAX; i++) {
+    char nm[512];
+    if (mz_zip_reader_is_file_a_directory(&viewer.zip, i)) continue;
+    mz_zip_reader_get_filename(&viewer.zip, i, nm, sizeof nm);
+    const char* base = strrchr(nm, '/');
+    base = base ? base + 1 : nm;
+    const char* dot = strrchr(base, '.');
+    if (!dot || base[0] == '.') continue;
+    if (SDL_strcasecmp(dot, ".jpg") && SDL_strcasecmp(dot, ".jpeg") && SDL_strcasecmp(dot, ".png")) continue;
+    snprintf(viewer.name[n], sizeof viewer.name[n], "%.*s", (int)(dot - base), base);
+    viewer.entry[n] = i;
+    order[n] = n;
+    n++;
+  }
+  // in the order of their names
+  qsort(order, (size_t)n, sizeof order[0], viewer_name_cmp);
+  static int entry2[VIEW_MAX]; static char name2[VIEW_MAX][80];
+  for (int i = 0; i < n; i++) { entry2[i] = viewer.entry[order[i]]; memcpy(name2[i], viewer.name[order[i]], 80); }
+  memcpy(viewer.entry, entry2, sizeof(int) * (size_t)n);
+  memcpy(viewer.name, name2, 80 * (size_t)n);
+  viewer.n = n;
+  if (!n) viewer_close_zip();
+  return n > 0;
+}
+
+static void viewer_open_pack(int kind) {
+  viewer.prompt = 0;
+  if (viewer_load_pack(kind)) { viewer.kind = kind; viewer_show(0); }
+  else { viewer.kind = 0; viewer.prompt = kind; }
+}
+
+static void viewer_open_ticket(void) {
+  viewer_close_zip();
+  size_t size = 0;
+  uint8_t* d = read_asset("ticket.jpg", &size);
+  viewer_set_picture(d, size);
+  free(d);
+  if (!viewer.tex) return;
+  viewer.kind = VIEW_TICKET; viewer.prompt = 0;
+  viewer.zoom = 1; viewer.cx = viewer.cy = 0.5;
+  viewer_hud();
+}
+
+static void credits_tap(void) {
+  Uint32 now = SDL_GetTicks();
+  if (now - credits_tap_time > 2000) credits_taps = 0;
+  credits_tap_time = now;
+  if (++credits_taps >= 3) { credits_taps = 0; viewer_open_ticket(); }
+}
+
+static void viewer_pick_file(int kind) {
+#ifdef __ANDROID__
+  viewer.waiting = kind;
+  SDL_AndroidSendMessage(0x8007, kind);
+#else
+  (void)kind;
+  show_toast(T("Copy the pack as galeria.zip or manual.zip into the settings folder", "Copia el pack como galeria.zip o manual.zip en la carpeta de ajustes"), 3000);
+#endif
+}
+
+// the file picker has closed
+static void viewer_back_from_picker(void) {
+  if (!viewer.waiting) return;
+  int kind = viewer.waiting, had = viewer.kind;
+  viewer.waiting = 0;
+  viewer.fingers = 0;
+  if (viewer_load_pack(kind)) { viewer.prompt = 0; viewer.kind = kind; viewer_show(0); }
+  else if (had) { viewer_open_pack(had); }   // cancelled, or not a pack: what was open goes on
+  else show_toast(T("That file has no pictures", "Ese archivo no tiene imágenes"), 2500);
+}
+
+static void viewer_zoom_step(void) {
+  viewer.zoom = viewer.zoom < 1.4 ? 1.6 : viewer.zoom < 2.2 ? 2.4 : 1;
+  if (viewer.zoom == 1) viewer.cx = viewer.cy = 0.5;
+}
+
+// picture rectangle for this window; keeps the view inside the picture
+static SDL_Rect viewer_rect(int ww, int wh) {
+  SDL_Rect r = {0, 0, 0, 0};
+  if (!viewer.tw || !viewer.th) return r;
+  double s = (double)ww / viewer.tw < (double)wh / viewer.th ? (double)ww / viewer.tw : (double)wh / viewer.th;
+  s *= viewer.zoom;
+  r.w = (int)(viewer.tw * s + 0.5); r.h = (int)(viewer.th * s + 0.5);
+  double hx = (double)ww / r.w / 2, hy = (double)wh / r.h / 2;
+  viewer.cx = hx >= 0.5 ? 0.5 : viewer.cx < hx ? hx : viewer.cx > 1 - hx ? 1 - hx : viewer.cx;
+  viewer.cy = hy >= 0.5 ? 0.5 : viewer.cy < hy ? hy : viewer.cy > 1 - hy ? 1 - hy : viewer.cy;
+  r.x = (int)(ww / 2.0 - viewer.cx * r.w); r.y = (int)(wh / 2.0 - viewer.cy * r.h);
+  return r;
+}
+
+static void draw_viewer(int ww, int wh) {
+  SDL_SetRenderDrawColor(ren, 12, 8, 14, 255);
+  SDL_RenderClear(ren);
+  if (!viewer.tex) return;
+  SDL_Rect r = viewer_rect(ww, wh);
+  SDL_RenderCopy(ren, viewer.tex, NULL, &r);
+}
+
+static void draw_viewer_ui(void) {
+  if (viewer.prompt) {
+    ui_rect(0, 0, UI_W, UI_H, 0xC8000000);
+    int by = UI_H / 2 - 80;
+    ui_rect(UI_W / 2 - 280, by, 560, 170, 0xF0140C18);
+    ui_text_center(by + 14, viewer.prompt == PACK_MANUAL ? T("MANUAL", "MANUAL") : T("GALLERY", "GALERÍA"), 0xE8C060);
+    ui_text_center(by + 46, T("No pack installed. Choose its .zip file:", "No hay ningún pack instalado. Elige su archivo .zip:"), 0xFFFFFF);
+    ui_text_center(by + 70, T("it is copied inside the app, only once.", "se copia dentro de la app, solo una vez."), 0xB8B0A8);
+    ui_rect(UI_W / 2 - 250, by + 106, 240, 40, 0xFF5A1A1A);
+    ui_rect(UI_W / 2 + 10, by + 106, 240, 40, 0xFF2A2430);
+    ui_text(UI_W / 2 - 220, by + 115, T("A: Choose file", "A: Elegir archivo"), 0xFFFFFF);
+    ui_text(UI_W / 2 + 70, by + 115, T("B: Back", "B: Volver"), 0xFFFFFF);
+    return;
+  }
+  if ((Sint32)(SDL_GetTicks() - viewer.hud_until) >= 0) return;
+  char t[160], cap[80] = "";
+  if (viewer.kind == VIEW_TICKET) snprintf(t, sizeof t, "%s", T("Bought on 12 November 1994", "Comprado el 12 de noviembre de 1994"));
+  else {
+    const char* s = viewer.name[viewer.cur];
+    while (*s >= '0' && *s <= '9') s++;     // the leading number only sets the order
+    while (*s == ' ' || *s == '-' || *s == '_') s++;
+    snprintf(cap, sizeof cap, "%s", *s ? s : viewer.name[viewer.cur]);
+    snprintf(t, sizeof t, "%s   ‹ %d/%d ›", cap, viewer.cur + 1, viewer.n);
+  }
+  int w = text_width(t) + 24;
+  ui_rect((UI_W - w) / 2, UI_H - 34, w, 26, 0xC0000000);
+  ui_text_center(UI_H - 31, t, 0xFFFFFF);
+  const char* close = T("X  Close", "X  Cerrar");
+  ui_rect(UI_W - text_width(close) - 24, 6, text_width(close) + 18, 24, 0xC0000000);
+  ui_text(UI_W - text_width(close) - 15, 9, close, 0xFFFFFF);
+  if (viewer.kind != VIEW_TICKET) {
+    const char* ch = T("Change pack", "Cambiar pack");
+    ui_rect(6, 6, text_width(ch) + 18, 24, 0xC0000000);
+    ui_text(15, 9, ch, 0xB8B0A8);
+  }
+}
+
+// held directions move a zoomed picture
+static void viewer_tick(void) {
+  if (!viewer.kind || viewer.zoom <= 1.01) return;
+  double dx = 0, dy = 0;
+  const Uint8* k = SDL_GetKeyboardState(NULL);
+  dx += k[SDL_SCANCODE_RIGHT] - k[SDL_SCANCODE_LEFT];
+  dy += k[SDL_SCANCODE_DOWN] - k[SDL_SCANCODE_UP];
+  for (int i = 0; i < 8; i++) {
+    SDL_GameController* c = pads[i];
+    if (!c) continue;
+    dx += SDL_GameControllerGetButton(c, SDL_CONTROLLER_BUTTON_DPAD_RIGHT) - SDL_GameControllerGetButton(c, SDL_CONTROLLER_BUTTON_DPAD_LEFT);
+    dy += SDL_GameControllerGetButton(c, SDL_CONTROLLER_BUTTON_DPAD_DOWN) - SDL_GameControllerGetButton(c, SDL_CONTROLLER_BUTTON_DPAD_UP);
+    int ax = SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_LEFTX), ay = SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_LEFTY);
+    if (ax > 8000 || ax < -8000) dx += ax / 32768.0;
+    if (ay > 8000 || ay < -8000) dy += ay / 32768.0;
+  }
+  viewer.cx += dx * 0.012 / viewer.zoom;
+  viewer.cy += dy * 0.012 / viewer.zoom;
+}
+
+static void viewer_touch(SDL_Event* e, int ww, int wh) {
+  float x = e->tfinger.x * ww, y = e->tfinger.y * wh;
+  if (e->type == SDL_FINGERDOWN) {
+    viewer.fingers++;
+    viewer_hud();
+    if (viewer.fingers == 1) { viewer.down_x = x; viewer.down_y = y; viewer.moved = 0; }
+    else viewer.moved = 1;
+    return;
+  }
+  if (e->type == SDL_FINGERMOTION) {
+    float fx = e->tfinger.dx * ww, fy = e->tfinger.dy * wh;
+    if (viewer.fingers != 1) return;
+    if (fabsf(x - viewer.down_x) > ww / 40.0f || fabsf(y - viewer.down_y) > wh / 40.0f) viewer.moved = 1;
+    if (viewer.zoom > 1.01) {
+      SDL_Rect r = viewer_rect(ww, wh);
+      if (r.w) viewer.cx -= (double)fx / r.w;
+      if (r.h) viewer.cy -= (double)fy / r.h;
+    }
+    return;
+  }
+  // finger up (the finger that opened the viewer does not count)
+  if (viewer.fingers == 0) return;
+  viewer.fingers--;
+  if (viewer.fingers) return;
+  float ddx = x - viewer.down_x;
+  if (viewer.moved) {
+    if (viewer.zoom <= 1.01 && fabsf(ddx) > ww / 8.0f && viewer.n) viewer_show(viewer.cur + (ddx < 0 ? 1 : -1));
+    return;
+  }
+  float ux, uy;
+  ui_scale_xy(x, y, ww, wh, &ux, &uy);
+  if (uy < 34 && ux > UI_W - 140) { viewer_close(); return; }
+  if (uy < 34 && ux < 160 && viewer.kind != VIEW_TICKET) { viewer_pick_file(viewer.kind); return; }
+  Uint32 now = SDL_GetTicks();
+  if (now - viewer.last_tap < 350) { viewer.last_tap = 0; viewer_zoom_step(); return; }
+  viewer.last_tap = now;
+  if (viewer.zoom <= 1.01 && viewer.n) {
+    if (x < ww * 0.2f) viewer_show(viewer.cur - 1);
+    else if (x > ww * 0.8f) viewer_show(viewer.cur + 1);
+  }
+}
+
+// true when the event belongs to the viewer
+static int viewer_event(SDL_Event* e) {
+  int ww, wh;
+  SDL_GetRendererOutputSize(ren, &ww, &wh);
+  int prev = 0, next = 0, ok = 0, back = 0, other = 0, zoomed = viewer.zoom > 1.01;
+  switch (e->type) {
+  case SDL_FINGERDOWN: case SDL_FINGERUP: case SDL_FINGERMOTION:
+    if (viewer.prompt) {
+      if (e->type != SDL_FINGERDOWN) return 1;
+      float ux, uy;
+      ui_scale_xy(e->tfinger.x * ww, e->tfinger.y * wh, ww, wh, &ux, &uy);
+      if (ux < UI_W / 2) ok = 1; else back = 1;
+      break;
+    }
+    viewer_touch(e, ww, wh);
+    return 1;
+  case SDL_MULTIGESTURE:
+    if (viewer.kind && e->mgesture.numFingers == 2) {
+      viewer.zoom *= 1.0 + e->mgesture.dDist * 2.5;
+      if (viewer.zoom < 1) viewer.zoom = 1;
+      if (viewer.zoom > 4) viewer.zoom = 4;
+    }
+    return 1;
+  case SDL_KEYDOWN: {
+    if (e->key.repeat) return 1;
+    SDL_Keycode k = e->key.keysym.sym;
+    prev = k == SDLK_LEFT && !zoomed; next = k == SDLK_RIGHT && !zoomed;
+    ok = k == SDLK_RETURN || k == SDLK_z || k == SDLK_SPACE;
+    back = k == SDLK_ESCAPE || k == SDLK_AC_BACK || k == SDLK_x || k == SDLK_BACKSPACE;
+    other = k == SDLK_c;
+    break;
+  }
+  case SDL_KEYUP: return 1;
+  case SDL_CONTROLLERBUTTONDOWN: {
+    int b = e->cbutton.button;
+    prev = (b == SDL_CONTROLLER_BUTTON_DPAD_LEFT && !zoomed) || b == SDL_CONTROLLER_BUTTON_LEFTSHOULDER;
+    next = (b == SDL_CONTROLLER_BUTTON_DPAD_RIGHT && !zoomed) || b == SDL_CONTROLLER_BUTTON_RIGHTSHOULDER;
+    ok = b == SDL_CONTROLLER_BUTTON_A || b == SDL_CONTROLLER_BUTTON_START;
+    back = b == SDL_CONTROLLER_BUTTON_B || b == SDL_CONTROLLER_BUTTON_BACK;
+    other = b == SDL_CONTROLLER_BUTTON_X;
+    break;
+  }
+  case SDL_CONTROLLERBUTTONUP: return 1;
+  case SDL_CONTROLLERAXISMOTION:
+    if (e->caxis.axis == SDL_CONTROLLER_AXIS_LEFTX && !zoomed) {
+      int d = e->caxis.value < -20000 ? -1 : e->caxis.value > 20000 ? 1 : 0;
+      if (d && !viewer.stick_dir) { prev = d < 0; next = d > 0; }
+      viewer.stick_dir = d;
+      break;
+    }
+    return 1;
+  default: return 0;
+  }
+  if (prev || next || ok || back || other) viewer_hud();
+  if (viewer.prompt) {
+    if (ok) viewer_pick_file(viewer.prompt);
+    else if (back) viewer.prompt = 0;
+    return 1;
+  }
+  if (back) viewer_close();
+  else if (ok && viewer.kind) viewer_zoom_step();
+  else if (other && viewer.kind != VIEW_TICKET) viewer_pick_file(viewer.kind);
+  else if (viewer.n && prev) viewer_show(viewer.cur - 1);
+  else if (viewer.n && next) viewer_show(viewer.cur + 1);
+  return 1;
 }
 
 static void launcher_activate(int i) {
@@ -1356,7 +1732,9 @@ static void launcher_activate(int i) {
   case ART_PLAY: menu_open_at(PAGE_MODES); menu_sel = game_mode == GM_LOGROS ? 1 : 0; break;
   case ART_OPTIONS: menu_open_at(PAGE_HOME); break;
   case ART_CONTROLS: menu_open_at(PAGE_CONTROLS); break;
-  case ART_CREDITS: show_credits = 1; break;
+  case ART_GALLERY: viewer_open_pack(PACK_GALLERY); break;
+  case ART_MANUAL: viewer_open_pack(PACK_MANUAL); break;
+  case ART_CREDITS: show_credits = 1; credits_taps = 0; break;
   case ART_QUIT: running = 0; break;
   }
 }
@@ -1503,7 +1881,13 @@ static void handle_touch(SDL_Event* e) {
   float x = e->tfinger.x * ww, y = e->tfinger.y * wh;
   if (e->type == SDL_FINGERDOWN) {
     touch_seen = 1;
-    if (show_credits) { show_credits = 0; return; }
+    if (show_credits) {
+      float ux, uy;
+      ui_scale_xy(x, y, ww, wh, &ux, &uy);
+      if (uy >= CREDITS_NAME_Y - 8 && uy < CREDITS_NAME_Y + 26) credits_tap();
+      else show_credits = 0;
+      return;
+    }
     if (menu_open) {
       int row = menu_row_at(x, y, ww, wh);
       if (row < 0) return;
@@ -1524,7 +1908,7 @@ static void handle_touch(SDL_Event* e) {
     }
     if (in_launcher) {
       layout_launcher(ww, wh);
-      for (int i = 0; i < 5; i++) if (in_rect(launch_rect[i], x, y)) { launch_sel = i; vibrate_touch(); launcher_activate(i); }
+      for (int i = 0; i < LAUNCH_N; i++) if (in_rect(launch_rect[i], x, y)) { launch_sel = i; vibrate_touch(); launcher_activate(i); }
       return;
     }
     if (!touch_visible()) return;
@@ -1562,7 +1946,7 @@ static void present(void) {
     ensure_textures(SMS_W);
     SDL_SetRenderDrawColor(ren, 0, 0, 0, 255);
     SDL_RenderClear(ren);
-    draw_launcher(ww, wh);
+    if (viewer.kind) draw_viewer(ww, wh); else draw_launcher(ww, wh);
     draw_ui();
     SDL_UpdateTexture(tex_ui, NULL, ui, UI_W * 4);
     double us = (double)ww / UI_W < (double)wh / UI_H ? (double)ww / UI_W : (double)wh / UI_H;
@@ -1681,6 +2065,7 @@ static int pad_slot(SDL_JoystickID id) {
 }
 
 static void handle_event(SDL_Event* e) {
+  if (viewer_active() && viewer_event(e)) return;
   // list of achievements: left and right change the page, anything else closes it
   if (show_logros && (e->type == SDL_KEYDOWN || e->type == SDL_CONTROLLERBUTTONDOWN || e->type == SDL_FINGERDOWN)) {
     int d = 0;
@@ -1702,10 +2087,16 @@ static void handle_event(SDL_Event* e) {
       dx = k == SDLK_LEFT ? -1 : k == SDLK_RIGHT ? 1 : 0;
       act = k == SDLK_RETURN || k == SDLK_z || k == SDLK_SPACE;
       quit = k == SDLK_ESCAPE || k == SDLK_AC_BACK;
-      if (show_credits) { show_credits = 0; return; }
+      if (show_credits) {
+        if (k == SDLK_RETURN || k == SDLK_z) credits_tap(); else show_credits = 0;
+        return;
+      }
     } else if (e->type == SDL_CONTROLLERBUTTONDOWN) {
       int b = e->cbutton.button;
-      if (show_credits) { show_credits = 0; return; }
+      if (show_credits) {
+        if (b == SDL_CONTROLLER_BUTTON_A) credits_tap(); else show_credits = 0;
+        return;
+      }
       dx = b == SDL_CONTROLLER_BUTTON_DPAD_LEFT ? -1 : b == SDL_CONTROLLER_BUTTON_DPAD_RIGHT ? 1 : 0;
       act = b == SDL_CONTROLLER_BUTTON_A || b == SDL_CONTROLLER_BUTTON_START;
     } else if (e->type == SDL_CONTROLLERAXISMOTION && e->caxis.axis == SDL_CONTROLLER_AXIS_LEFTX) {
@@ -1714,15 +2105,16 @@ static void handle_event(SDL_Event* e) {
       if (d && !held) dx = d;
       held = d;
     }
-    if (dx) { launch_sel = (launch_sel + dx + 5) % 5; return; }
+    if (dx) { launch_sel = (launch_sel + dx + LAUNCH_N) % LAUNCH_N; return; }
     if (act) { launcher_activate(launch_sel); return; }
-    if (quit) { launch_sel = 4; return; }
+    if (quit) { launch_sel = LAUNCH_QUIT; return; }
   }
   switch (e->type) {
   case SDL_FINGERDOWN: case SDL_FINGERUP: case SDL_FINGERMOTION: handle_touch(e); break;
   case SDL_QUIT: running = 0; break;
-  case SDL_APP_WILLENTERBACKGROUND: cfg_save(); logros_flush(); if (!menu_open) menu_set_open(1); break;
+  case SDL_APP_WILLENTERBACKGROUND: cfg_save(); logros_flush(); if (!menu_open && !viewer_active()) menu_set_open(1); break;
   case SDL_APP_DIDENTERFOREGROUND:
+    viewer_back_from_picker();
     if (waiting_import) { waiting_import = 0; import_profile_file(); }
     if (waiting_music) {
       cfg.music_pack = waiting_music;
@@ -1984,6 +2376,12 @@ int main(int argc, char** argv) {
   if (autotest) {
     in_launcher = getenv("MOD_LAUNCHER") != NULL;
     if (getenv("MOD_CREDITS")) show_credits = 1;
+    if (getenv("MOD_VIEWER")) {   // MOD_VIEWER=1 gallery, 2 manual, 3 ticket; MOD_VIEWER_IDX, MOD_VIEWER_ZOOM
+      int vk = atoi(getenv("MOD_VIEWER"));
+      if (vk == VIEW_TICKET) viewer_open_ticket(); else viewer_open_pack(vk);
+      if (getenv("MOD_VIEWER_IDX")) viewer_show(atoi(getenv("MOD_VIEWER_IDX")));
+      if (getenv("MOD_VIEWER_ZOOM")) viewer.zoom = atof(getenv("MOD_VIEWER_ZOOM"));
+    }
     int total = 0; char out[512] = "";
     sscanf(autotest, "%d:%511s", &total, out);
     struct { int a, b; uint8_t btn; } spans[256]; int ns = 0;
@@ -2005,6 +2403,34 @@ int main(int argc, char** argv) {
       mod_text_frame(&S, lang_active());
       sms_run_frame(&S);
       mod_enhance_frame(&S, &E);
+    }
+    if (getenv("MOD_EVENTS")) {
+      // tests: l r u d = keys, a = enter, b = x key, A B L R X = gamepad, t<x>,<y>; = a tap (0..1)
+      SDL_Event ev;
+      for (const char* c = getenv("MOD_EVENTS"); *c; c++) {
+        memset(&ev, 0, sizeof ev);
+        if (*c == 't') {
+          float tx, ty;
+          if (sscanf(c + 1, "%f,%f", &tx, &ty) != 2) break;
+          ev.type = SDL_FINGERDOWN; ev.tfinger.fingerId = 1; ev.tfinger.x = tx; ev.tfinger.y = ty;
+          handle_event(&ev);
+          ev.type = SDL_FINGERUP;
+          handle_event(&ev);
+          while (*c && *c != ';') c++;
+          if (!*c) break;
+          SDL_Delay(400);   // not a double tap
+          continue;
+        }
+        int key = *c == 'l' ? SDLK_LEFT : *c == 'r' ? SDLK_RIGHT : *c == 'u' ? SDLK_UP : *c == 'd' ? SDLK_DOWN : *c == 'a' ? SDLK_RETURN : *c == 'b' ? SDLK_x : 0;
+        if (key) { ev.type = SDL_KEYDOWN; ev.key.keysym.sym = key; }
+        else {
+          ev.type = SDL_CONTROLLERBUTTONDOWN;
+          ev.cbutton.button = *c == 'A' ? SDL_CONTROLLER_BUTTON_A : *c == 'B' ? SDL_CONTROLLER_BUTTON_B : *c == 'X' ? SDL_CONTROLLER_BUTTON_X :
+                              *c == 'L' ? SDL_CONTROLLER_BUTTON_DPAD_LEFT : SDL_CONTROLLER_BUTTON_DPAD_RIGHT;
+        }
+        handle_event(&ev);
+      }
+      if (getenv("MOD_EVENTS_LOG")) printf("sel=%d credits=%d viewer=%d prompt=%d cur=%d zoom=%.1f menu=%d\n", launch_sel, show_credits, viewer.kind, viewer.prompt, viewer.cur, viewer.zoom, menu_open);
     }
     if (getenv("MOD_LOGROS_LIST")) { show_logros = 1; logros_page = atoi(getenv("MOD_LOGROS_LIST")); }
     if (getenv("MOD_MENU")) { menu_open = 1; menu_sel = atoi(getenv("MOD_MENU")); if (getenv("MOD_PAGE")) menu_page = atoi(getenv("MOD_PAGE")); }
@@ -2101,6 +2527,7 @@ int main(int argc, char** argv) {
       }
       if (frames == 4) acc = 0;
     }
+    viewer_tick();
     present();
     if (menu_open || in_launcher) SDL_Delay(1);
   }

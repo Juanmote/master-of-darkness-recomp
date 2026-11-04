@@ -441,9 +441,19 @@ static bool on_hook(sms_t* s, uint16_t pc) {
   case 0x3CDD: case 0x52F4:  // object created from a spawn-list entry (DE = slot, HL = entry + 3)
     note_spawn(s, pc == 0x3CDD ? 0 : 1, (z->d << 8) | z->e, (uint16_t)((z->h << 8) | z->l));
     return false;
-  case 0x3DFA: case 0x41AE:  // an enemy is destroyed (IX = its slot)
+  case 0x3DFA:  // an enemy is destroyed (IX = its slot)
     note_kill(s, z->ix);
     g->events |= MOD_EV_KILL;
+    return false;
+  case 0x41AE:  // an object is picked up (IX = its slot)
+    note_kill(s, z->ix);
+    g->events |= MOD_EV_PICKUP;
+    return false;
+  case 0x441A:  // a weapon hits a mask (slots from CC60, animation table 4320)
+    if (ram8(s, z->ix + 0x0E) == 0x20 && ram8(s, z->ix + 0x0F) == 0x43) g->events |= MOD_EV_MASK;
+    return false;
+  case 0x4506:  // a broken wall tile had an object listed behind it (table at C902)
+    g->events |= MOD_EV_SECRET;
     return false;
   case 0x46F1:  // damage to the player (B), energy in CA3A
     if (g->difficulty != MOD_DIFF_NORMAL) z->b = (uint8_t)scale_damage(z->b, &g->frac_taken, true);
@@ -554,6 +564,7 @@ static const struct { uint16_t addr; uint8_t b[4]; } signature[] = {
   {0x52F4, {0xD5, 0xDD, 0xE1, 0x7E}}, {0x523D, {0x36, 0x00, 0xC3, 0x25}}, {0x46F1, {0x3A, 0x3A, 0xCA, 0x90}},
   {0x6198, {0x3A, 0x3A, 0xCB, 0x90}}, {0x3DD3, {0xDD, 0x7E, 0x1A, 0xFD}}, {0x3DD9, {0xDD, 0x77, 0x1A, 0xDD}},
   {0x3DFA, {0x3E, 0xA0, 0x32, 0x05}}, {0x41AE, {0xC5, 0xD5, 0xDD, 0x36}},
+  {0x441A, {0xDD, 0x36, 0x01, 0x00}}, {0x4506, {0xDD, 0x36, 0x00, 0xFF}},
   {0x4A07, {0xCD, 0x4D, 0x4B, 0x3A}}, {0x4A10, {0xCD, 0x7E, 0x4B, 0x3A}}, {0x4A2C, {0x3A, 0xBA, 0xDF, 0x3D}},
   // extra projectiles
   {0x147E, {0x3E, 0xFF, 0x21, 0x40}}, {0x1521, {0x3E, 0xFF, 0x21, 0x40}}, {0x1577, {0x3E, 0xFF, 0x21, 0x40}},
@@ -594,7 +605,7 @@ void mod_enhance_attach(sms_t* s, mod_enhance_t* e) {
   if (!mod_enhance_compatible(s)) { s->hook_map = NULL; s->hook2_pc = 0; return; }
   memset(hook_map, 0, sizeof hook_map);
   static const uint16_t addrs[] = {0x51B6, 0x5228, 0x0DD1, 0x520E, 0x51D5, 0x3CD0, 0x52E7, 0x3CDD, 0x52F4,
-                                   0x3DFA, 0x41AE, 0x46F1, 0x6198, 0x3DD6, 0x3DD9};
+                                   0x3DFA, 0x41AE, 0x441A, 0x4506, 0x46F1, 0x6198, 0x3DD6, 0x3DD9};
   for (unsigned i = 0; i < sizeof addrs / sizeof addrs[0]; i++) hook_map[addrs[i]] = 1;
   memset(ms_hook_map, 0, sizeof ms_hook_map);
   static const uint16_t ms_addrs[] = {0x147E, 0x1521, 0x1577, 0x15D8, 0x22B9, 0x2379, 0x43D5, 0x43E8, 0x446D,
@@ -669,7 +680,10 @@ uint32_t mod_events_take(mod_enhance_t* e) { uint32_t v = e->events; e->events =
 static void frame_events(const sms_t* s, mod_enhance_t* e) {
   if (!s->hook_map || !mod_is_gameplay(s)) { e->prev_buttons = 0; return; }
   uint8_t b = s->st.ram[0x0701];
-  if ((b & 0x10) && !(e->prev_buttons & 0x10)) e->events |= MOD_EV_SWING;
+  if ((b & 0x10) && !(e->prev_buttons & 0x10)) {
+    e->events |= MOD_EV_SWING;
+    if (!(s->st.ram[0x0700] & 0x01)) e->events |= MOD_EV_MELEE;   // C700: held; with up it throws the subweapon
+  }
   e->prev_buttons = b;
   int st = s->st.ram[0x0A31];
   if (st == 0 && (e->prev_state == 2 || e->prev_state == 3)) e->events |= MOD_EV_LAND;

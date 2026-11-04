@@ -5,7 +5,7 @@
 #include <string.h>
 
 enum { L_ROUND1, L_ROUND2, L_ROUND3, L_ROUND4, L_FINAL, L_NOCONT, L_NODEATH, L_STAGE_CLEAN, L_STAGE_NOSUB, L_ROUND_CLEAN, L_ROUND_NOSUB,
-       L_BOSS_CLEAN, L_BOSS_KNIFE, L_BOSS_AXE, L_KILL100, L_KILL1000, L_COUNT };
+       L_BOSS_CLEAN, L_BOSS_KNIFE, L_BOSS_AXE, L_KILL100, L_KILL1000, L_SECRET, L_WEAPONS, L_SUBS, L_MASK50, L_COUNT };
 
 static const logro_t list[L_COUNT] = {
   {"round1", {"Goodbye, Jack", "Adiós, Jack"}, {"Clear round 1", "Supera la ronda 1"}},
@@ -24,6 +24,10 @@ static const logro_t list[L_COUNT] = {
   {"bossaxe", {"Lumberjack", "Leñador"}, {"Beat a boss with the axe", "Vence a un jefe con el hacha"}},
   {"kill100", {"Hunter", "Cazador"}, {"Destroy 100 enemies in total", "Destruye 100 enemigos en total"}},
   {"kill1000", {"Exterminator", "Exterminador"}, {"Destroy 1000 enemies in total", "Destruye 1000 enemigos en total"}},
+  {"secret", {"Sounds hollow", "Suena a hueco"}, {"Find an object hidden in a wall", "Descubre un objeto escondido en una pared"}},
+  {"weapons", {"Full arsenal", "Arsenal completo"}, {"Attack with the 4 main weapons (over any games)", "Ataca con las 4 armas principales (en cualquier partida)"}},
+  {"subs", {"Bag of tricks", "Caja de sorpresas"}, {"Throw the 4 subweapons (over any games)", "Lanza las 4 subarmas (en cualquier partida)"}},
+  {"mask50", {"Carnival is over", "Se acabó el carnaval"}, {"Destroy 50 masks in total", "Destruye 50 máscaras en total"}},
 };
 
 #define LAST_ROUND 4          // rounds are 0..4 in the game's RAM
@@ -36,7 +40,8 @@ static const logro_t list[L_COUNT] = {
 
 static char path[1200];
 static bool got[L_COUNT];
-static unsigned kills;
+static unsigned kills, masks;
+static unsigned weapons_used, subs_used;   // one bit per weapon, kept between games
 static bool dirty;
 static int pending[L_COUNT], n_pending;
 
@@ -59,7 +64,9 @@ static uint32_t fnv(const char* s, size_t n) {
 }
 
 // Reads a profile. Any damaged or edited file is refused as a whole.
-static bool parse_file(const char* p, bool out[L_COUNT], unsigned* out_kills) {
+typedef struct { unsigned kills, masks, weapons, subs; } counts_t;
+
+static bool parse_file(const char* p, bool out[L_COUNT], counts_t* c) {
   FILE* f = fopen(p, "rb");
   if (!f) return false;
   char buf[4096];
@@ -71,10 +78,13 @@ static bool parse_file(const char* p, bool out[L_COUNT], unsigned* out_kills) {
   char* chk = strstr(buf, "chk=");
   if (!chk || strtoul(chk + 4, NULL, 16) != fnv(buf, (size_t)(chk - buf))) return false;
   memset(out, 0, sizeof(bool) * L_COUNT);
-  *out_kills = 0;
+  memset(c, 0, sizeof *c);
   *chk = 0;
   for (char* l = strtok(buf + sizeof head - 1, "\n"); l; l = strtok(NULL, "\n")) {
-    if (!strncmp(l, "kills=", 6)) *out_kills = (unsigned)strtoul(l + 6, NULL, 10);
+    if (!strncmp(l, "kills=", 6)) c->kills = (unsigned)strtoul(l + 6, NULL, 10);
+    else if (!strncmp(l, "masks=", 6)) c->masks = (unsigned)strtoul(l + 6, NULL, 10);
+    else if (!strncmp(l, "weapons=", 8)) c->weapons = (unsigned)strtoul(l + 8, NULL, 10) & 15;
+    else if (!strncmp(l, "subs=", 5)) c->subs = (unsigned)strtoul(l + 5, NULL, 10) & 15;
     else if (!strncmp(l, "logro=", 6))
       for (int i = 0; i < L_COUNT; i++) if (!strcmp(l + 6, list[i].id)) out[i] = true;
   }
@@ -84,7 +94,7 @@ static bool parse_file(const char* p, bool out[L_COUNT], unsigned* out_kills) {
 static void save(void) {
   if (!path[0]) return;
   char body[4096];
-  int n = snprintf(body, sizeof body, "MOD-PERFIL 1\nkills=%u\n", kills);
+  int n = snprintf(body, sizeof body, "MOD-PERFIL 1\nkills=%u\nmasks=%u\nweapons=%u\nsubs=%u\n", kills, masks, weapons_used, subs_used);
   for (int i = 0; i < L_COUNT; i++)
     if (got[i]) n += snprintf(body + n, sizeof body - (size_t)n, "logro=%s\n", list[i].id);
   n += snprintf(body + n, sizeof body - (size_t)n, "chk=%08X\n", fnv(body, (size_t)n));
@@ -103,20 +113,25 @@ void logros_flush(void) { if (dirty) save(); }
 void logros_init(const char* profile_path) {
   snprintf(path, sizeof path, "%s", profile_path);
   memset(got, 0, sizeof got);
-  kills = 0;
+  kills = masks = weapons_used = subs_used = 0;
   dirty = false;
   n_pending = 0;
-  if (!parse_file(path, got, &kills)) { memset(got, 0, sizeof got); kills = 0; }
+  counts_t c;
+  if (parse_file(path, got, &c)) { kills = c.kills; masks = c.masks; weapons_used = c.weapons; subs_used = c.subs; }
+  else memset(got, 0, sizeof got);
   logros_reset_run();
 }
 
 int logros_merge_file(const char* p) {
   bool other[L_COUNT];
-  unsigned other_kills;
-  if (!parse_file(p, other, &other_kills)) return -1;
+  counts_t c;
+  if (!parse_file(p, other, &c)) return -1;
   int gained = 0;
   for (int i = 0; i < L_COUNT; i++) if (other[i] && !got[i]) { got[i] = true; gained++; }
-  if (other_kills > kills) kills = other_kills;
+  if (c.kills > kills) kills = c.kills;
+  if (c.masks > masks) masks = c.masks;
+  weapons_used |= c.weapons;
+  subs_used |= c.subs;
   dirty = true;
   save();
   return gained;
@@ -128,6 +143,7 @@ int logros_unlocked_count(void) { int n = 0; for (int i = 0; i < L_COUNT; i++) n
 const logro_t* logros_get(int i) { return &list[i]; }
 bool logros_has(int i) { return got[i]; }
 unsigned logros_kills(void) { return kills; }
+unsigned logros_masks(void) { return masks; }
 
 int logros_pop_new(void) {
   if (!n_pending) return -1;
@@ -201,11 +217,32 @@ void logros_frame(const logros_in_t* in) {
     if (in->stage != run.stage) run.stage_hurt = run.stage_sub = false;
     run.stage = in->stage;
     // one less of the same subweapon: picking up another one can also lower the counter
-    if (in->sub == run.prev_sub && in->ammo + 1 == run.prev_ammo) run.round_sub = run.stage_sub = true;
+    if (in->sub == run.prev_sub && in->ammo + 1 == run.prev_ammo) {
+      run.round_sub = run.stage_sub = true;
+      if (!(subs_used >> (in->sub & 3) & 1)) {
+        subs_used |= 1u << (in->sub & 3);
+        dirty = true;
+        save();
+        if (subs_used == 15) unlock(L_SUBS);
+      }
+    }
     run.prev_ammo = in->ammo;
     run.prev_sub = in->sub;
   }
   uint32_t ev = in->events;
+  if ((ev & MOD_EV_MELEE) && !(weapons_used >> (in->weapon & 3) & 1)) {
+    weapons_used |= 1u << (in->weapon & 3);
+    dirty = true;
+    save();
+    if (weapons_used == 15) unlock(L_WEAPONS);
+  }
+  if (ev & MOD_EV_SECRET) unlock(L_SECRET);
+  if (ev & MOD_EV_MASK) {
+    masks++;
+    dirty = true;
+    if (masks % 10 == 0) save();
+    if (masks >= 50) unlock(L_MASK50);
+  }
   if (ev & MOD_EV_KILL) {
     kills++;
     dirty = true;

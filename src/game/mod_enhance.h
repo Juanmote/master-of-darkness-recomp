@@ -83,6 +83,10 @@ typedef struct {
 #define MOD_EV_BOSS_START 0x040   // the boss music starts
 #define MOD_EV_BOSS_HIT   0x080   // a boss is hit
 #define MOD_EV_BOSS_DOWN  0x100   // a boss runs out of energy
+#define MOD_EV_MASK       0x200   // a floating mask is broken (the object it hides comes out)
+#define MOD_EV_SECRET     0x400   // a hit on a wall uncovers a hidden object
+#define MOD_EV_MELEE      0x800   // attack with the main weapon (attack pressed without holding up)
+#define MOD_EV_PICKUP     0x1000  // an object is picked up
 uint32_t mod_events_take(mod_enhance_t* e);
 
 #define MOD_HUD_WEAPON 1

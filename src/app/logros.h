@@ -23,6 +23,7 @@ int logros_unlocked_count(void);
 const logro_t* logros_get(int i);
 bool logros_has(int i);
 unsigned logros_kills(void);
+unsigned logros_masks(void);
 
 void logros_reset_run(void);              // a new game starts
 void logros_music(int id);                // the game asks for this track (0x81-0x8F)

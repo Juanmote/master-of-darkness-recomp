@@ -399,3 +399,18 @@ Cabecera TMR SEGA válida, checksum 6FE6 correcto, región SMS Export, mapper Se
 - Se cuenta como gastada solo si baja una unidad con la misma subarma: coger otra podía bajar el contador y anular "A cuerpo limpio" y "Ahorrando munición".
 - Los logros conseguidos a la vez salen en cola, uno cada 3 s: antes cada aviso tapaba al anterior.
 
+## v0.11.0 (4-11-2026)
+- **Máscaras y objetos:** 15 slots desde CC60, cargados al empezar cada fase desde la tabla del banco 6 (índice en A889 por ronda y fase, 9 bytes por objeto:
+  bandera, Y, X, clase en +09, puntos en +1B, sprite del objeto en +1E). Bandera FF = máscara visible; 00 = objeto escondido en una pared.
+  Clase: 0-3 armas, 4-7 subarmas, 8 poción, 9 vida.
+- **41AE no destruye enemigos: es RECOGER un objeto** (salta por clase en IX+9). Las notas de arriba estaban mal. Ahora solo 3DFA cuenta como muerte y 41AE da
+  `MOD_EV_PICKUP`, que vibra igual que antes. El contador de enemigos ya no suma objetos recogidos.
+- **Romper una máscara:** 441A, con IX+0E/0F = 4320 (animación de las máscaras) → `MOD_EV_MASK`.
+- **Objeto secreto:** el arma toca un metatile rompible (propiedad en D900 con bit 0x20, 448D → 44DA). Se busca el mapa en la tabla de C902 y, si tiene objeto, 4506 lo saca →
+  `MOD_EV_SECRET`. En R1-1: x=384, 848 y 2096, y=160.
+- **Armas:** C701 son los botones de este fotograma y C700 los mantenidos; ataque sin arriba mantenido = `MOD_EV_MELEE`.
+- **Perfil:** líneas nuevas `masks=`, `weapons=` y `subs=` (bits). Un perfil antiguo se lee igual. Al importar: el mayor de las máscaras y la unión de los bits.
+- **Packs de imágenes:** `tools/packs/montar_manual.py` gira las hojas, endereza, parte por el pliegue, limpia el papel (divide por el fondo y sube niveles) y deja cada página a 1600 px;
+  `montar_galeria.py` ordena, pone los nombres y limita a 2160 px. Se copian como `galeria.zip` y `manual.zip` (mensaje Android 0x8007).
+- Huellas `-H` idénticas a v0.10.5 con y sin mejoras: los ganchos nuevos solo anotan.
+

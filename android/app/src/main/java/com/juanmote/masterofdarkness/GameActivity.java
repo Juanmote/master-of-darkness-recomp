@@ -25,7 +25,10 @@ public class GameActivity extends SDLActivity {
     private static final int MSG_VIBRATE = 0x8004;   // param: strength (1-255) << 16 | milliseconds
     private static final int MSG_EXPORT_PROFILE = 0x8005;
     private static final int MSG_IMPORT_PROFILE = 0x8006;
+    private static final int MSG_PICK_PACK = 0x8007;   // param: 1 gallery, 2 manual
     private static final int EXPORT_PROFILE = 4;
+    private static final int PICK_PACK = 6;
+    private static int packKind = 1;
     private static final int IMPORT_PROFILE = 5;
     private Vibrator vibrator;
     private static boolean exitRequested;
@@ -64,6 +67,18 @@ public class GameActivity extends SDLActivity {
                     i.setType(export ? "text/plain" : "*/*");
                     if (export) i.putExtra(Intent.EXTRA_TITLE, "MasterOfDarkness_perfil.txt");
                     startActivityForResult(i, export ? EXPORT_PROFILE : IMPORT_PROFILE);
+                }
+            });
+            return true;
+        }
+        if (command == MSG_PICK_PACK) {
+            if (param instanceof Integer) packKind = (Integer) param;
+            runOnUiThread(new Runnable() {
+                @Override public void run() {
+                    Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                    i.addCategory(Intent.CATEGORY_OPENABLE);
+                    i.setType("*/*");
+                    startActivityForResult(i, PICK_PACK);
                 }
             });
             return true;
@@ -116,7 +131,12 @@ public class GameActivity extends SDLActivity {
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
-        if (requestCode == PICK_MUSIC) { copyMusicPack(data.getData()); return; }
+        if (requestCode == PICK_MUSIC) {
+            String name = musicSlot == 2 ? "musica2.zip" : musicSlot == 3 ? "musica3.zip" : "musica.zip";
+            copyPack(data.getData(), name);
+            return;
+        }
+        if (requestCode == PICK_PACK) { copyPack(data.getData(), packKind == 2 ? "manual.zip" : "galeria.zip"); return; }
         if (requestCode == EXPORT_PROFILE) { exportProfile(data.getData()); return; }
         if (requestCode == IMPORT_PROFILE) { importProfile(data.getData()); return; }
         if (requestCode != PICK_PATCH) return;
@@ -131,10 +151,10 @@ public class GameActivity extends SDLActivity {
         }
     }
 
-    /** The music pack (a .zip, possibly large) is copied as musica.zip, musica2.zip or musica3.zip (slot OST 1-3)
-     *  without loading it in memory. */
-    private void copyMusicPack(Uri uri) {
-        File tmp = new File(getFilesDir(), "musica.tmp");
+    /** A pack (a .zip, possibly large) is copied inside the app under the given name, without loading it in memory:
+     *  musica.zip, musica2.zip, musica3.zip (OST 1-3), galeria.zip or manual.zip. */
+    private void copyPack(Uri uri, String name) {
+        File tmp = new File(getFilesDir(), "pack.tmp");
         try {
             InputStream in = getContentResolver().openInputStream(uri);
             FileOutputStream out = new FileOutputStream(tmp);
@@ -148,7 +168,6 @@ public class GameActivity extends SDLActivity {
             }
             in.close();
             out.close();
-            String name = musicSlot == 2 ? "musica2.zip" : musicSlot == 3 ? "musica3.zip" : "musica.zip";
             File dst = new File(getFilesDir(), name);
             if (header) { dst.delete(); tmp.renameTo(dst); }
             else tmp.delete();

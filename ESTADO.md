@@ -1,6 +1,6 @@
 # Estado del proyecto — Master of Darkness Re-Master-Ed
 
-Última actualización: 3 de noviembre de 2026. Versión publicada: **v0.10.5**.
+Última actualización: 4 de noviembre de 2026. Versión publicada: **v0.11.0**.
 
 Launcher para Android (y escritorio) que ejecuta *Master of Darkness* (Master System) desde la ROM del
 usuario, con 16:9 real, trucos, opciones de juego, filtros, paletas, pack de música y controles táctiles.
@@ -15,7 +15,16 @@ arranca, pero las mejoras se desactivan solas (se comprueban los bytes de cada p
 ## Lo que funciona
 
 **Pantalla de inicio y app**
-- Pantalla de inicio con el arte del usuario: Jugar, Opciones, Controles, Créditos, Salir.
+- Pantalla de inicio con 7 secciones y Jugar en el medio: Opciones, Controles, Galería, Jugar, Manual, Créditos, Salir.
+  Los botones de Galería y Manual imitan el arte del usuario (placa de Créditos, fuente Almendra); se cambian sustituyendo
+  `galeria.png`, `manual.png` y `en_*.png`.
+- **Galería y Manual (v0.11.0):** packs opcionales `.zip` de `.jpg`/`.png`, como los de música: la primera vez se elige el archivo
+  y se copia dentro de la app. El nombre del archivo, sin el número inicial, es el pie. Mando: izquierda/derecha o L1/R1 pasan,
+  A hace zoom, cruceta y stick mueven la imagen con zoom, X cambia de pack, B cierra. Táctil: deslizar o tocar los bordes pasa,
+  doble toque o pellizco hacen zoom, arrastrar mueve. Packs del usuario, fuera del repositorio: `MoD_Galeria.zip` (16 imágenes) y
+  `MoD_Manual.zip` (portada y páginas 2-27). Con material de Sega: no van en el APK.
+- **Huevo de pascua (v0.11.0):** en Créditos, 3 pulsaciones sobre el nombre (toque, o A/Intro con mando) enseñan el ticket
+  de compra (`launcher/ticket.jpg`, sí va en el APK: es del usuario y no tiene datos personales). Ahora Créditos se cierra con B o tocando en otro sitio.
 - Salir cierra la app del todo: `GameActivity` hace `finishAndRemoveTask()` y `System.exit(0)`.
 - Icono adaptable con el logo a todo el ancho, sobre fondo oscuro (`tools/gen_icon.py`). Antes era un icono cuadrado
   antiguo: Android lo encogía y le ponía un plato blanco.
@@ -79,8 +88,9 @@ arranca, pero las mejoras se desactivan solas (se comprueban los bytes de cada p
   habrá logro de Survivor por no usarlos). Una partida guardada en modo normal no se carga aquí. Bloquea rebobinar, acelerar, trucos, doble salto, dificultad y reaparición "No" (también
   "Subarmas sin límite" e invencibilidad del menú oculto del juego). 16:9, sin ralentizaciones, imagen, música y
   OST son libres. Las partidas que no empiezan en la primera fase no cuentan.
-- 16 logros propios (`src/app/logros.c`): rondas 1-4, terminar el juego, sin continuar, sin perder vida, fase sin daño, fase sin subarma, ronda sin daño,
-  ronda sin subarma, jefe sin daño, jefe con cuchillo, jefe con hacha, 100 y 1000 enemigos.
+- 20 logros propios (`src/app/logros.c`): rondas 1-4, terminar el juego, sin continuar, sin perder vida, fase sin daño, fase sin subarma, ronda sin daño,
+  ronda sin subarma, jefe sin daño, jefe con cuchillo, jefe con hacha, 100 y 1000 enemigos, objeto escondido en una pared, 4 armas, 4 subarmas y
+  50 máscaras (estos tres últimos se acumulan entre partidas y se guardan en el perfil).
 - Perfil `logros.txt` con comprobación: exportar a un archivo; importar suma lo que falte, nunca quita nada.
 
 **Sonido**
@@ -102,16 +112,14 @@ Probado por el usuario y compañeros en Odin 3 Max, Retroid Pocket Classic y mó
 
 ## Errores y puntos pendientes de comprobar
 
-- **Logros:** jefe real, recuento y paso de ronda comprobados en el emulador (se llega a un jefe poniendo `DFC1=02` y `C90E=03` en
-  plena partida, en `headless` con `-p`). Sin comprobar con una partida real: el final y el jefe de la ronda 5, y exportar e importar en un aparato.
-- **Sin probar en consola:** vibración en móviles sin control de intensidad (solo notan la duración), icono
-  nuevo y ajustes remasterizados de v0.9.9, acentos de v0.9.10 (comprobados en el emulador).
+- **Logros:** el usuario los está viendo saltar bien en una partida real. Falta que confirme el final y el jefe de la ronda 5, y exportar e importar en un aparato.
+- **Sin probar en consola (v0.11.0):** Galería, Manual, ticket y los 4 logros nuevos. La pared secreta se probó en el emulador simulando el golpe
+  (`C858`..`C85E` con `-p`): sale la poción y salta el logro. Con un bot normal no se llega a golpearla.
+- **Confirmado por el usuario (4-11-2026):** traducción perfecta, vibración bien (en la Classic va más suave, se sube al máximo), icono y ajustes
+  remasterizados bien, bucles de los OST bien.
 - **Confirmado por el usuario (2-11-2026):** OST 2 pista 89, y los enemigos mayores ya no reaparecen. Los menores
   (murciélagos, perros) sí, y le gusta así: no tocar. Traducción revisada y correcta salvo lo de los acentos.
-- **Traducción:** comprobada en el emulador en intro, ouija, historia tras la ronda 0, rótulos, marcador y final.
-  Las páginas entre rondas y los diálogos de jefes no se han podido ver (el bot no llega); conviene leerlas en
-  consola. El texto se corrige en `tools/traduccion/es.txt` y se monta con `construir.py`.
-- **Packs de música:** bucles hechos por análisis; si una unión chirría, decir pista y OST y se busca otro punto.
+- **Traducción:** el texto se corrige en `tools/traduccion/es.txt` y se monta con `construir.py`.
 - **START en el título** depende de la última música pedida. Justo después de cargar un estado puede tardar
   hasta la siguiente pista en reconocer la pantalla.
 - **Pequeña diferencia de sincronía:** durante 42 fotogramas, la huella de la emulación difiere de la
@@ -174,6 +182,8 @@ SDL_AUDIODRIVER=dummy`). Saca una captura tras N fotogramas:
 - `MOD_LAUNCHER=1`: pantalla de inicio.
 - `MOD_MENU=fila` y `MOD_PAGE=página`: menú abierto.
 - `MOD_CREDITS=1`.
+- `MOD_VIEWER=1|2|3` (galería, manual, ticket), `MOD_VIEWER_IDX`, `MOD_VIEWER_ZOOM`.
+- `MOD_EVENTS`: pulsaciones de prueba (`l r u d a b`, mando `A B L R X`, toque `t0.5,0.3;`); `MOD_EVENTS_LOG=1` imprime cómo queda todo.
 - `MOD_LANG=es|en`.
 - `MOD_WINSIZE=AxB`: forma de pantalla.
 - `MOD_TOUCHDIR=r|d`: un dedo en la cruceta.
@@ -211,9 +221,9 @@ apagadas, la huella no debe cambiar.
      acordes), ajustado a pulso y a la forma de onda, con fundido cruzado de un pulso; la parte anterior va como
      `_intro`. Cortas recortadas a la duración original con fundido. 87 recortada a la escena (unos 2 min).
    - OST 2: la 89 (Ronda 2) se cambió el 2-11-2026 por la buena (antes era la del OST 1); intro 18 s, bucle 56 s.
-   - Pendiente: que el usuario pruebe los bucles y diga si alguno se nota. (Pista 89 del OST 2: confirmada.)
+   - Bucles confirmados por el usuario.
 4. **Selector de OST en la app: hecho** (v0.9.7).
-5. **Acentos que se adelantaban al texto: arreglado** (v0.9.10), pendiente de verlo en consola.
+5. **Acentos que se adelantaban al texto: arreglado** (v0.9.10) y confirmado.
 6. **Modos extra (diseño acordado con el usuario, con las ventajas bloqueadas):**
    - **Logros: iconos propios pendientes.** Las ideas pueden salir de RetroAchievements; sus insignias no (derivan de la ROM y
      sus normas no aceptan reutilizarlas). Añadir logros a los modos extra.
@@ -228,16 +238,5 @@ apagadas, la huella no debe cambiar.
    - **Narración de voz aparcada:** el usuario teme desvirtuar el juego y no encaja con la OST. Si acaso, algún extra en la galería.
 7. **Subir y bajar de las escaleras al saltar** (salto + arriba para agarrarse, salto + abajo para soltarse): petición del usuario, para más
    adelante. Debe ser opcional o quedar claro cómo afecta a logros y modos.
-8. **Descripciones en el menú "Jugar":** que todas las opciones tengan su descripción abajo, aunque sea obvia. Hoy solo la tienen tres.
-9. **Tres logros más, para la próxima versión con más cosas:**
-   - Descubrir un objeto secreto en una pared (hay una poción nada más empezar y un hacha más adelante). Falta localizar en el juego cómo salen
-     esos objetos y distinguirlos de los normales.
-   - Usar las 4 armas principales (momento de atacar con cada `DFB7`) y usar las 4 subarmas (lanzar con cada `DFB8`). Propuesta: acumulado entre
-     partidas, guardado en el perfil.
-10. **Pantalla de inicio con 7 secciones, con Jugar en el medio:** añadir Galería y Manual. Hacen falta los botones en español e inglés.
-   - **Galería:** el usuario pasará el material.
-   - **Manual:** el usuario escaneará el suyo original.
-   - **Ojo con el 100 % legal:** material con derechos de Sega (manual, carátula...) no debería ir dentro del APK. Propuesta: pack opcional aparte, como la
-     música, y dentro del APK solo lo que sea del usuario. Pendiente de que decida.
-11. **Huevo de pascua:** en Créditos, al pulsar varias veces en el nombre del usuario, aparece el ticket de compra
-   del juego. El usuario pasará la imagen más adelante.
+8. **Hecho en v0.11.0:** descripciones del menú "Jugar", 4 logros nuevos, pantalla de inicio con Galería y Manual, huevo de pascua. Si la build va bien,
+   seguir con iconos de logros, Survivor, Boss Rush y escaleras.

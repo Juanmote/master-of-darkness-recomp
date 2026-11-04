@@ -146,6 +146,34 @@ int main(void) {
   if (logros_merge_file(Q) != -1) { printf("FAIL edited accepted\n"); fails++; } else printf("ok   edited refused\n");
   f = fopen(Q, "wb"); fputs("hello\n", f); fclose(f);
   if (logros_merge_file(Q) != -1) { printf("FAIL foreign accepted\n"); fails++; } else printf("ok   foreign refused\n");
+
+  // cumulative achievements, kept between games and across a profile merge
+  fresh(P);
+  fr(MOD_EV_SECRET, 0, 0, 0, 0); expect("secret wall", "secret ");
+  for (int w = 0; w < 3; w++) fr(MOD_EV_MELEE, 0, 0, w, 0);
+  fr(MOD_EV_SWING, 0, 0, 3, 0);                     // throwing is not an attack with the weapon
+  expect("3 weapons are not enough", "");
+  logros_init(P); logros_reset_run();
+  fr(0, 0, 0, 3, 0); fr(MOD_EV_MELEE, 0, 0, 3, 0); expect("the fourth one in another game", "weapons ");
+  fresh(P);
+  for (int k = 0; k < 4; k++) {
+    cur_sub = k; fr(0, 0, 0, 0, 9); fr(0, 0, 0, 0, 8);
+    if (k == 2) { logros_flush(); logros_init(P); logros_reset_run(); }
+  }
+  cur_sub = 0;
+  expect("the 4 subweapons", "subs ");
+  fresh(P);
+  for (int k = 0; k < 49; k++) fr(MOD_EV_MASK, 0, 0, 0, 0);
+  expect("49 masks", "");
+  logros_flush(); logros_init(P); logros_reset_run();
+  if (logros_masks() != 49) { printf("FAIL masks saved %u\n", logros_masks()); fails++; } else printf("ok   masks saved\n");
+  fr(MOD_EV_MASK, 0, 0, 0, 0); expect("50 masks", "mask50 ");
+  fr(MOD_EV_PICKUP, 0, 0, 0, 0);
+  if (logros_kills() != 0) { printf("FAIL pickup counted as a kill\n"); fails++; } else printf("ok   pickup is not a kill\n");
+  rename(P, Q);
+  fresh(P);
+  fr(MOD_EV_MASK, 0, 0, 0, 0); logros_flush();
+  if (logros_merge_file(Q) != 1 || logros_masks() != 50) { printf("FAIL merge masks %u\n", logros_masks()); fails++; } else printf("ok   merge masks\n");
   remove(P); remove(Q);
   printf("%s\n", fails ? "FAILED" : "ALL OK");
   return fails != 0;
