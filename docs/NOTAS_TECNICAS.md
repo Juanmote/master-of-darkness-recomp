@@ -462,3 +462,14 @@ Cabecera TMR SEGA válida, checksum 6FE6 correcto, región SMS Export, mapper Se
 - **Prueba del bucle real** (escritorio): `MOD_LOOPTEST="fotogramas:dir"` y `MOD_LOOPMODE=br`: bucle a toda velocidad, bot que ataca, invencible, jefes con 1
   de energía; a Drácula el bot no llega y se da por vencido a los ~9600 fotogramas, saltando al final (AC35). Una partida completa salió bien.
 - Huellas `-H` idénticas a v0.11.0.
+
+## v0.13.1 (4-11-2026) — Boss Rush con jefes desbloqueados
+- **El salto de v0.13.0 no valía:** `C90E = 3` saca al jefe donde está el héroe, no en su sala. En 1-3, 4-3 y 5 la sala es el principio de la fase y
+  funcionaba; en 2-3 (y 3-3) el jefe salía en el pasillo y, tras vencerlo, la ronda no terminaba (vídeo del usuario).
+- El juego llama al jefe en 1377: `CALL 5098` mira el metatile bajo el héroe y, si es `FD` (casilla de jefe de su sala), pone `C90E = 3`.
+- Ahora, en cualquier otro modo, el fotograma en que `C90E` pasa a 3 en la fase del jefe (2; 0 en la ronda 5) se guarda como `jefe_N.sav` (estado +
+  música, sin datos de logros), una vez por jefe, con el aviso "Boss Rush: jefe N desbloqueado". El Boss Rush pide los cinco y los carga seguidos.
+  Al entrar: arma, subarma y carga, una vida, invencible a 0 y la energía de la partida (`energy_keep`), con la barra redibujada por el propio
+  juego (`MOD_HUD_ENERGY` → 494F). Ronda superada (86) → 2 s → siguiente sala. Último: 8D → resultado.
+- Ya no hay camino rápido ni tapado: se quitan `br_transit` a 8 fotogramas, el botón automático y el silencio.
+- Prueba en el bucle real con estados hechos a mano (los de v0.13.0): cinco jefes, cambio entre ellos, final, récord y logros correctos.

@@ -97,6 +97,7 @@ uint32_t mod_events_take(mod_enhance_t* e);
 #define MOD_HUD_WEAPON 1
 #define MOD_HUD_SUBWEAPON 2
 #define MOD_HUD_LIVES 4
+#define MOD_HUD_ENERGY 8
 
 enum { MOD_RESPAWN_ON, MOD_RESPAWN_OFF, MOD_RESPAWN_MIXED };
 enum { MOD_DIFF_EASY, MOD_DIFF_NORMAL, MOD_DIFF_HARD };

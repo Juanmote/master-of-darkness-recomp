@@ -1,6 +1,6 @@
 # Estado del proyecto — Master of Darkness Re-Master-Ed
 
-Última actualización: 4 de noviembre de 2026. Versión publicada: **v0.13.0**.
+Última actualización: 4 de noviembre de 2026. Versión publicada: **v0.13.1**.
 
 Launcher para Android (y escritorio) que ejecuta *Master of Darkness* (Master System) desde la ROM del
 usuario, con 16:9 real, trucos, opciones de juego, filtros, paletas, pack de música y controles táctiles.
@@ -99,7 +99,9 @@ arranca, pero las mejoras se desactivan solas (se comprueban los bytes de cada p
   terminar en Fácil, Normal y Difícil).
 - **Boss Rush (v0.13.0):** los cinco jefes seguidos contra el reloj, con una vida y sin guardar ni cargar. Se elige Vida (tras cada jefe: Fácil toda la
   energía, Normal media barra, Difícil nada) y Armas (Fácil estoque o hacha y bombas o estacas; Normal espada o estoque y pistola o bumerán;
-  Difícil cuchillo y pistola o bumerán); la dificultad de la partida sale de las dos. El camino entre jefes va rápido y tapado ("Jefe N de 5").
+  Difícil cuchillo y pistola o bumerán); la dificultad de la partida sale de las dos. **Jefes desbloqueados (v0.13.1):** cada jefe se desbloquea la primera vez que el
+  jugador entra en su sala en cualquier otra partida (vale partida normal con "Empezar en cualquier ronda" e invencible): ese momento se guarda en
+  el aparato (`jefe_N.sav`) y el Boss Rush lo carga. Hacen falta los cinco.
   Récord por dificultad, guardado en el perfil. Pantalla de resultado con tiempo y récord.
 - **Modo Survivor (v0.12.0):** todo el juego con una sola vida (marcador V=00; las vidas extra no suman). Mismos bloqueos que el modo logros y
   los logros cuentan. Se elige dificultad: Fácil, la energía se recupera como siempre; Normal, solo al empezar la ronda siguiente a cada jefe;
@@ -129,7 +131,8 @@ Probado por el usuario y compañeros en Odin 3 Max, Retroid Pocket Classic y mó
 
 ## Errores y puntos pendientes de comprobar
 
-- **v0.13.0 sin probar en consola:** Boss Rush entero (en el ordenador una partida con bot llegó a los cinco jefes y al final), Miniyo.
+- **v0.13.1 sin probar en consola:** Boss Rush con jefes desbloqueados (desbloquear los cinco en una partida y jugarlo), Miniyo.
+- **v0.13.0 descartada:** el atajo sacaba al jefe en el pasillo (2-3) y la ronda no terminaba.
 - **Información del usuario (4-11-2026):** con el invencible de pruebas, al caer a un precipicio o al agua se sale por arriba. Survivor completo con el
   truco y todos los logros salvo 1000 enemigos. Decía que al cambiar el traje se perdía el invencible: no se encontró relación; ahora el invencible
   de pruebas se aplica en todos los fotogramas.
@@ -268,5 +271,5 @@ apagadas, la huella no debe cambiar.
 8. **Hecho en v0.11.0:** descripciones del menú "Jugar", 4 logros nuevos, pantalla de inicio con Galería y Manual, huevo de pascua.
 9. **Hecho en v0.12.0:** letras sueltas en diálogos de jefe, franja del final, visor, 8:7 con Estirar, logros ordenados, modo Survivor.
    Siguiente: probar Survivor en consola, luego iconos de logros, Boss Rush (y sus logros) y escaleras.
-11. **Hecho en v0.13.0:** Boss Rush con sus logros, logro Miniyo. Siguiente: probar Boss Rush en consola, iconos de logros, escaleras.
+11. **Hecho en v0.13.1:** Boss Rush con jefes desbloqueados y sus logros, logro Miniyo. Siguiente: probar Boss Rush en consola, iconos de logros, escaleras.
 10. **Antes de la versión final:** quitar "Invencible (pruebas)" (`test_inv` en `main.c`).

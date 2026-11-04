@@ -19,7 +19,7 @@
 #include "stb_image.h"
 
 #include "miniz.h"
-#define APP_VERSION "0.13.0"
+#define APP_VERSION "0.13.1"
 #define KNOWN_CRC 0x96FB4D4Bu
 #define UI_W 640
 #define UI_H 360
@@ -1087,33 +1087,73 @@ static int sv_over_event(SDL_Event* e) {
 }
 
 // ---------------------------------------------------------------- Boss Rush run
-// Getting to each boss (from the title, and between bosses the bonus and story pages) is played fast and out
-// of sight, with the button pressed by itself, while the RAM keeps the stage of the boss: the game loads the
-// last stage of the round and C90E = 3 takes the hero to its boss. No states saved in the APK: only the
-// player's own game is used.
+// Each boss starts from the moment the player walked into its room in one of their own games: when the game
+// sets C90E = 3 (the boss is coming) in any other mode, that moment is saved as jefe_N.sav, once per boss.
+// The Boss Rush loads them one after another, with its own weapons, energy and a single life. Nothing from
+// the ROM goes in the APK: the pictures are the player's own.
 #define RAM_STAGE_STATE 0xC90E   // 1 stage cleared, 3 boss
 #define MUS_BR_ROUND_CLEAR 0x86
 #define MUS_BR_ENDING 0x8D
 #define MUS_BR_CONTINUE 0x82
 #define BR_BOSSES 5
-static int br_k;              // boss being fought or reached next (0..4)
-static int br_transit;        // on the way to boss br_k
-static int br_fight, br_down; // its stage is running / it has fallen
+static int br_k;              // boss being fought (0..4)
+static int br_transit;        // a boss has fallen: the next one is loaded when br_next_at comes
+static Uint32 br_next_at;
+static int br_fight, br_down; // its room is loaded / it has fallen
 static unsigned br_frames;    // time of the run (playing frames, 60 per second)
-static unsigned br_tick;
-static int br_settle;         // playing frames of the boss stage before jumping to the boss
-static int br_wait_boss;      // frames left for the boss music; if it does not start, the jump is made again
-static int br_boss_on;        // the boss has appeared
 static int br_over;           // result screen: 1 life lost, 2 finished
 static Uint32 br_over_at;
 static int br_record;
+static int br_prev_state = -1;   // C90E in the frame before (to see the game itself call a boss)
 
-static int br_stage_of(int k) { return k == BR_BOSSES - 1 ? 0 : 2; }   // round 5 is a single stage
+static void br_snap_file(int k, char* out, size_t n) { char nm[32]; snprintf(nm, sizeof nm, "jefe_%d.sav", k + 1); cfg_path(out, n, nm); }
+static int br_have(int k) { char p[1100]; br_snap_file(k, p, sizeof p); FILE* f = fopen(p, "rb"); if (f) fclose(f); return f != NULL; }
+static int br_have_all(void) { for (int k = 0; k < BR_BOSSES; k++) if (!br_have(k)) return 0; return 1; }
+static int br_have_count(void) { int n = 0; for (int k = 0; k < BR_BOSSES; k++) n += br_have(k); return n; }
+
+// the state and its music, without the achievements game (each run is the Boss Rush's own)
+static void br_snap_save(int k) {
+  char p[1100]; br_snap_file(k, p, sizeof p);
+  size_t base = sms_state_size();
+  uint8_t* buf = malloc(base + sizeof(state_music_t));
+  if (!buf) return;
+  sms_save_state(&S, buf);
+  state_music_t m = {music_current, cfg.music_pack > 0 && music_has(music_current)};
+  memcpy(buf + base, &m, sizeof m);
+  SDL_RWops* rw = SDL_RWFromFile(p, "wb");
+  if (rw) { SDL_RWwrite(rw, buf, 1, base + sizeof m); SDL_RWclose(rw); }
+  free(buf);
+  char t[96]; snprintf(t, sizeof t, T("Boss Rush: boss %d unlocked", "Boss Rush: jefe %d desbloqueado"), k + 1);
+  show_toast(t, 2500);
+}
+
+static int br_snap_load(int k) {
+  char p[1100]; br_snap_file(k, p, sizeof p);
+  size_t n = 0, base = sms_state_size();
+  uint8_t* buf = load_file(p, &n);
+  int ok = buf && n == base + sizeof(state_music_t) && sms_load_state(&S, buf, base);
+  if (ok) {
+    state_music_t m; memcpy(&m, buf + base, sizeof m);
+    restore_state_music(&m);
+    mod_respawn_forget_slots(&E);
+  }
+  free(buf);
+  return ok;
+}
+
+// every frame of the other modes: the game has just called a boss in its own stage
+static void br_watch_frame(void) {
+  if (rom_crc != KNOWN_CRC) return;
+  int st = gram(RAM_STAGE_STATE), r = gram(RAM_ROUND);
+  if (st == 3 && br_prev_state != 3 && r < BR_BOSSES && gram(RAM_STAGE) == (r == BR_BOSSES - 1 ? 0 : 2) && !br_have(r))
+    br_snap_save(r);
+  br_prev_state = st;
+}
 
 static void br_reset_run(void) {
-  br_k = 0; br_transit = 1; br_fight = br_down = 0; br_frames = 0; br_tick = 0; br_settle = 0; br_boss_on = 0;
+  br_k = 0; br_transit = 0; br_fight = br_down = 0; br_frames = 0;
   br_over = 0; br_over_at = 0; br_record = 0;
-  E.energy_lock = true; E.energy_keep = 0x20;   // also keeps potions from healing
+  E.energy_lock = true; E.energy_keep = 0x20;   // potions do not heal
 }
 
 static void br_time_text(unsigned fr, char* out, size_t n) {
@@ -1121,16 +1161,27 @@ static void br_time_text(unsigned fr, char* out, size_t n) {
   snprintf(out, n, "%u:%02u.%02u", cs / 6000, cs / 100 % 60, cs % 100);
 }
 
-// before each emulated frame
-static void br_before_frame(void) {
-  if (!br_transit || rom_crc != KNOWN_CRC) return;
-  S.input = (br_tick++ % 40) < 4 ? BTN_1 : 0;   // title, intro, story pages: the button goes by itself
-  if (br_k == 0) gram_w(RAM_ROUND, 0);
-  // only once the game is in that round: the stage it cleared decides whether the round ends
-  if (gram(RAM_ROUND) == br_k) gram_w(RAM_STAGE, (uint8_t)br_stage_of(br_k));
+static void br_lost(void) { if (!br_over) { br_over = 1; br_over_at = 0; music_stop(); logros_flush(); } }
+
+// into the room of boss br_k, with this run's weapons, a full load of ammo, its energy and one life
+static void br_enter(void) {
+  if (!br_snap_load(br_k)) { br_lost(); return; }
+  int w = br_weapons[br_arms][br_wsel], sub = br_subs[br_arms][br_ssel];
+  gram_w(RAM_WEAPON, (uint8_t)w); gram_w(RAM_SUBWEAPON, (uint8_t)sub); gram_w(RAM_AMMO, sub <= 1 ? 16 : 8);
+  gram_w(RAM_LIVES, 1);
+  gram_w(RAM_ENERGY, E.energy_keep ? E.energy_keep : 0x20);
+  gram_w(RAM_INVINCIBLE, 0);
+  mod_request_hud(&E, MOD_HUD_WEAPON | MOD_HUD_SUBWEAPON | MOD_HUD_LIVES | MOD_HUD_ENERGY);
+  br_transit = 0; br_fight = 1; br_down = 0;
+  char t[64]; snprintf(t, sizeof t, T("Boss %d of %d", "Jefe %d de %d"), br_k + 1, BR_BOSSES);
+  show_toast(t, 2000);
 }
 
-// the boss of this stage has fallen (its energy ran out, or the round is cleared)
+static void br_before_frame(void) {
+  if (br_transit && !br_over && (Sint32)(SDL_GetTicks() - br_next_at) >= 0) br_enter();
+}
+
+// the boss of this room has fallen (its energy ran out, or the round is cleared)
 static void br_boss_beaten(void) {
   if (br_down) return;
   br_down = 1;
@@ -1143,34 +1194,14 @@ static void br_boss_beaten(void) {
   if (br_k < BR_BOSSES - 1) logros_br_boss(br_k);
 }
 
-static void br_lost(void) { if (!br_over) { br_over = 1; br_over_at = 0; music_stop(); logros_flush(); } }
-
 // after each emulated frame, with its events
 static void br_frame(uint32_t ev) {
-  if (br_over || rom_crc != KNOWN_CRC) return;
+  if (br_over || rom_crc != KNOWN_CRC || !br_fight) return;
   if (br_over_at && (Sint32)(SDL_GetTicks() - br_over_at) >= 0) { br_lost(); return; }
-  int playing = mod_is_gameplay(&S);
-  if (br_transit) {
-    // the boss stage has to be running and set up (energy given) for a few frames, or the jump is undone
-    if (!playing || gram(RAM_ROUND) != br_k || gram(RAM_STAGE) != br_stage_of(br_k) || !gram(RAM_ENERGY)) { br_settle = 0; return; }
-    if (++br_settle < 10) return;
-    // straight to the boss, with this run's weapons and a full load of ammo
-    gram_w(RAM_STAGE_STATE, 3);
-    br_wait_boss = 180; br_boss_on = 0;
-    int w = br_weapons[br_arms][br_wsel], sub = br_subs[br_arms][br_ssel];
-    gram_w(RAM_WEAPON, (uint8_t)w); gram_w(RAM_SUBWEAPON, (uint8_t)sub); gram_w(RAM_AMMO, sub <= 1 ? 16 : 8);
-    gram_w(RAM_LIVES, 1);
-    mod_request_hud(&E, MOD_HUD_WEAPON | MOD_HUD_SUBWEAPON | MOD_HUD_LIVES);
-    br_transit = 0; br_fight = 1; br_down = 0;
-    if (music_current > 0 && cfg.music_pack > 0 && music_has(music_current)) music_play(music_current);
-    return;
-  }
   if ((ev & MOD_EV_DEATH) && !br_over_at) br_over_at = SDL_GetTicks() + 2500;
-  if ((ev & MOD_EV_BOSS_DOWN) && br_fight) br_boss_beaten();
-  if (ev & MOD_EV_BOSS_START) br_boss_on = 1;
-  if (br_fight && !br_down && !br_over_at) br_frames++;   // the clock runs from reaching the boss until it falls
-  if (br_fight && !br_boss_on && --br_wait_boss <= 0) { gram_w(RAM_STAGE_STATE, 3); br_wait_boss = 180; }
-  if (!playing) return;
+  if (ev & MOD_EV_BOSS_DOWN) br_boss_beaten();
+  if (!br_down && !br_over_at) br_frames++;   // the clock runs from entering the room until the boss falls
+  if (!mod_is_gameplay(&S)) return;
   if (gram(RAM_LIVES) != 1) { gram_w(RAM_LIVES, 1); mod_request_hud(&E, MOD_HUD_LIVES); }
   // the weapons of the run stay (anything picked up in a boss room does not change them)
   int w = br_weapons[br_arms][br_wsel], sub = br_subs[br_arms][br_ssel];
@@ -1179,13 +1210,12 @@ static void br_frame(uint32_t ev) {
 }
 
 static void br_music(int id) {
-  if (br_over) return;
+  if (br_over || !br_fight) return;
   if (id == MUS_BR_CONTINUE) { br_lost(); return; }
-  if (br_fight && !br_over_at && ((id == MUS_BR_ROUND_CLEAR && br_k < BR_BOSSES - 1) || (id == MUS_BR_ENDING && br_k == BR_BOSSES - 1)))
+  if (!br_over_at && ((id == MUS_BR_ROUND_CLEAR && br_k < BR_BOSSES - 1) || (id == MUS_BR_ENDING && br_k == BR_BOSSES - 1)))
     br_boss_beaten();
-  if (id == MUS_BR_ROUND_CLEAR && br_down && br_k < BR_BOSSES - 1) {
-    br_k++; br_transit = 1; br_fight = br_down = 0; br_tick = 0; br_settle = 0;
-    music_stop();
+  if (id == MUS_BR_ROUND_CLEAR && br_down && br_k < BR_BOSSES - 1 && !br_transit) {
+    br_k++; br_transit = 1; br_next_at = SDL_GetTicks() + 2000;   // a moment to see it fall, then the next room
   } else if (id == MUS_BR_ENDING && br_down && br_k == BR_BOSSES - 1) {
     br_record = logros_br_finish(br_diff(), br_frames);
     br_over = 2;
@@ -1194,17 +1224,7 @@ static void br_music(int id) {
 }
 
 static void draw_br_hud(void) {
-  char t[64];
-  if (br_transit) {
-    ui_rect(0, 0, UI_W, UI_H, 0xFF08060A);
-    ui_text_center(UI_H / 2 - 30, "BOSS RUSH", 0xE8C060);
-    snprintf(t, sizeof t, T("Boss %d of %d", "Jefe %d de %d"), br_k + 1, BR_BOSSES);
-    ui_text_center(UI_H / 2, t, 0xFFFFFF);
-    br_time_text(br_frames, t, sizeof t);
-    ui_text_center(UI_H / 2 + 26, t, 0xB8B0A8);
-    return;
-  }
-  char tt[32]; br_time_text(br_frames, tt, sizeof tt);
+  char t[64], tt[32]; br_time_text(br_frames, tt, sizeof tt);
   snprintf(t, sizeof t, "%d/%d  %s", br_k + 1, BR_BOSSES, tt);
   int w = text_width(t) + 16;
   ui_rect(UI_W - w - 6, UI_H - 28, w, 22, 0x90000000);
@@ -1222,15 +1242,13 @@ static void draw_br_over(void) {
   ui_text_center(by + 14, t, 0xE8C060);
   br_time_text(br_frames, tm, sizeof tm);
   if (logros_br_best(br_diff())) br_time_text(logros_br_best(br_diff()), best, sizeof best);
-  if (br_over == 2) {
-    ui_text_center(by + 48, br_record ? T("All bosses beaten. New record!", "¡Todos los jefes vencidos! ¡Nuevo récord!")
-                                      : T("All bosses beaten!", "¡Todos los jefes vencidos!"), 0xFFFFFF);
-    snprintf(t, sizeof t, T("Time %s   Record %s", "Tiempo %s   Récord %s"), tm, best);
-  } else {
+  if (br_over == 2) ui_text_center(by + 48, br_record ? T("All bosses beaten. New record!", "¡Todos los jefes vencidos! ¡Nuevo récord!")
+                                                      : T("All bosses beaten!", "¡Todos los jefes vencidos!"), 0xFFFFFF);
+  else {
     snprintf(t, sizeof t, T("You fell against boss %d of %d", "Has caído ante el jefe %d de %d"), br_k + 1, BR_BOSSES);
     ui_text_center(by + 48, t, 0xFFFFFF);
-    snprintf(t, sizeof t, T("Time %s   Record %s", "Tiempo %s   Récord %s"), tm, best);
   }
+  snprintf(t, sizeof t, T("Time %s   Record %s", "Tiempo %s   Récord %s"), tm, best);
   ui_text_center(by + 74, t, 0xB8B0A8);
   ui_rect(UI_W / 2 - 250, by + 116, 240, 40, 0xFF5A1A1A);
   ui_rect(UI_W / 2 + 10, by + 116, 240, 40, 0xFF2A2430);
@@ -1241,8 +1259,16 @@ static void draw_br_over(void) {
 
 static void start_mode(int mode);
 static void br_new_run(void) {
+  if (!br_have_all()) {
+    char t[120], miss[32] = ""; int n = 0;
+    for (int k = 0; k < BR_BOSSES; k++) if (!br_have(k)) n += snprintf(miss + n, sizeof miss - (size_t)n, "%s%d", n ? ", " : "", k + 1);
+    snprintf(t, sizeof t, T("Bosses still locked: %s. Reach them once in any game", "Faltan jefes: %s. Llega a ellos una vez en cualquier partida"), miss);
+    show_toast(t, 4000);
+    return;
+  }
   game_mode = GM_NORMAL;   // makes start_mode begin a new game
   start_mode(GM_BOSSRUSH);
+  br_enter();
 }
 
 static int br_over_event(SDL_Event* e) {
@@ -1520,7 +1546,10 @@ static void draw_ui(void) {
       else if (it == MI_BR_ARMS) foot = br_arms == 0 ? T("Rapier or axe, bombs or stakes", "Estoque o hacha, bombas o estacas") :
                                         br_arms == 1 ? T("Sword or rapier, pistol or boomerang", "Espada o estoque, pistola o bumerán") :
                                         T("Knife, pistol or boomerang", "Cuchillo, pistola o bumerán");
-      else if (it == MI_BR_START || it == MI_BR_WEAPON || it == MI_BR_SUB) {
+      else if ((it == MI_BR_START || it == MI_BR_WEAPON || it == MI_BR_SUB) && !br_have_all()) {
+        snprintf(br_foot, sizeof br_foot, T("Bosses unlocked: %d/5 (reach them in any game)", "Jefes desbloqueados: %d/5 (llega a ellos en cualquier partida)"), br_have_count());
+        foot = br_foot;
+      } else if (it == MI_BR_START || it == MI_BR_WEAPON || it == MI_BR_SUB) {
         unsigned b = logros_br_best(br_diff());
         char tm[32]; br_time_text(b, tm, sizeof tm);
         if (b) snprintf(br_foot, sizeof br_foot, T("Record on %s: %s", "Récord en %s: %s"), diff_names[ES][br_diff()], tm);
@@ -2989,7 +3018,6 @@ int main(int argc, char** argv) {
           continue;
         }
         int steps = fast_forward ? 4 : 1;
-        if (game_mode == GM_BOSSRUSH && br_transit) steps = 8;   // the way to the next boss goes by fast
         for (int k = 0; k < steps; k++) {
           cheats_frame();
           if (k == 0) suit_frame();
@@ -3000,7 +3028,7 @@ int main(int argc, char** argv) {
           { uint32_t gev = mod_events_take(&E);
             if (!fast_forward && gev) vibrate_game(gev);
             if (game_mode == GM_SURVIVOR) sv_frame(gev);
-            if (game_mode == GM_BOSSRUSH) br_frame(gev);
+            if (game_mode == GM_BOSSRUSH) br_frame(gev); else br_watch_frame();
             if (LOGROS_ON) {
               logros_in_t li = {gev, mod_is_gameplay(&S), gram(RAM_ROUND), gram(RAM_STAGE), (uint8_t)(gram(RAM_WEAPON) & 3), (uint8_t)(gram(RAM_SUBWEAPON) & 3), gram(RAM_AMMO)};
               logros_frame(&li);
@@ -3011,8 +3039,7 @@ int main(int argc, char** argv) {
             if (LOGROS_ON && id) logros_music(id);
             if (game_mode == GM_SURVIVOR && id) sv_music(id);
             if (game_mode == GM_BOSSRUSH && id) br_music(id);
-            int quiet = game_mode == GM_BOSSRUSH && br_transit;
-            if (kind == MOD_MUSIC_PLAY) { music_current = id; if (!quiet) music_play(id); }
+            if (kind == MOD_MUSIC_PLAY) { music_current = id; music_play(id); }
             else if (kind == MOD_MUSIC_STOP) { if (id) music_current = id; music_stop(); }
             else if (kind == MOD_MUSIC_FADE) music_fade();
           }
@@ -3030,7 +3057,7 @@ int main(int argc, char** argv) {
           }
         }
         music_set_paused(mod_music_paused(&S));
-        if (audio_dev && queued < 8 && !fast_forward && !(game_mode == GM_BOSSRUSH && br_transit)) {
+        if (audio_dev && queued < 8 && !fast_forward) {
           for (int i = 0; i < SMS_SAMPLES_PER_FRAME; i++) mixbuf[i] = (int16_t)(S.audio[i] * cfg.volume / 10);
           music_mix(mixbuf, SMS_SAMPLES_PER_FRAME, cfg.volume);
           SDL_QueueAudio(audio_dev, mixbuf, sizeof mixbuf);
