@@ -1,6 +1,6 @@
 # Estado del proyecto — Master of Darkness Re-Master-Ed
 
-Última actualización: 4 de noviembre de 2026. Versión publicada: **v0.12.1**.
+Última actualización: 4 de noviembre de 2026. Versión publicada: **v0.13.0**.
 
 Launcher para Android (y escritorio) que ejecuta *Master of Darkness* (Master System) desde la ROM del
 usuario, con 16:9 real, trucos, opciones de juego, filtros, paletas, pack de música y controles táctiles.
@@ -86,16 +86,21 @@ arranca, pero las mejoras se desactivan solas (se comprueban los bytes de cada p
   suelo y jefes (aparece, le aciertas, lo derrotas). Si el mando vibra, vibra el mando; si no, el aparato.
 
 **Modos y logros (v0.10.0)**
-- "Jugar" abre una lista: Partida normal, Modo logros, Modo Survivor, Logros, Exportar perfil e Importar perfil. Cambiar de modo
+- "Jugar" abre una lista: Partida normal, Modo logros, Modo Survivor, Boss Rush, Logros, Exportar perfil e Importar perfil. Cambiar de modo
   empieza una partida nueva; volver al mismo modo la continúa.
 - Modo logros: permite guardar y cargar estado, con ranura propia (decisión del usuario: en consola es así, facilita las pruebas y
   habrá logro de Survivor por no usarlos). Una partida guardada en modo normal no se carga aquí. Bloquea rebobinar, acelerar, trucos, doble salto, dificultad y reaparición "No" (también
   "Subarmas sin límite" e invencibilidad del menú oculto del juego). 16:9, sin ralentizaciones, imagen, música y
   OST son libres. Las partidas que no empiezan en la primera fase no cuentan.
-- 28 logros propios (`src/app/logros.c`), ordenados por tipo (v0.12.0): historia (rondas 1-4, terminar), partida (sin continuar, sin perder
+- 36 logros propios (`src/app/logros.c`), ordenados por tipo (v0.12.0): historia (rondas 1-4, terminar), partida (sin continuar, sin perder
   vida), fases y rondas (sin daño, sin subarma), jefes (sin daño, cuchillo, hacha), colección (objeto en la pared, 4 armas, 4 subarmas,
-  50 máscaras, 100 y 1000 enemigos; armas, subarmas, máscaras y enemigos se acumulan entre partidas) y Survivor (rondas 1-4, terminar en
-  Fácil, Normal y Difícil, cada uno da también los más fáciles, y terminar sin cargar estados).
+  50 máscaras, 100 y 1000 enemigos, Miniyo por una vida extra; armas, subarmas, máscaras y enemigos se acumulan entre partidas), Survivor
+  (rondas 1-4, terminar en Fácil, Normal y Difícil, cada uno da también los más fáciles, y terminar sin repetir fase) y Boss Rush (jefes 1-4 y
+  terminar en Fácil, Normal y Difícil).
+- **Boss Rush (v0.13.0):** los cinco jefes seguidos contra el reloj, con una vida y sin guardar ni cargar. Se elige Vida (tras cada jefe: Fácil toda la
+  energía, Normal media barra, Difícil nada) y Armas (Fácil estoque o hacha y bombas o estacas; Normal espada o estoque y pistola o bumerán;
+  Difícil cuchillo y pistola o bumerán); la dificultad de la partida sale de las dos. El camino entre jefes va rápido y tapado ("Jefe N de 5").
+  Récord por dificultad, guardado en el perfil. Pantalla de resultado con tiempo y récord.
 - **Modo Survivor (v0.12.0):** todo el juego con una sola vida (marcador V=00; las vidas extra no suman). Mismos bloqueos que el modo logros y
   los logros cuentan. Se elige dificultad: Fácil, la energía se recupera como siempre; Normal, solo al empezar la ronda siguiente a cada jefe;
   Difícil, nunca. Donde no cura, la poción no hace nada (solo suena) y cada fase empieza con la energía que se tenía. Sin guardar ni cargar a mano (v0.12.1):
@@ -124,11 +129,15 @@ Probado por el usuario y compañeros en Odin 3 Max, Retroid Pocket Classic y mó
 
 ## Errores y puntos pendientes de comprobar
 
+- **v0.13.0 sin probar en consola:** Boss Rush entero (en el ordenador una partida con bot llegó a los cinco jefes y al final), Miniyo.
+- **Información del usuario (4-11-2026):** con el invencible de pruebas, al caer a un precipicio o al agua se sale por arriba. Survivor completo con el
+  truco y todos los logros salvo 1000 enemigos. Decía que al cambiar el traje se perdía el invencible: no se encontró relación; ahora el invencible
+  de pruebas se aplica en todos los fotogramas.
 - **v0.12.1 sin probar en consola:** bandas Ambiente en 8:7, guardado de Survivor al empezar fase y repetir fase, modo pruebas.
 - **v0.12.0 sin probar en consola:** Survivor (sobre todo Normal y Difícil en las fases y con pociones), letras sueltas del jefe 4-3 (en el
   emulador ya no salen, y los acentos siguen en intro, historia y final), franja del final (no se llegó a esa pantalla en el emulador: el arreglo
   vale para cualquier fondo liso), visor con botones abajo, 8:7 con Estirar.
-- **Boss Rush (decisión del usuario):** sin guardar ni cargar.
+- **Boss Rush (decisión del usuario):** sin guardar ni cargar. Logros como Survivor: uno por jefe y tres por dificultad.
 - **Survivor, por decidir con el usuario:** qué hacer con las pociones que no curan (ahora no hacen nada; podrían dar puntos).
 - **Logros (4-11-2026):** el usuario ha terminado el juego en la Classic y tiene todos menos 1000 enemigos (el del bloque oculto lo sacó enseguida).
 - **Logros:** falta probar exportar e importar en un aparato.
@@ -247,7 +256,7 @@ apagadas, la huella no debe cambiar.
    - **Logros: iconos propios pendientes.** Las ideas pueden salir de RetroAchievements; sus insignias no (derivan de la ROM y
      sus normas no aceptan reutilizarlas). Añadir logros a los modos extra.
    - **Survivor: hecho en v0.12.0** (ver Modos y logros).
-   - **Boss Rush:** todos los jefes seguidos, con cronómetro y récord por dificultad. Vida: Fácil recupera todo tras cada
+   - **Boss Rush: hecho en v0.13.0.** Diseño original: todos los jefes seguidos, con cronómetro y récord por dificultad. Vida: Fácil recupera todo tras cada
      jefe, Normal media barra, Difícil nada. Armas: Fácil elige estoque o hacha y bombas o estacas; Normal espada o estoque y
      pistola o bumerán; Difícil cuchillo y pistola o bumerán. La subarma se recarga tras cada jefe con una carga normal
      (16 pistola y bumerán, 8 bombas y estacas). Dificultad: Fácil 0, Normal 1, Difícil 2 en cada eje; suma 0 = Fácil,
@@ -259,4 +268,5 @@ apagadas, la huella no debe cambiar.
 8. **Hecho en v0.11.0:** descripciones del menú "Jugar", 4 logros nuevos, pantalla de inicio con Galería y Manual, huevo de pascua.
 9. **Hecho en v0.12.0:** letras sueltas en diálogos de jefe, franja del final, visor, 8:7 con Estirar, logros ordenados, modo Survivor.
    Siguiente: probar Survivor en consola, luego iconos de logros, Boss Rush (y sus logros) y escaleras.
+11. **Hecho en v0.13.0:** Boss Rush con sus logros, logro Miniyo. Siguiente: probar Boss Rush en consola, iconos de logros, escaleras.
 10. **Antes de la versión final:** quitar "Invencible (pruebas)" (`test_inv` en `main.c`).

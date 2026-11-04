@@ -444,3 +444,21 @@ Cabecera TMR SEGA válida, checksum 6FE6 correcto, región SMS Export, mapper Se
   B inicio. Boss Rush: sin guardados (decisión del usuario).
 - **TEMPORAL, quitar antes de la versión final:** `test_inv` / "Invencible (pruebas)" en los menús de modo logros y Survivor: `DFB4` a FF en partida,
   R2 acelera, y los logros van a `logros_pruebas.txt` (`logros_switch_profile`) para no mezclarse con el perfil real.
+
+## v0.13.0 (4-11-2026) — Boss Rush
+- **Saltar de jefe en jefe sin estados guardados:** se mantiene `DFC1` en la fase del jefe (2; 0 en la ronda 5, que solo tiene una) y, en la primera
+  partida, también `DFC0`. Al superar una ronda el juego sube `DFC0` y carga la última fase de la siguiente. `DFC1` solo se escribe cuando `DFC0` ya es la
+  ronda buscada: antes, el juego aún decide con él si la ronda ha terminado. Con la fase en marcha 10 fotogramas y la energía dada, `C90E = 3` lleva al
+  jefe; si en 180 fotogramas no suena su música (`MOD_EV_BOSS_START`), se repite (en el primer fotograma de partida el juego lo deshacía: pasó en 4-3).
+- El camino (título, intro, recuento y páginas de historia) va a 8 fotogramas por vuelta, con el botón 1 pulsado 4 de cada 40, sin sonido y tapado por
+  "Jefe N de 5". Al llegar, arma, subarma y carga normal (16 pistola y bumerán, 8 bombas y estacas), vidas a 1.
+- Jefe vencido: `MOD_EV_BOSS_DOWN`, o la música 86 (8D en el último) si el evento se pierde. Energía para el siguiente con `energy_lock`/`energy_keep`
+  (gancho 13D3): Fácil llena, Normal +10 (media barra), Difícil la que quede. Pociones bloqueadas igual que en Survivor.
+- Reloj: fotogramas desde llegar al jefe hasta que cae (los diálogos cuentan; el camino no). Récord por dificultad en el perfil (`bossrushN=`, al
+  importar se queda el menor). Dificultad = Vida + Armas (0 Fácil, 1-2 Normal, 3-4 Difícil).
+- Sin guardar ni cargar (decisión del usuario). Al morir o al final, pantalla de resultado (A otra vez, B inicio).
+- Logro **Miniyo** (vida extra): gancho 4256 (clase 9 de objeto, sube `DFBA`) → `MOD_EV_LIFE`.
+- Invencible de pruebas: ahora `DFB4` se escribe en cada fotograma, no solo cuando se reconoce la partida.
+- **Prueba del bucle real** (escritorio): `MOD_LOOPTEST="fotogramas:dir"` y `MOD_LOOPMODE=br`: bucle a toda velocidad, bot que ataca, invencible, jefes con 1
+  de energía; a Drácula el bot no llega y se da por vencido a los ~9600 fotogramas, saltando al final (AC35). Una partida completa salió bien.
+- Huellas `-H` idénticas a v0.11.0.

@@ -41,3 +41,9 @@ void logros_run_load(const void* in);     // and notes that this game has used a
 // Adds a profile file to the current one (nothing is ever lost). Returns the achievements gained,
 // or -1 if the file is not a valid profile.
 int logros_merge_file(const char* path);
+
+// Boss Rush: boss k (0..3) beaten, best time per difficulty (0 easy .. 2 hard, frames, 0 = none),
+// and the end of a run (gives its achievements; true if it is a new best time)
+void logros_br_boss(int k);
+unsigned logros_br_best(int diff);
+bool logros_br_finish(int diff, unsigned frames);

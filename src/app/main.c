@@ -19,7 +19,7 @@
 #include "stb_image.h"
 
 #include "miniz.h"
-#define APP_VERSION "0.12.1"
+#define APP_VERSION "0.13.0"
 #define KNOWN_CRC 0x96FB4D4Bu
 #define UI_W 640
 #define UI_H 360
@@ -434,9 +434,16 @@ static int locked_weapon = -1, locked_sub = -1;   // weapon lock cheat (-1: take
 // difficulty and "no respawn". Saved states, picture, music and controls stay free.
 // Survivor: the achievements mode with a single life; its difficulty only says when energy comes back
 // (easy: as in the game, normal: only after each boss, hard: never). Achievements count in both.
-enum { GM_NORMAL, GM_LOGROS, GM_SURVIVOR };
+enum { GM_NORMAL, GM_LOGROS, GM_SURVIVOR, GM_BOSSRUSH };
 static int game_mode = GM_NORMAL;
 static int sv_diff = 1;    // difficulty of the Survivor game
+// Boss Rush: the five bosses in a row against the clock, with a single life. Energy after each boss (life) and
+// weapons (arms) have their own level, 0 easy .. 2 hard; the run's difficulty comes from both.
+static int br_life = 1, br_arms = 1, br_wsel, br_ssel;
+static const int br_weapons[3][2] = {{1, 3}, {2, 1}, {0, 0}};   // RAM_WEAPON: rapier or axe; sword or rapier; knife
+static const int br_subs[3][2] = {{3, 2}, {0, 1}, {0, 1}};      // RAM_SUBWEAPON: bombs or stakes; pistol or boomerang
+static const int br_choices[3] = {2, 2, 1};
+static int br_diff(void) { int t = br_life + br_arms; return t == 0 ? 0 : t <= 2 ? 1 : 2; }
 // TEMPORARY, for testing the achievements (remove before the final version): invincible in the modes with
 // achievements, R2 fast forwards, and everything goes to a separate profile (logros_pruebas.txt)
 static int test_inv;
@@ -447,7 +454,7 @@ static int cheats_ok(void) { return rom_crc == KNOWN_CRC && mod_is_gameplay(&S);
 
 static void cheats_frame(void) {
   if (rom_crc != KNOWN_CRC) return;
-  if (ADVANTAGES_BLOCKED) { gram_w(RAM_INVINCIBLE, test_inv && mod_is_gameplay(&S) ? 0xFF : 0); return; }   // also the game's hidden debug menu
+  if (ADVANTAGES_BLOCKED) { gram_w(RAM_INVINCIBLE, test_inv ? 0xFF : 0); return; }   // also the game's hidden debug menu
   if (warp_pending) {
     gram_w(RAM_ROUND, start_points[start_sel][0]);
     gram_w(RAM_STAGE, start_points[start_sel][1]);
@@ -535,9 +542,10 @@ enum {
   MI_REMASTER, MI_VIBRA, MI_VIB0, MI_VIB_LAST = MI_VIB0 + VIB_COUNT - 1,
   MI_MODE_NORMAL, MI_MODE_LOGROS, MI_LOGROS_LIST, MI_PROFILE_EXPORT, MI_PROFILE_IMPORT,
   MI_MODE_SURVIVOR, MI_SV_EASY, MI_SV_NORMAL, MI_SV_HARD, MI_TESTINV,
+  MI_MODE_BOSSRUSH, MI_BR_LIFE, MI_BR_ARMS, MI_BR_WEAPON, MI_BR_SUB, MI_BR_START,
   MI_BACK
 };
-enum { PAGE_MAIN, PAGE_VIDEO, PAGE_OPTIONS, PAGE_CHEATS, PAGE_GAME, PAGE_CONTROLS, PAGE_HOME, PAGE_VIBRA, PAGE_MAIN_LOCKED, PAGE_MODES, PAGE_SURVIVOR, PAGE_MAIN_SURVIVOR, PAGE_COUNT };
+enum { PAGE_MAIN, PAGE_VIDEO, PAGE_OPTIONS, PAGE_CHEATS, PAGE_GAME, PAGE_CONTROLS, PAGE_HOME, PAGE_VIBRA, PAGE_MAIN_LOCKED, PAGE_MODES, PAGE_SURVIVOR, PAGE_MAIN_SURVIVOR, PAGE_BOSSRUSH, PAGE_MAIN_BR, PAGE_COUNT };
 #define PAGE_MAX 12
 static const int page_items[PAGE_COUNT][PAGE_MAX] = {
   {MI_RESUME, MI_SAVE, MI_LOAD, MI_GAME, MI_CHEATS, MI_VIDEO, MI_OPTIONS, MI_CONTROLS, MI_RESET, MI_HOME, MI_QUIT, -1},
@@ -549,13 +557,15 @@ static const int page_items[PAGE_COUNT][PAGE_MAX] = {
   {MI_GAME, MI_CHEATS, MI_VIDEO, MI_OPTIONS, MI_BACK, -1},
   {MI_VIB0, MI_VIB0 + 1, MI_VIB0 + 2, MI_VIB0 + 3, MI_VIB0 + 4, MI_VIB0 + 5, MI_BACK, -1},
   {MI_RESUME, MI_SAVE, MI_LOAD, MI_LOGROS_LIST, MI_VIDEO, MI_OPTIONS, MI_CONTROLS, MI_TESTINV, MI_RESET, MI_HOME, MI_QUIT, -1},
-  {MI_MODE_NORMAL, MI_MODE_LOGROS, MI_MODE_SURVIVOR, MI_LOGROS_LIST, MI_PROFILE_EXPORT, MI_PROFILE_IMPORT, MI_BACK, -1},
+  {MI_MODE_NORMAL, MI_MODE_LOGROS, MI_MODE_SURVIVOR, MI_MODE_BOSSRUSH, MI_LOGROS_LIST, MI_PROFILE_EXPORT, MI_PROFILE_IMPORT, MI_BACK, -1},
   {MI_SV_EASY, MI_SV_NORMAL, MI_SV_HARD, MI_BACK, -1},
+  {MI_RESUME, MI_LOGROS_LIST, MI_VIDEO, MI_OPTIONS, MI_CONTROLS, MI_TESTINV, MI_RESET, MI_HOME, MI_QUIT, -1},
+  {MI_BR_LIFE, MI_BR_ARMS, MI_BR_WEAPON, MI_BR_SUB, MI_BR_START, MI_BACK, -1},
   {MI_RESUME, MI_LOGROS_LIST, MI_VIDEO, MI_OPTIONS, MI_CONTROLS, MI_TESTINV, MI_RESET, MI_HOME, MI_QUIT, -1},
 };
 static const char* page_titles[2][PAGE_COUNT] = {
-  {"MASTER OF DARKNESS", "VIDEO", "SOUND & LANGUAGE", "CHEATS", "GAME", "CONTROLS", "OPTIONS", "VIBRATION", "ACHIEVEMENTS MODE", "PLAY", "SURVIVOR MODE", "SURVIVOR"},
-  {"MASTER OF DARKNESS", "IMAGEN", "SONIDO E IDIOMA", "TRUCOS", "JUEGO", "CONTROLES", "OPCIONES", "VIBRACIÓN", "MODO LOGROS", "JUGAR", "MODO SURVIVOR", "SURVIVOR"}};
+  {"MASTER OF DARKNESS", "VIDEO", "SOUND & LANGUAGE", "CHEATS", "GAME", "CONTROLS", "OPTIONS", "VIBRATION", "ACHIEVEMENTS MODE", "PLAY", "SURVIVOR MODE", "SURVIVOR", "BOSS RUSH", "BOSS RUSH"},
+  {"MASTER OF DARKNESS", "IMAGEN", "SONIDO E IDIOMA", "TRUCOS", "JUEGO", "CONTROLES", "OPCIONES", "VIBRACIÓN", "MODO LOGROS", "JUGAR", "MODO SURVIVOR", "SURVIVOR", "BOSS RUSH", "BOSS RUSH"}};
 static const char* touch_names[2][3] = {{"No", "Yes", "Only without a gamepad"}, {"No", "Sí", "Solo sin mando"}};
 static const char* touch_size_names[2][3] = {{"Small", "Normal", "Big"}, {"Pequeños", "Normales", "Grandes"}};
 static int in_launcher = 1;   // the start screen is shown (the game waits)
@@ -620,6 +630,15 @@ static void menu_label(int i, char* out, size_t n) {
   case MI_MODE_LOGROS: snprintf(out, n, "%s", T("Achievements mode", "Modo logros")); break;
   case MI_MODE_SURVIVOR: snprintf(out, n, "%s  ›", T("Survivor mode", "Modo Survivor")); break;
   case MI_SV_EASY: case MI_SV_NORMAL: case MI_SV_HARD: snprintf(out, n, "%s", diff_names[L][i - MI_SV_EASY]); break;
+  case MI_MODE_BOSSRUSH: snprintf(out, n, "%s  ›", "Boss Rush"); break;
+  case MI_BR_LIFE: snprintf(out, n, "%s ← %s →", T("Energy:", "Vida:"), diff_names[L][br_life]); break;
+  case MI_BR_ARMS: snprintf(out, n, "%s ← %s →", T("Weapons:", "Armas:"), diff_names[L][br_arms]); break;
+  case MI_BR_WEAPON:
+    if (br_choices[br_arms] > 1) snprintf(out, n, "%s ← %s →", T("Weapon:", "Arma:"), weapon_names[L][br_weapons[br_arms][br_wsel]]);
+    else snprintf(out, n, "%s   %s", T("Weapon:", "Arma:"), weapon_names[L][br_weapons[br_arms][0]]);
+    break;
+  case MI_BR_SUB: snprintf(out, n, "%s ← %s →", T("Subweapon:", "Subarma:"), sub_names[L][br_subs[br_arms][br_ssel] + 1]); break;
+  case MI_BR_START: snprintf(out, n, "%s  ·  %s", T("Start", "Empezar"), diff_names[L][br_diff()]); break;
   case MI_TESTINV: snprintf(out, n, "%s ← %s →", T("Invincible (testing):", "Invencible (pruebas):"), test_inv ? T("Yes", "Sí") : "No"); break;
   case MI_LOGROS_LIST: snprintf(out, n, "%s (%d/%d)  ›", T("Achievements", "Logros"), logros_unlocked_count(), logros_count()); break;
   case MI_PROFILE_EXPORT: snprintf(out, n, "%s", T("Export profile", "Exportar perfil")); break;
@@ -794,6 +813,10 @@ static void menu_change(int dir) {
   case MI_MARGIN: cfg.margin = (cfg.margin + dir + 3) % 3; break;
   case MI_BANDS: cfg.bands = !cfg.bands; break;
   case MI_TESTINV: set_test_inv(!test_inv); break;
+  case MI_BR_LIFE: br_life = (br_life + dir + 3) % 3; break;
+  case MI_BR_ARMS: br_arms = (br_arms + dir + 3) % 3; br_wsel = 0; br_ssel = 0; break;
+  case MI_BR_WEAPON: br_wsel = (br_wsel + 1) % br_choices[br_arms]; break;
+  case MI_BR_SUB: br_ssel = !br_ssel; break;
   case MI_PALETTE: cfg.palette = (cfg.palette + dir + PAL_COUNT) % PAL_COUNT; apply_palette(); break;
 
   case MI_VOLUME: cfg.volume += dir; if (cfg.volume < 0) cfg.volume = 0; if (cfg.volume > 10) cfg.volume = 10; break;
@@ -871,7 +894,7 @@ static void menu_open_at(int page) {
 }
 
 static void menu_set_open(int open) {
-  if (open) { menu_open_at(in_launcher ? PAGE_HOME : game_mode == GM_SURVIVOR ? PAGE_MAIN_SURVIVOR : ADVANTAGES_BLOCKED ? PAGE_MAIN_LOCKED : PAGE_MAIN); return; }
+  if (open) { menu_open_at(in_launcher ? PAGE_HOME : game_mode == GM_SURVIVOR ? PAGE_MAIN_SURVIVOR : game_mode == GM_BOSSRUSH ? PAGE_MAIN_BR : ADVANTAGES_BLOCKED ? PAGE_MAIN_LOCKED : PAGE_MAIN); return; }
   menu_open = 0;
   capture_jump = 0;
 }
@@ -1063,6 +1086,183 @@ static int sv_over_event(SDL_Event* e) {
   return 1;
 }
 
+// ---------------------------------------------------------------- Boss Rush run
+// Getting to each boss (from the title, and between bosses the bonus and story pages) is played fast and out
+// of sight, with the button pressed by itself, while the RAM keeps the stage of the boss: the game loads the
+// last stage of the round and C90E = 3 takes the hero to its boss. No states saved in the APK: only the
+// player's own game is used.
+#define RAM_STAGE_STATE 0xC90E   // 1 stage cleared, 3 boss
+#define MUS_BR_ROUND_CLEAR 0x86
+#define MUS_BR_ENDING 0x8D
+#define MUS_BR_CONTINUE 0x82
+#define BR_BOSSES 5
+static int br_k;              // boss being fought or reached next (0..4)
+static int br_transit;        // on the way to boss br_k
+static int br_fight, br_down; // its stage is running / it has fallen
+static unsigned br_frames;    // time of the run (playing frames, 60 per second)
+static unsigned br_tick;
+static int br_settle;         // playing frames of the boss stage before jumping to the boss
+static int br_wait_boss;      // frames left for the boss music; if it does not start, the jump is made again
+static int br_boss_on;        // the boss has appeared
+static int br_over;           // result screen: 1 life lost, 2 finished
+static Uint32 br_over_at;
+static int br_record;
+
+static int br_stage_of(int k) { return k == BR_BOSSES - 1 ? 0 : 2; }   // round 5 is a single stage
+
+static void br_reset_run(void) {
+  br_k = 0; br_transit = 1; br_fight = br_down = 0; br_frames = 0; br_tick = 0; br_settle = 0; br_boss_on = 0;
+  br_over = 0; br_over_at = 0; br_record = 0;
+  E.energy_lock = true; E.energy_keep = 0x20;   // also keeps potions from healing
+}
+
+static void br_time_text(unsigned fr, char* out, size_t n) {
+  unsigned cs = fr * 100 / 60;
+  snprintf(out, n, "%u:%02u.%02u", cs / 6000, cs / 100 % 60, cs % 100);
+}
+
+// before each emulated frame
+static void br_before_frame(void) {
+  if (!br_transit || rom_crc != KNOWN_CRC) return;
+  S.input = (br_tick++ % 40) < 4 ? BTN_1 : 0;   // title, intro, story pages: the button goes by itself
+  if (br_k == 0) gram_w(RAM_ROUND, 0);
+  // only once the game is in that round: the stage it cleared decides whether the round ends
+  if (gram(RAM_ROUND) == br_k) gram_w(RAM_STAGE, (uint8_t)br_stage_of(br_k));
+}
+
+// the boss of this stage has fallen (its energy ran out, or the round is cleared)
+static void br_boss_beaten(void) {
+  if (br_down) return;
+  br_down = 1;
+  // energy for the next boss: easy all of it, normal half a bar more, hard what is left
+  int en = gram(RAM_ENERGY);
+  en = br_life == 0 ? 0x20 : br_life == 1 ? en + 0x10 : en;
+  if (en > 0x20) en = 0x20;
+  if (en < 1) en = 1;
+  E.energy_keep = (uint8_t)en;
+  if (br_k < BR_BOSSES - 1) logros_br_boss(br_k);
+}
+
+static void br_lost(void) { if (!br_over) { br_over = 1; br_over_at = 0; music_stop(); logros_flush(); } }
+
+// after each emulated frame, with its events
+static void br_frame(uint32_t ev) {
+  if (br_over || rom_crc != KNOWN_CRC) return;
+  if (br_over_at && (Sint32)(SDL_GetTicks() - br_over_at) >= 0) { br_lost(); return; }
+  int playing = mod_is_gameplay(&S);
+  if (br_transit) {
+    // the boss stage has to be running and set up (energy given) for a few frames, or the jump is undone
+    if (!playing || gram(RAM_ROUND) != br_k || gram(RAM_STAGE) != br_stage_of(br_k) || !gram(RAM_ENERGY)) { br_settle = 0; return; }
+    if (++br_settle < 10) return;
+    // straight to the boss, with this run's weapons and a full load of ammo
+    gram_w(RAM_STAGE_STATE, 3);
+    br_wait_boss = 180; br_boss_on = 0;
+    int w = br_weapons[br_arms][br_wsel], sub = br_subs[br_arms][br_ssel];
+    gram_w(RAM_WEAPON, (uint8_t)w); gram_w(RAM_SUBWEAPON, (uint8_t)sub); gram_w(RAM_AMMO, sub <= 1 ? 16 : 8);
+    gram_w(RAM_LIVES, 1);
+    mod_request_hud(&E, MOD_HUD_WEAPON | MOD_HUD_SUBWEAPON | MOD_HUD_LIVES);
+    br_transit = 0; br_fight = 1; br_down = 0;
+    if (music_current > 0 && cfg.music_pack > 0 && music_has(music_current)) music_play(music_current);
+    return;
+  }
+  if ((ev & MOD_EV_DEATH) && !br_over_at) br_over_at = SDL_GetTicks() + 2500;
+  if ((ev & MOD_EV_BOSS_DOWN) && br_fight) br_boss_beaten();
+  if (ev & MOD_EV_BOSS_START) br_boss_on = 1;
+  if (br_fight && !br_down && !br_over_at) br_frames++;   // the clock runs from reaching the boss until it falls
+  if (br_fight && !br_boss_on && --br_wait_boss <= 0) { gram_w(RAM_STAGE_STATE, 3); br_wait_boss = 180; }
+  if (!playing) return;
+  if (gram(RAM_LIVES) != 1) { gram_w(RAM_LIVES, 1); mod_request_hud(&E, MOD_HUD_LIVES); }
+  // the weapons of the run stay (anything picked up in a boss room does not change them)
+  int w = br_weapons[br_arms][br_wsel], sub = br_subs[br_arms][br_ssel];
+  if (gram(RAM_WEAPON) != w) { gram_w(RAM_WEAPON, (uint8_t)w); mod_request_hud(&E, MOD_HUD_WEAPON); }
+  if (gram(RAM_AMMO) && gram(RAM_SUBWEAPON) != sub) { gram_w(RAM_SUBWEAPON, (uint8_t)sub); mod_request_hud(&E, MOD_HUD_SUBWEAPON); }
+}
+
+static void br_music(int id) {
+  if (br_over) return;
+  if (id == MUS_BR_CONTINUE) { br_lost(); return; }
+  if (br_fight && !br_over_at && ((id == MUS_BR_ROUND_CLEAR && br_k < BR_BOSSES - 1) || (id == MUS_BR_ENDING && br_k == BR_BOSSES - 1)))
+    br_boss_beaten();
+  if (id == MUS_BR_ROUND_CLEAR && br_down && br_k < BR_BOSSES - 1) {
+    br_k++; br_transit = 1; br_fight = br_down = 0; br_tick = 0; br_settle = 0;
+    music_stop();
+  } else if (id == MUS_BR_ENDING && br_down && br_k == BR_BOSSES - 1) {
+    br_record = logros_br_finish(br_diff(), br_frames);
+    br_over = 2;
+    music_stop();
+  }
+}
+
+static void draw_br_hud(void) {
+  char t[64];
+  if (br_transit) {
+    ui_rect(0, 0, UI_W, UI_H, 0xFF08060A);
+    ui_text_center(UI_H / 2 - 30, "BOSS RUSH", 0xE8C060);
+    snprintf(t, sizeof t, T("Boss %d of %d", "Jefe %d de %d"), br_k + 1, BR_BOSSES);
+    ui_text_center(UI_H / 2, t, 0xFFFFFF);
+    br_time_text(br_frames, t, sizeof t);
+    ui_text_center(UI_H / 2 + 26, t, 0xB8B0A8);
+    return;
+  }
+  char tt[32]; br_time_text(br_frames, tt, sizeof tt);
+  snprintf(t, sizeof t, "%d/%d  %s", br_k + 1, BR_BOSSES, tt);
+  int w = text_width(t) + 16;
+  ui_rect(UI_W - w - 6, UI_H - 28, w, 22, 0x90000000);
+  ui_text(UI_W - w + 2, UI_H - 26, t, 0xE8C060);
+}
+
+static void draw_br_over(void) {
+  ui_rect(0, 0, UI_W, UI_H, 0xC8000000);
+  int by = UI_H / 2 - 90;
+  ui_rect(UI_W / 2 - 280, by, 560, 180, 0xF0140C18);
+  ui_rect(UI_W / 2 - 280, by, 560, 2, 0xFFB0302A);
+  ui_rect(UI_W / 2 - 280, by + 178, 560, 2, 0xFFB0302A);
+  char t[128], tm[32], best[32] = "-";
+  snprintf(t, sizeof t, "BOSS RUSH  ·  %s", diff_names[ES][br_diff()]);
+  ui_text_center(by + 14, t, 0xE8C060);
+  br_time_text(br_frames, tm, sizeof tm);
+  if (logros_br_best(br_diff())) br_time_text(logros_br_best(br_diff()), best, sizeof best);
+  if (br_over == 2) {
+    ui_text_center(by + 48, br_record ? T("All bosses beaten. New record!", "¡Todos los jefes vencidos! ¡Nuevo récord!")
+                                      : T("All bosses beaten!", "¡Todos los jefes vencidos!"), 0xFFFFFF);
+    snprintf(t, sizeof t, T("Time %s   Record %s", "Tiempo %s   Récord %s"), tm, best);
+  } else {
+    snprintf(t, sizeof t, T("You fell against boss %d of %d", "Has caído ante el jefe %d de %d"), br_k + 1, BR_BOSSES);
+    ui_text_center(by + 48, t, 0xFFFFFF);
+    snprintf(t, sizeof t, T("Time %s   Record %s", "Tiempo %s   Récord %s"), tm, best);
+  }
+  ui_text_center(by + 74, t, 0xB8B0A8);
+  ui_rect(UI_W / 2 - 250, by + 116, 240, 40, 0xFF5A1A1A);
+  ui_rect(UI_W / 2 + 10, by + 116, 240, 40, 0xFF2A2430);
+  const char* a = T("A: Try again", "A: Otra vez"), *b = T("B: Start screen", "B: Inicio");
+  ui_text(UI_W / 2 - 130 - text_width(a) / 2, by + 125, a, 0xFFFFFF);
+  ui_text(UI_W / 2 + 130 - text_width(b) / 2, by + 125, b, 0xFFFFFF);
+}
+
+static void start_mode(int mode);
+static void br_new_run(void) {
+  game_mode = GM_NORMAL;   // makes start_mode begin a new game
+  start_mode(GM_BOSSRUSH);
+}
+
+static int br_over_event(SDL_Event* e) {
+  int ok = 0, back = 0;
+  if (e->type == SDL_KEYDOWN && !e->key.repeat) {
+    SDL_Keycode k = e->key.keysym.sym;
+    ok = k == SDLK_RETURN || k == SDLK_z || k == SDLK_SPACE;
+    back = k == SDLK_ESCAPE || k == SDLK_AC_BACK || k == SDLK_x || k == SDLK_BACKSPACE;
+  } else if (e->type == SDL_CONTROLLERBUTTONDOWN) {
+    int b = e->cbutton.button;
+    ok = b == SDL_CONTROLLER_BUTTON_A || b == SDL_CONTROLLER_BUTTON_START;
+    back = b == SDL_CONTROLLER_BUTTON_B || b == SDL_CONTROLLER_BUTTON_BACK;
+  } else if (e->type == SDL_FINGERDOWN) {
+    ok = e->tfinger.x < 0.5f; back = !ok;
+  } else return e->type == SDL_KEYUP || e->type == SDL_CONTROLLERBUTTONUP || e->type == SDL_FINGERUP || e->type == SDL_FINGERMOTION;
+  if (ok) br_new_run();
+  else if (back) { br_new_run(); in_launcher = 1; music_set_paused(true); SDL_ClearQueuedAudio(audio_dev); }
+  return 1;
+}
+
 static void start_mode(int mode) {
   static int last_sv = -1;
   if (mode != game_mode || (mode == GM_SURVIVOR && sv_diff != last_sv)) {
@@ -1078,12 +1278,14 @@ static void start_mode(int mode) {
     logros_reset_run();
     if (rom_crc == KNOWN_CRC) gram_w(RAM_INVINCIBLE, 0);
     apply_game_options();
+    if (mode == GM_BOSSRUSH) br_reset_run();
   }
   menu_set_open(0);
   in_launcher = 0;
   music_set_paused(false);
   if (mode == GM_LOGROS) show_toast(T("Achievements mode: no rewind or cheats", "Modo logros: sin rebobinado ni trucos"), 3000);
   else if (mode == GM_SURVIVOR) show_toast(T("Survivor: a single life. Good luck", "Survivor: una sola vida. Suerte"), 3000);
+  else if (mode == GM_BOSSRUSH) toast_until = 0;
   else show_toast(T("Press SELECT or BACK to open the menu", "Pulsa SELECT o ATRÁS para abrir el menú"), 3000);
 }
 
@@ -1124,6 +1326,10 @@ static void menu_activate(void) {
     menu_goto(PAGE_SURVIVOR); menu_sel = sv_diff; break;
   case MI_SV_EASY: case MI_SV_NORMAL: case MI_SV_HARD:
     sv_diff = cur_item() - MI_SV_EASY; start_mode(GM_SURVIVOR); break;
+  case MI_MODE_BOSSRUSH:
+    if (rom_crc != KNOWN_CRC) { show_toast(T("Achievements need the original ROM", "Los logros necesitan la ROM original"), 2500); break; }
+    menu_goto(PAGE_BOSSRUSH); menu_sel = 4; break;
+  case MI_BR_START: br_new_run(); break;
   case MI_LOGROS_LIST: show_logros = 1; logros_page = 0; break;
   case MI_PROFILE_EXPORT: profile_transfer(0); break;
   case MI_PROFILE_IMPORT: profile_transfer(1); break;
@@ -1141,7 +1347,9 @@ static void menu_activate(void) {
   case MI_BACK: if (menu_page == PAGE_VIBRA) { menu_goto(PAGE_CONTROLS); menu_sel = 5; } else if (menu_page == menu_root) menu_set_open(0); else menu_goto(menu_root); break;
   case MI_CONTROLS: menu_goto(PAGE_CONTROLS); break;
   case MI_HOME: menu_set_open(0); in_launcher = 1; music_set_paused(true); SDL_ClearQueuedAudio(audio_dev); break;
-  case MI_RESET: music_stop(); sms_reset(&S); if (game_mode == GM_SURVIVOR) sv_reset(); menu_set_open(0); show_toast(T("Game reset", "Juego reiniciado"), 1500); break;
+  case MI_RESET:
+    if (game_mode == GM_BOSSRUSH) { br_new_run(); break; }
+    music_stop(); sms_reset(&S); if (game_mode == GM_SURVIVOR) sv_reset(); menu_set_open(0); show_toast(T("Game reset", "Juego reiniciado"), 1500); break;
   case MI_MUSTEST:
     if (rom_crc != KNOWN_CRC) break;
     if (in_launcher) { show_toast(T("Try the music while playing", "Prueba la música durante la partida"), 2000); break; }
@@ -1225,12 +1433,17 @@ static void draw_logros(void) {
 static void draw_viewer_ui(void);
 static int viewer_active(void);
 
+static void draw_br_hud(void);
+static void draw_br_over(void);
+static int br_over, br_transit;
 static void draw_ui(void) {
   ui_clear();
+  if (game_mode == GM_BOSSRUSH && !in_launcher && !viewer_active() && !br_over) draw_br_hud();
   if (viewer_active()) draw_viewer_ui();
   else if (show_logros) draw_logros();
   else if (show_credits) draw_credits();
   else if (sv_over && !in_launcher && !menu_open) draw_sv_over();
+  else if (br_over && !in_launcher && !menu_open) draw_br_over();
   else if (menu_open) {
     int n = page_count(menu_page);
     ui_rect(0, 0, UI_W, UI_H, 0xA0000000);
@@ -1239,7 +1452,10 @@ static void draw_ui(void) {
     ui_rect(bx, by, bw, bh, 0xE0140C18);
     ui_rect(bx, by, bw, 2, 0xFFB0302A);
     ui_rect(bx, by + bh - 2, bw, 2, 0xFFB0302A);
-    if (menu_page == PAGE_MAIN_SURVIVOR) {
+    if (menu_page == PAGE_MAIN_BR) {
+      char tt[64]; snprintf(tt, sizeof tt, "BOSS RUSH  ·  %s", diff_names[ES][br_diff()]);
+      ui_text_center(by + 10, tt, 0xE8C060);
+    } else if (menu_page == PAGE_MAIN_SURVIVOR) {
       char tt[64]; snprintf(tt, sizeof tt, "SURVIVOR  ·  %s", diff_names[ES][sv_diff]);
       ui_text_center(by + 10, tt, 0xE8C060);
     } else ui_text_center(by + 10, page_titles[ES][menu_page], 0xE8C060);
@@ -1289,10 +1505,28 @@ static void draw_ui(void) {
       foot = it == MI_MODE_NORMAL ? T("Every option and cheat. Achievements do not count", "Con todas las opciones y trucos. Los logros no cuentan") :
              it == MI_MODE_LOGROS ? T("No rewind or cheats. Achievements count here", "Sin rebobinado ni trucos. Aquí cuentan los logros") :
              it == MI_MODE_SURVIVOR ? T("The whole game with a single life. Achievements count", "Todo el juego con una sola vida. Cuentan los logros") :
+             it == MI_MODE_BOSSRUSH ? T("The five bosses in a row, against the clock", "Los cinco jefes seguidos, contra el reloj") :
              it == MI_LOGROS_LIST ? T("See the ones you have and the ones left", "Mira los que tienes y los que te faltan") :
              it == MI_PROFILE_EXPORT ? T("Saves your achievements to a file", "Guarda tus logros en un archivo") :
              it == MI_PROFILE_IMPORT ? T("Adds a saved profile to this one", "Añade un perfil guardado a este") :
              T("Back to the start screen", "Vuelve a la pantalla de inicio");
+    }
+    static char br_foot[96];
+    if (menu_page == PAGE_BOSSRUSH) {
+      int it = cur_item();
+      if (it == MI_BR_LIFE) foot = br_life == 0 ? T("Full energy again after each boss", "Tras cada jefe recuperas toda la energía") :
+                                   br_life == 1 ? T("Half a bar back after each boss", "Tras cada jefe recuperas media barra") :
+                                   T("Energy never comes back", "La energía no se recupera nunca");
+      else if (it == MI_BR_ARMS) foot = br_arms == 0 ? T("Rapier or axe, bombs or stakes", "Estoque o hacha, bombas o estacas") :
+                                        br_arms == 1 ? T("Sword or rapier, pistol or boomerang", "Espada o estoque, pistola o bumerán") :
+                                        T("Knife, pistol or boomerang", "Cuchillo, pistola o bumerán");
+      else if (it == MI_BR_START || it == MI_BR_WEAPON || it == MI_BR_SUB) {
+        unsigned b = logros_br_best(br_diff());
+        char tm[32]; br_time_text(b, tm, sizeof tm);
+        if (b) snprintf(br_foot, sizeof br_foot, T("Record on %s: %s", "Récord en %s: %s"), diff_names[ES][br_diff()], tm);
+        else snprintf(br_foot, sizeof br_foot, T("No record on %s yet", "Aún sin récord en %s"), diff_names[ES][br_diff()]);
+        foot = br_foot;
+      } else foot = T("Back", "Volver");
     }
     if (menu_page == PAGE_SURVIVOR) {
       int it = cur_item();
@@ -1947,7 +2181,7 @@ static int viewer_event(SDL_Event* e) {
 
 static void launcher_activate(int i) {
   switch (launch_art[i]) {
-  case ART_PLAY: menu_open_at(PAGE_MODES); menu_sel = game_mode == GM_LOGROS ? 1 : game_mode == GM_SURVIVOR ? 2 : 0; break;
+  case ART_PLAY: menu_open_at(PAGE_MODES); menu_sel = game_mode == GM_LOGROS ? 1 : game_mode == GM_SURVIVOR ? 2 : game_mode == GM_BOSSRUSH ? 3 : 0; break;
   case ART_OPTIONS: menu_open_at(PAGE_HOME); break;
   case ART_CONTROLS: menu_open_at(PAGE_CONTROLS); break;
   case ART_GALLERY: viewer_open_pack(PACK_GALLERY); break;
@@ -2115,7 +2349,8 @@ static void handle_touch(SDL_Event* e) {
       vibrate_touch();
       // value rows: left half goes back, right half forward; other rows activate
       int it = cur_item();
-      int value_row = it == MI_FORMAT || it == MI_SCALE || it == MI_BANDS || it == MI_TESTINV || it == MI_FILTER || it == MI_SUIT || it == MI_MARGIN || it == MI_PALETTE || it == MI_VOLUME ||
+      int value_row = it == MI_FORMAT || it == MI_SCALE || it == MI_BANDS || it == MI_TESTINV || it == MI_BR_LIFE || it == MI_BR_ARMS ||
+                      it == MI_BR_WEAPON || it == MI_BR_SUB || it == MI_FILTER || it == MI_SUIT || it == MI_MARGIN || it == MI_PALETTE || it == MI_VOLUME ||
                       it == MI_TURBO || it == MI_TRIGGERS || it == MI_DIFF || it == MI_RESPAWN || it == MI_DJUMP ||
                       it == MI_TOUCH || it == MI_TOUCHSIZE || it == MI_INV || it == MI_LIVES || it == MI_WEAPON ||
                       it == MI_SUB || it == MI_START || it == MI_MUSTEST || it == MI_MUSIC || it == MI_AMMO || it == MI_LOCK || it == MI_UILANG || it == MI_MULTI ||
@@ -2286,6 +2521,7 @@ static int pad_slot(SDL_JoystickID id) {
 static void handle_event(SDL_Event* e) {
   if (viewer_active() && viewer_event(e)) return;
   if (sv_over && !in_launcher && sv_over_event(e)) return;
+  if (br_over && !in_launcher && br_over_event(e)) return;
   // list of achievements: left and right change the page, anything else closes it
   if (show_logros && (e->type == SDL_KEYDOWN || e->type == SDL_CONTROLLERBUTTONDOWN || e->type == SDL_FINGERDOWN)) {
     int d = 0;
@@ -2674,6 +2910,16 @@ int main(int argc, char** argv) {
     return 0;
   }
 
+  // Loop test (desktop): MOD_LOOPTEST="frames:dir" runs the real loop as fast as it can, without a window to look
+  // at; MOD_LOOPMODE=br starts a Boss Rush, with an attacking bot, invincible and bosses on their last energy.
+  // Writes dir/fNNNNNN.bmp every 600 frames and prints the run's changes.
+  const char* looptest = getenv("MOD_LOOPTEST");
+  int lt_frames = 0; char lt_dir[256] = "";
+  if (looptest) {
+    sscanf(looptest, "%d:%255s", &lt_frames, lt_dir);
+    in_launcher = 0;
+    if (getenv("MOD_LOOPMODE") && !strcmp(getenv("MOD_LOOPMODE"), "br")) { br_new_run(); test_inv = 1; }
+  }
   while (running) {
     SDL_Event e;
     while (SDL_PollEvent(&e)) handle_event(&e);
@@ -2681,11 +2927,48 @@ int main(int argc, char** argv) {
     double dt = (now - last) / freq;
     last = now;
     if (dt > 0.1) dt = 0.1;
+    if (looptest) {
+      dt = 4.0 / 60.0;
+      static int lt_last = -1, lt_bot;
+      int fr = (int)S.st.frame;
+      static int lt_end;
+      if (fr >= lt_frames || (br_over && ++lt_end > 30)) {   // the result screen stops the game: picture of it and out
+        running = 0;
+        present();
+        int ww, wh; SDL_GetRendererOutputSize(ren, &ww, &wh);
+        SDL_Surface* sf = SDL_CreateRGBSurfaceWithFormat(0, ww, wh, 32, SDL_PIXELFORMAT_ARGB8888);
+        SDL_RenderReadPixels(ren, NULL, SDL_PIXELFORMAT_ARGB8888, sf->pixels, sf->pitch);
+        char op[300]; snprintf(op, sizeof op, "%s/final.bmp", lt_dir);
+        SDL_SaveBMP(sf, op); SDL_FreeSurface(sf);
+      }
+      lt_bot = (fr / 6) % 7;
+      kb_input = (fr % 8 < 4 ? BTN_1 : 0) | (lt_bot < 3 ? BTN_RIGHT : lt_bot < 5 ? BTN_LEFT : 0) | (fr % 90 < 10 ? BTN_2 : 0);
+      if (game_mode == GM_BOSSRUSH && br_fight && gram(0xCB3A) > 1) gram_w(0xCB3A, 1);
+      // the bot cannot reach Dracula: after a while he is taken as beaten and the game jumps to its ending (AC35, bank 3)
+      static int lt_drac;
+      if (game_mode == GM_BOSSRUSH && br_fight && br_k == BR_BOSSES - 1 && !br_down && ++lt_drac == 2400) {
+        br_boss_beaten();
+        S.st.bank[2] = 3; S.st.ram[0x1FFF] = 3; S.st.cpu.pc = 0xAC35; S.st.cpu.sp = 0xDFE0;
+      }
+      int key = br_k << 8 | br_transit << 4 | br_fight << 3 | br_down << 2 | br_over;
+      if (key != lt_last) { printf("LT %d boss=%d transit=%d fight=%d down=%d over=%d time=%u en=%d keep=%d w=%d s=%d a=%d\n", fr, br_k, br_transit, br_fight, br_down, br_over, br_frames,
+                                   gram(0xCA3A), E.energy_keep, gram(RAM_WEAPON), gram(RAM_SUBWEAPON), gram(RAM_AMMO)); lt_last = key; }
+      static int lt_shot;
+      if (fr / 600 != lt_shot) {
+        lt_shot = fr / 600;
+        present();
+        int ww, wh; SDL_GetRendererOutputSize(ren, &ww, &wh);
+        SDL_Surface* sf = SDL_CreateRGBSurfaceWithFormat(0, ww, wh, 32, SDL_PIXELFORMAT_ARGB8888);
+        SDL_RenderReadPixels(ren, NULL, SDL_PIXELFORMAT_ARGB8888, sf->pixels, sf->pitch);
+        char op[300]; snprintf(op, sizeof op, "%s/f%06d.bmp", lt_dir, fr);
+        SDL_SaveBMP(sf, op); SDL_FreeSurface(sf);
+      }
+    }
     if (in_launcher && !art_ok) in_launcher = 0;   // no start screen art: straight to the game
     if (rw_count_reset) { rw_count = 0; rw_count_reset = 0; }
     rewinding = !menu_open && !in_launcher && cfg.triggers && !ADVANTAGES_BLOCKED && (any_trigger(trig_l) || key_rewind);
     fast_forward = !menu_open && !rewinding && !in_launcher && cfg.triggers && (!ADVANTAGES_BLOCKED || test_inv) && (any_trigger(trig_r) || key_ff);
-    if (!menu_open && !in_launcher && !sv_over) {
+    if (!menu_open && !in_launcher && !sv_over && !br_over) {
       // keep the audio queue around 3 frames by nudging the emulation speed slightly
       double queued = audio_dev ? SDL_GetQueuedAudioSize(audio_dev) / 2.0 / SMS_SAMPLES_PER_FRAME : 3.0;
       double speed = 1.0 + 0.01 * (3.0 - queued);
@@ -2706,15 +2989,18 @@ int main(int argc, char** argv) {
           continue;
         }
         int steps = fast_forward ? 4 : 1;
+        if (game_mode == GM_BOSSRUSH && br_transit) steps = 8;   // the way to the next boss goes by fast
         for (int k = 0; k < steps; k++) {
           cheats_frame();
           if (k == 0) suit_frame();
           mod_text_frame(&S, lang_active());
+          if (game_mode == GM_BOSSRUSH) br_before_frame();
           sms_run_frame(&S);
           mod_enhance_frame(&S, &E);
           { uint32_t gev = mod_events_take(&E);
             if (!fast_forward && gev) vibrate_game(gev);
             if (game_mode == GM_SURVIVOR) sv_frame(gev);
+            if (game_mode == GM_BOSSRUSH) br_frame(gev);
             if (LOGROS_ON) {
               logros_in_t li = {gev, mod_is_gameplay(&S), gram(RAM_ROUND), gram(RAM_STAGE), (uint8_t)(gram(RAM_WEAPON) & 3), (uint8_t)(gram(RAM_SUBWEAPON) & 3), gram(RAM_AMMO)};
               logros_frame(&li);
@@ -2724,7 +3010,9 @@ int main(int argc, char** argv) {
             int kind = ev & 0xF00, id = ev & 0xFF;
             if (LOGROS_ON && id) logros_music(id);
             if (game_mode == GM_SURVIVOR && id) sv_music(id);
-            if (kind == MOD_MUSIC_PLAY) { music_current = id; music_play(id); }
+            if (game_mode == GM_BOSSRUSH && id) br_music(id);
+            int quiet = game_mode == GM_BOSSRUSH && br_transit;
+            if (kind == MOD_MUSIC_PLAY) { music_current = id; if (!quiet) music_play(id); }
             else if (kind == MOD_MUSIC_STOP) { if (id) music_current = id; music_stop(); }
             else if (kind == MOD_MUSIC_FADE) music_fade();
           }
@@ -2742,7 +3030,7 @@ int main(int argc, char** argv) {
           }
         }
         music_set_paused(mod_music_paused(&S));
-        if (audio_dev && queued < 8 && !fast_forward) {
+        if (audio_dev && queued < 8 && !fast_forward && !(game_mode == GM_BOSSRUSH && br_transit)) {
           for (int i = 0; i < SMS_SAMPLES_PER_FRAME; i++) mixbuf[i] = (int16_t)(S.audio[i] * cfg.volume / 10);
           music_mix(mixbuf, SMS_SAMPLES_PER_FRAME, cfg.volume);
           SDL_QueueAudio(audio_dev, mixbuf, sizeof mixbuf);

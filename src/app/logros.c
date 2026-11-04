@@ -9,9 +9,11 @@ enum { L_ROUND1, L_ROUND2, L_ROUND3, L_ROUND4, L_FINAL,                       //
        L_NOCONT, L_NODEATH,                                                   // a whole game
        L_STAGE_CLEAN, L_STAGE_NOSUB, L_ROUND_CLEAN, L_ROUND_NOSUB,            // stages and rounds
        L_BOSS_CLEAN, L_BOSS_KNIFE, L_BOSS_AXE,                                // bosses
-       L_SECRET, L_WEAPONS, L_SUBS, L_MASK50, L_KILL100, L_KILL1000,          // collected over any games
+       L_SECRET, L_LIFE, L_WEAPONS, L_SUBS, L_MASK50, L_KILL100, L_KILL1000,  // collected over any games
        L_SV_ROUND1, L_SV_ROUND2, L_SV_ROUND3, L_SV_ROUND4,                    // Survivor mode
-       L_SV_EASY, L_SV_NORMAL, L_SV_HARD, L_SV_NOSTATE, L_COUNT };
+       L_SV_EASY, L_SV_NORMAL, L_SV_HARD, L_SV_NOSTATE,
+       L_BR_BOSS1, L_BR_BOSS2, L_BR_BOSS3, L_BR_BOSS4,                        // Boss Rush
+       L_BR_EASY, L_BR_NORMAL, L_BR_HARD, L_COUNT };
 
 static const logro_t list[L_COUNT] = {
   {"round1", {"Goodbye, Jack", "Adiós, Jack"}, {"Clear round 1", "Supera la ronda 1"}},
@@ -29,6 +31,7 @@ static const logro_t list[L_COUNT] = {
   {"bossknife", {"They got you", "Te la colaron"}, {"Beat a boss with the knife", "Vence a un jefe con el cuchillo"}},
   {"bossaxe", {"Lumberjack", "Leñador"}, {"Beat a boss with the axe", "Vence a un jefe con el hacha"}},
   {"secret", {"Sounds hollow", "Suena a hueco"}, {"Find an object hidden in a wall", "Descubre un objeto escondido en una pared"}},
+  {"extralife", {"Mini-me", "Miniyo"}, {"Pick up an extra life", "Consigue una vida extra"}},
   {"weapons", {"Full arsenal", "Arsenal completo"}, {"Attack with the 4 main weapons (over any games)", "Ataca con las 4 armas principales (en cualquier partida)"}},
   {"subs", {"Bag of tricks", "Caja de sorpresas"}, {"Throw the 4 subweapons (over any games)", "Lanza las 4 subarmas (en cualquier partida)"}},
   {"mask50", {"Carnival is over", "Se acabó el carnaval"}, {"Destroy 50 masks in total", "Destruye 50 máscaras en total"}},
@@ -42,6 +45,13 @@ static const logro_t list[L_COUNT] = {
   {"sv_normal", {"Hard to kill", "Duro de matar"}, {"Finish Survivor mode on Normal (or harder)", "Termina el modo Survivor en Normal (o más difícil)"}},
   {"sv_hard", {"Legend of London", "Leyenda de Londres"}, {"Finish Survivor mode on Hard", "Termina el modo Survivor en Difícil"}},
   {"sv_nostate", {"No safety net", "Sin red"}, {"Finish Survivor mode without retrying a stage", "Termina el modo Survivor sin repetir ninguna fase"}},
+  {"br_boss1", {"Warm-up", "Calentamiento"}, {"Beat the first boss in Boss Rush", "Vence al primer jefe en Boss Rush"}},
+  {"br_boss2", {"Second round", "Segundo asalto"}, {"Beat the second boss in Boss Rush", "Vence al segundo jefe en Boss Rush"}},
+  {"br_boss3", {"Halfway there", "A mitad de camino"}, {"Beat the third boss in Boss Rush", "Vence al tercer jefe en Boss Rush"}},
+  {"br_boss4", {"Only one left", "Solo queda uno"}, {"Beat the fourth boss in Boss Rush", "Vence al cuarto jefe en Boss Rush"}},
+  {"br_easy", {"Hunting party", "Partida de caza"}, {"Finish Boss Rush on Easy (or harder)", "Termina el Boss Rush en Fácil (o más difícil)"}},
+  {"br_normal", {"Monster slayer", "Matamonstruos"}, {"Finish Boss Rush on Normal (or harder)", "Termina el Boss Rush en Normal (o más difícil)"}},
+  {"br_hard", {"Nightmare of the night", "Pesadilla de la noche"}, {"Finish Boss Rush on Hard", "Termina el Boss Rush en Difícil"}},
 };
 
 #define LAST_ROUND 4          // rounds are 0..4 in the game's RAM
@@ -56,6 +66,7 @@ static char path[1200];
 static bool got[L_COUNT];
 static unsigned kills, masks;
 static unsigned weapons_used, subs_used;   // one bit per weapon, kept between games
+static unsigned br_best[3];                // Boss Rush best time per difficulty, in frames (0: none yet)
 static bool dirty;
 static int survivor = -1;     // Survivor difficulty of the games being played, -1 none
 static int pending[L_COUNT], n_pending;
@@ -80,7 +91,7 @@ static uint32_t fnv(const char* s, size_t n) {
 }
 
 // Reads a profile. Any damaged or edited file is refused as a whole.
-typedef struct { unsigned kills, masks, weapons, subs; } counts_t;
+typedef struct { unsigned kills, masks, weapons, subs, br[3]; } counts_t;
 
 static bool parse_file(const char* p, bool out[L_COUNT], counts_t* c) {
   FILE* f = fopen(p, "rb");
@@ -101,6 +112,7 @@ static bool parse_file(const char* p, bool out[L_COUNT], counts_t* c) {
     else if (!strncmp(l, "masks=", 6)) c->masks = (unsigned)strtoul(l + 6, NULL, 10);
     else if (!strncmp(l, "weapons=", 8)) c->weapons = (unsigned)strtoul(l + 8, NULL, 10) & 15;
     else if (!strncmp(l, "subs=", 5)) c->subs = (unsigned)strtoul(l + 5, NULL, 10) & 15;
+    else if (!strncmp(l, "bossrush", 8) && l[8] >= '0' && l[8] <= '2' && l[9] == '=') c->br[l[8] - '0'] = (unsigned)strtoul(l + 10, NULL, 10);
     else if (!strncmp(l, "logro=", 6))
       for (int i = 0; i < L_COUNT; i++) if (!strcmp(l + 6, list[i].id)) out[i] = true;
   }
@@ -111,6 +123,7 @@ static void save(void) {
   if (!path[0]) return;
   char body[4096];
   int n = snprintf(body, sizeof body, "MOD-PERFIL 1\nkills=%u\nmasks=%u\nweapons=%u\nsubs=%u\n", kills, masks, weapons_used, subs_used);
+  for (int d = 0; d < 3; d++) if (br_best[d]) n += snprintf(body + n, sizeof body - (size_t)n, "bossrush%d=%u\n", d, br_best[d]);
   for (int i = 0; i < L_COUNT; i++)
     if (got[i]) n += snprintf(body + n, sizeof body - (size_t)n, "logro=%s\n", list[i].id);
   n += snprintf(body + n, sizeof body - (size_t)n, "chk=%08X\n", fnv(body, (size_t)n));
@@ -130,10 +143,11 @@ void logros_init(const char* profile_path) {
   snprintf(path, sizeof path, "%s", profile_path);
   memset(got, 0, sizeof got);
   kills = masks = weapons_used = subs_used = 0;
+  memset(br_best, 0, sizeof br_best);
   dirty = false;
   n_pending = 0;
   counts_t c;
-  if (parse_file(path, got, &c)) { kills = c.kills; masks = c.masks; weapons_used = c.weapons; subs_used = c.subs; }
+  if (parse_file(path, got, &c)) { kills = c.kills; masks = c.masks; weapons_used = c.weapons; subs_used = c.subs; memcpy(br_best, c.br, sizeof br_best); }
   else memset(got, 0, sizeof got);
   logros_reset_run();
 }
@@ -143,10 +157,11 @@ void logros_switch_profile(const char* profile_path) {
   snprintf(path, sizeof path, "%s", profile_path);
   memset(got, 0, sizeof got);
   kills = masks = weapons_used = subs_used = 0;
+  memset(br_best, 0, sizeof br_best);
   dirty = false;
   n_pending = 0;
   counts_t c;
-  if (parse_file(path, got, &c)) { kills = c.kills; masks = c.masks; weapons_used = c.weapons; subs_used = c.subs; }
+  if (parse_file(path, got, &c)) { kills = c.kills; masks = c.masks; weapons_used = c.weapons; subs_used = c.subs; memcpy(br_best, c.br, sizeof br_best); }
   else memset(got, 0, sizeof got);
 }
 
@@ -160,6 +175,7 @@ int logros_merge_file(const char* p) {
   if (c.masks > masks) masks = c.masks;
   weapons_used |= c.weapons;
   subs_used |= c.subs;
+  for (int d = 0; d < 3; d++) if (c.br[d] && (!br_best[d] || c.br[d] < br_best[d])) br_best[d] = c.br[d];
   dirty = true;
   save();
   return gained;
@@ -278,6 +294,7 @@ void logros_frame(const logros_in_t* in) {
     if (weapons_used == 15) unlock(L_WEAPONS);
   }
   if (ev & MOD_EV_SECRET) unlock(L_SECRET);
+  if (ev & MOD_EV_LIFE) unlock(L_LIFE);
   if (ev & MOD_EV_MASK) {
     masks++;
     dirty = true;
@@ -303,4 +320,19 @@ void logros_frame(const logros_in_t* in) {
       if (in->weapon == 3) unlock(L_BOSS_AXE);
     }
   }
+}
+
+// ---------------------------------------------------------------- Boss Rush
+void logros_br_boss(int k) { if (k >= 0 && k < 4) unlock(L_BR_BOSS1 + k); }
+
+unsigned logros_br_best(int diff) { return diff >= 0 && diff < 3 ? br_best[diff] : 0; }
+
+bool logros_br_finish(int diff, unsigned frames) {
+  if (diff < 0 || diff > 2) return false;
+  unlock(L_BR_EASY);
+  if (diff >= 1) unlock(L_BR_NORMAL);
+  if (diff >= 2) unlock(L_BR_HARD);
+  bool rec = !br_best[diff] || frames < br_best[diff];
+  if (rec) { br_best[diff] = frames; dirty = true; save(); }
+  return rec;
 }

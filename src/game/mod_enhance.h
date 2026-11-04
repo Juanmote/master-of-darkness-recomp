@@ -91,6 +91,7 @@ typedef struct {
 #define MOD_EV_SECRET     0x400   // a hit on a wall uncovers a hidden object
 #define MOD_EV_MELEE      0x800   // attack with the main weapon (attack pressed without holding up)
 #define MOD_EV_PICKUP     0x1000  // an object is picked up
+#define MOD_EV_LIFE       0x2000  // an extra life is picked up
 uint32_t mod_events_take(mod_enhance_t* e);
 
 #define MOD_HUD_WEAPON 1
