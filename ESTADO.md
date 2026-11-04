@@ -1,6 +1,6 @@
 # Estado del proyecto — Master of Darkness Re-Master-Ed
 
-Última actualización: 4 de noviembre de 2026. Versión publicada: **v0.11.0**.
+Última actualización: 4 de noviembre de 2026. Versión publicada: **v0.12.0**.
 
 Launcher para Android (y escritorio) que ejecuta *Master of Darkness* (Master System) desde la ROM del
 usuario, con 16:9 real, trucos, opciones de juego, filtros, paletas, pack de música y controles táctiles.
@@ -20,7 +20,8 @@ arranca, pero las mejoras se desactivan solas (se comprueban los bytes de cada p
   `galeria.png`, `manual.png` y `en_*.png`.
 - **Galería y Manual (v0.11.0):** packs opcionales `.zip` de `.jpg`/`.png`, como los de música: la primera vez se elige el archivo
   y se copia dentro de la app. El nombre del archivo, sin el número inicial, es el pie. Mando: izquierda/derecha o L1/R1 pasan,
-  A hace zoom, cruceta y stick mueven la imagen con zoom, X cambia de pack, B cierra. Táctil: deslizar o tocar los bordes pasa,
+  A hace zoom, cruceta y stick mueven la imagen con zoom, X cambia de pack, B cierra. Los botones y el pie van en el borde de abajo de la
+  pantalla y se ocultan a los 2 s (v0.12.0). Táctil: deslizar o tocar los bordes pasa,
   doble toque o pellizco hacen zoom, arrastrar mueve. Packs del usuario, fuera del repositorio: `MoD_Galeria.zip` (16 imágenes) y
   `MoD_Manual.zip` (portada y páginas 2-27). Con material de Sega: no van en el APK.
 - **Huevo de pascua (v0.11.0):** en Créditos, 3 pulsaciones sobre el nombre (toque, o A/Intro con mando) enseñan el ticket
@@ -36,8 +37,10 @@ arranca, pero las mejoras se desactivan solas (se comprueban los bytes de cada p
 
 **Imagen**
 - Formatos 16:9 panorámico real (43 px de escenario extra por lado, reconstruidos del mapa del juego en RAM),
-  4:3 y 8:7 (tele de tubo).
-- En 4:3 y 8:7 se rellena la columna de 8 px que el juego tapa a la izquierda.
+  4:3 y 8:7 (tele de tubo). Al elegir 8:7 el escalado pasa a Estirar (v0.12.0, petición del usuario): llena la pantalla sin
+  mantener la proporción; con "Ajustar" se conserva.
+- En 4:3 y 8:7 se rellena la columna de 8 px que el juego tapa a la izquierda. Fuera de la partida (v0.12.0) se rellena si el fondo
+  junto a ella es de un color liso (pantalla roja del final).
 - Escalado: ajustar, entero, estirar. Margen de pantalla para móviles: no, pequeño o mediano.
 - Filtros: nítido, nítido suavizado, suave, scanlines, CRT y CRT curvo. Los dos CRT van por GPU (máscara de
   fósforo, perfil del haz, resplandor; el curvo usa `SDL_RenderGeometry`).
@@ -82,15 +85,20 @@ arranca, pero las mejoras se desactivan solas (se comprueban los bytes de cada p
   suelo y jefes (aparece, le aciertas, lo derrotas). Si el mando vibra, vibra el mando; si no, el aparato.
 
 **Modos y logros (v0.10.0)**
-- "Jugar" abre una lista: Partida normal, Modo logros, Logros, Exportar perfil e Importar perfil. Cambiar de modo
+- "Jugar" abre una lista: Partida normal, Modo logros, Modo Survivor, Logros, Exportar perfil e Importar perfil. Cambiar de modo
   empieza una partida nueva; volver al mismo modo la continúa.
 - Modo logros: permite guardar y cargar estado, con ranura propia (decisión del usuario: en consola es así, facilita las pruebas y
   habrá logro de Survivor por no usarlos). Una partida guardada en modo normal no se carga aquí. Bloquea rebobinar, acelerar, trucos, doble salto, dificultad y reaparición "No" (también
   "Subarmas sin límite" e invencibilidad del menú oculto del juego). 16:9, sin ralentizaciones, imagen, música y
   OST son libres. Las partidas que no empiezan en la primera fase no cuentan.
-- 20 logros propios (`src/app/logros.c`): rondas 1-4, terminar el juego, sin continuar, sin perder vida, fase sin daño, fase sin subarma, ronda sin daño,
-  ronda sin subarma, jefe sin daño, jefe con cuchillo, jefe con hacha, 100 y 1000 enemigos, objeto escondido en una pared, 4 armas, 4 subarmas y
-  50 máscaras (estos tres últimos se acumulan entre partidas y se guardan en el perfil).
+- 28 logros propios (`src/app/logros.c`), ordenados por tipo (v0.12.0): historia (rondas 1-4, terminar), partida (sin continuar, sin perder
+  vida), fases y rondas (sin daño, sin subarma), jefes (sin daño, cuchillo, hacha), colección (objeto en la pared, 4 armas, 4 subarmas,
+  50 máscaras, 100 y 1000 enemigos; armas, subarmas, máscaras y enemigos se acumulan entre partidas) y Survivor (rondas 1-4, terminar en
+  Fácil, Normal y Difícil, cada uno da también los más fáciles, y terminar sin cargar estados).
+- **Modo Survivor (v0.12.0):** todo el juego con una sola vida (marcador V=00; las vidas extra no suman). Mismos bloqueos que el modo logros y
+  los logros cuentan. Se elige dificultad: Fácil, la energía se recupera como siempre; Normal, solo al empezar la ronda siguiente a cada jefe;
+  Difícil, nunca. Donde no cura, la poción no hace nada (solo suena) y cada fase empieza con la energía que se tenía. Al perder la vida sale
+  "Has perdido tu única vida" con la ronda alcanzada: A otra vez, B pantalla de inicio. Guardar y cargar permitidos, con ranura por dificultad.
 - Perfil `logros.txt` con comprobación: exportar a un archivo; importar suma lo que falte, nunca quita nada.
 
 **Sonido**
@@ -112,7 +120,12 @@ Probado por el usuario y compañeros en Odin 3 Max, Retroid Pocket Classic y mó
 
 ## Errores y puntos pendientes de comprobar
 
-- **Logros:** el usuario los está viendo saltar bien en una partida real. Falta que confirme el final y el jefe de la ronda 5, y exportar e importar en un aparato.
+- **v0.12.0 sin probar en consola:** Survivor (sobre todo Normal y Difícil en las fases y con pociones), letras sueltas del jefe 4-3 (en el
+  emulador ya no salen, y los acentos siguen en intro, historia y final), franja del final (no se llegó a esa pantalla en el emulador: el arreglo
+  vale para cualquier fondo liso), visor con botones abajo, 8:7 con Estirar.
+- **Survivor, por decidir con el usuario:** qué hacer con las pociones que no curan (ahora no hacen nada; podrían dar puntos).
+- **Logros (4-11-2026):** el usuario ha terminado el juego en la Classic y tiene todos menos 1000 enemigos (el del bloque oculto lo sacó enseguida).
+- **Logros:** falta probar exportar e importar en un aparato.
 - **Sin probar en consola (v0.11.0):** Galería, Manual, ticket y los 4 logros nuevos. La pared secreta se probó en el emulador simulando el golpe
   (`C858`..`C85E` con `-p`): sale la poción y salta el logro. Con un bot normal no se llega a golpearla.
 - **Confirmado por el usuario (4-11-2026):** traducción perfecta, vibración bien (en la Classic va más suave, se sube al máximo), icono y ajustes
@@ -227,8 +240,7 @@ apagadas, la huella no debe cambiar.
 6. **Modos extra (diseño acordado con el usuario, con las ventajas bloqueadas):**
    - **Logros: iconos propios pendientes.** Las ideas pueden salir de RetroAchievements; sus insignias no (derivan de la ROM y
      sus normas no aceptan reutilizarlas). Añadir logros a los modos extra.
-   - **Survivor:** todo el juego con una sola vida, con guardar y cargar permitidos y un logro por no usarlos. Fácil: recupera energía como el juego normal; Normal: solo después de cada
-     jefe; Difícil: nunca. Energía del jugador en `CA3A`. Mirar qué hacer con los objetos de energía que no sirven.
+   - **Survivor: hecho en v0.12.0** (ver Modos y logros).
    - **Boss Rush:** todos los jefes seguidos, con cronómetro y récord por dificultad. Vida: Fácil recupera todo tras cada
      jefe, Normal media barra, Difícil nada. Armas: Fácil elige estoque o hacha y bombas o estacas; Normal espada o estoque y
      pistola o bumerán; Difícil cuchillo y pistola o bumerán. La subarma se recarga tras cada jefe con una carga normal
@@ -238,5 +250,6 @@ apagadas, la huella no debe cambiar.
    - **Narración de voz aparcada:** el usuario teme desvirtuar el juego y no encaja con la OST. Si acaso, algún extra en la galería.
 7. **Subir y bajar de las escaleras al saltar** (salto + arriba para agarrarse, salto + abajo para soltarse): petición del usuario, para más
    adelante. Debe ser opcional o quedar claro cómo afecta a logros y modos.
-8. **Hecho en v0.11.0:** descripciones del menú "Jugar", 4 logros nuevos, pantalla de inicio con Galería y Manual, huevo de pascua. Si la build va bien,
-   seguir con iconos de logros, Survivor, Boss Rush y escaleras.
+8. **Hecho en v0.11.0:** descripciones del menú "Jugar", 4 logros nuevos, pantalla de inicio con Galería y Manual, huevo de pascua.
+9. **Hecho en v0.12.0:** letras sueltas en diálogos de jefe, franja del final, visor, 8:7 con Estirar, logros ordenados, modo Survivor.
+   Siguiente: probar Survivor en consola, luego iconos de logros, Boss Rush (y sus logros) y escaleras.

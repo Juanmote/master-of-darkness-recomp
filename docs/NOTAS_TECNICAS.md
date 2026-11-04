@@ -414,3 +414,22 @@ Cabecera TMR SEGA válida, checksum 6FE6 correcto, región SMS Export, mapper Se
   `montar_galeria.py` ordena, pone los nombres y limita a 2160 px. Se copian como `galeria.zip` y `manual.zip` (mensaje Android 0x8007).
 - Huellas `-H` idénticas a v0.10.5 con y sin mejoras: los ganchos nuevos solo anotan.
 
+
+## v0.12.0 (4-11-2026)
+- **Letras sueltas en la sala del jefe de 4-3 (y "JEEE" en el marcador):** durante los diálogos de jefe `mod_is_gameplay` falla (el cuadro tapa el
+  escenario) y las letras extra se dibujaban sobre los tiles 1B0-1B8, que en esa sala son del nivel (UNUN, ÚÑ); la tilde caía en la F de JEFE.
+  Ahora `mod_text_frame` también se apaga si el marcador está en pantalla (la etiqueta de puntos, ROM 10024, en las filas 0-3 de la tabla de nombres)
+  o si alguno de los tiles 1B0-1B8 no está vacío: en intro, historia y final están vacíos (comprobado con volcados de VRAM).
+- **Columna izquierda fuera de la partida (4:3 y 8:7):** en las líneas tapadas que no son de escenario, si los 8 píxeles siguientes son de un solo
+  color, la columna se pinta de ese color (pantallas de fondo liso, como la del final). Las imágenes con dibujo quedan como en la consola.
+- **Visor:** botones y pie en el borde inferior; la capa de interfaz se pega abajo de la pantalla mientras se ve una imagen (`ui_top`). Se ocultan
+  a los 2 s y solo responden si se veían al tocar.
+- **8:7** pone el escalado en Estirar al elegirlo.
+- **Logros:** la lista se ordena por tipo (el perfil guarda los nombres, así que el orden no afecta a perfiles ni estados). 8 nuevos de Survivor.
+- **Modo Survivor** (`GM_SURVIVOR`, mismo bloqueo que el modo logros y los logros cuentan): vidas a 1 cada fotograma (`DFBA`); al perder la vida
+  (`MOD_EV_DEATH`) o con la música de continuar (82) sale la pantalla de fin. Energía del héroe `CA3A`, llena = 20. Ganchos nuevos con
+  `energy_lock`: 13D3 (tras `LD (IX+1A),20` al preparar al héroe en cada fase) deja `energy_keep`, y 4233 (poción, sube 16 de uno en uno con 494F)
+  vuelve sin curar (solo su sonido). Fácil: sin bloqueo. Normal: se suelta con la 86 en la fase 3 y vuelve en cuanto se juega la ronda siguiente.
+  Difícil: siempre. Estados propios por dificultad (`estado_survivor_N.sav`).
+- headless: `SVLOCK=1` (bloqueo de Difícil), `GPLOG=1` (cambios de partida/energía). Modo de prueba: `MOD_SVOVER=dificultad`.
+- Huellas `-H` idénticas a v0.11.0 con y sin mejoras.

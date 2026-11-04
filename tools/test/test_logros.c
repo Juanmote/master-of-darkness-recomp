@@ -60,6 +60,29 @@ int main(void) {
   logros_music(0x8D); drain();
   expect("flawless ending", "stageclean stagenosub final nocont nodeath ");
 
+  // Survivor on normal: its round achievements, then the ending gives easy and normal (and no state loaded)
+  fresh(P);
+  logros_set_survivor(1);
+  logros_music(0x87);
+  fr(0, 0, 0, 3, 0);
+  for (int r = 1; r <= 4; r++) { fr(0, r, 0, 3, 0); }
+  expect("survivor rounds", "round1 sv_round1 roundclean roundnosub round2 sv_round2 round3 sv_round3 round4 sv_round4 ");
+  boss(4, 3, 0, false); got[0] = 0;
+  logros_music(0x8D); drain();
+  expect("survivor ending on normal", "stageclean stagenosub final nocont nodeath sv_easy sv_normal sv_nostate ");
+
+  // Survivor on hard with a state loaded on the way
+  fresh(P);
+  logros_set_survivor(2);
+  logros_music(0x87);
+  fr(0, 0, 0, 3, 0);
+  { static unsigned char st[256]; logros_run_save(st); logros_run_load(st); }
+  for (int r = 1; r <= 4; r++) { fr(0, r, 0, 3, 0); }
+  boss(4, 3, 0, false); got[0] = 0;
+  logros_music(0x8D); drain();
+  expect("survivor on hard, state loaded", "stageclean stagenosub final nocont nodeath sv_easy sv_normal sv_hard ");
+  logros_set_survivor(-1);
+
   fresh(P);
   logros_music(0x87);
   fr(0, 2, 0, 3, 0);   // a game started from the hidden menu

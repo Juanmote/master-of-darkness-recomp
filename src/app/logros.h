@@ -26,6 +26,7 @@ unsigned logros_kills(void);
 unsigned logros_masks(void);
 
 void logros_reset_run(void);              // a new game starts
+void logros_set_survivor(int diff);       // games from now on are Survivor (0 easy, 1 normal, 2 hard), -1 not
 void logros_music(int id);                // the game asks for this track (0x81-0x8F)
 void logros_frame(const logros_in_t* in);
 int logros_pop_new(void);                 // next achievement just unlocked, or -1

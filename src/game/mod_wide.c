@@ -464,7 +464,15 @@ void mod_render_full43(const sms_t* s, uint32_t* out, int pitch) {
   if (!any) return;
   mod_wide_info_t info;
   mod_render(s, tmp, TW, E, &info, NULL, 0);
-  if (!info.scene) return;
-  for (int y = GAME_Y0; y < SMS_H; y++)
-    if (s->line_reg0[y] & 0x20) memcpy(out + y * pitch, tmp + y * TW + info.cx, 8 * sizeof(uint32_t));
+  bool scene = info.scene;
+  for (int y = 0; y < SMS_H; y++) {
+    if (!(s->line_reg0[y] & 0x20)) continue;
+    uint32_t* row = out + y * pitch;
+    if (scene && y >= GAME_Y0) { memcpy(row, tmp + y * TW + info.cx, 8 * sizeof(uint32_t)); continue; }
+    // other screens (ending, story, title): a line whose next 8 pixels are one plain colour carries on with it,
+    // so a coloured background has no black stripe; pictures are left as the console shows them
+    bool plain = true;
+    for (int x = 9; x < 16 && plain; x++) plain = row[x] == row[8];
+    if (plain) for (int x = 0; x < 8; x++) row[x] = row[8];
+  }
 }

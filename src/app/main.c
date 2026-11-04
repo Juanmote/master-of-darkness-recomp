@@ -19,7 +19,7 @@
 #include "stb_image.h"
 
 #include "miniz.h"
-#define APP_VERSION "0.11.0"
+#define APP_VERSION "0.12.0"
 #define KNOWN_CRC 0x96FB4D4Bu
 #define UI_W 640
 #define UI_H 360
@@ -430,9 +430,13 @@ static int locked_weapon = -1, locked_sub = -1;   // weapon lock cheat (-1: take
 
 // Game modes. Every mode but the normal one blocks the advantages: rewind, fast forward, cheats, double jump,
 // difficulty and "no respawn". Saved states, picture, music and controls stay free.
-enum { GM_NORMAL, GM_LOGROS };
+// Survivor: the achievements mode with a single life; its difficulty only says when energy comes back
+// (easy: as in the game, normal: only after each boss, hard: never). Achievements count in both.
+enum { GM_NORMAL, GM_LOGROS, GM_SURVIVOR };
 static int game_mode = GM_NORMAL;
+static int sv_diff = 1;    // difficulty of the Survivor game
 #define ADVANTAGES_BLOCKED (game_mode != GM_NORMAL)
+#define LOGROS_ON (game_mode != GM_NORMAL)
 
 static int cheats_ok(void) { return rom_crc == KNOWN_CRC && mod_is_gameplay(&S); }
 
@@ -525,9 +529,10 @@ enum {
   MI_INV, MI_LIVES, MI_WEAPON, MI_SUB, MI_AMMO, MI_MULTI, MI_LOCK, MI_START, MI_WARP, MI_UILANG, MI_ORIGINAL,
   MI_REMASTER, MI_VIBRA, MI_VIB0, MI_VIB_LAST = MI_VIB0 + VIB_COUNT - 1,
   MI_MODE_NORMAL, MI_MODE_LOGROS, MI_LOGROS_LIST, MI_PROFILE_EXPORT, MI_PROFILE_IMPORT,
+  MI_MODE_SURVIVOR, MI_SV_EASY, MI_SV_NORMAL, MI_SV_HARD,
   MI_BACK
 };
-enum { PAGE_MAIN, PAGE_VIDEO, PAGE_OPTIONS, PAGE_CHEATS, PAGE_GAME, PAGE_CONTROLS, PAGE_HOME, PAGE_VIBRA, PAGE_MAIN_LOCKED, PAGE_MODES, PAGE_COUNT };
+enum { PAGE_MAIN, PAGE_VIDEO, PAGE_OPTIONS, PAGE_CHEATS, PAGE_GAME, PAGE_CONTROLS, PAGE_HOME, PAGE_VIBRA, PAGE_MAIN_LOCKED, PAGE_MODES, PAGE_SURVIVOR, PAGE_COUNT };
 #define PAGE_MAX 12
 static const int page_items[PAGE_COUNT][PAGE_MAX] = {
   {MI_RESUME, MI_SAVE, MI_LOAD, MI_GAME, MI_CHEATS, MI_VIDEO, MI_OPTIONS, MI_CONTROLS, MI_RESET, MI_HOME, MI_QUIT, -1},
@@ -539,11 +544,12 @@ static const int page_items[PAGE_COUNT][PAGE_MAX] = {
   {MI_GAME, MI_CHEATS, MI_VIDEO, MI_OPTIONS, MI_BACK, -1},
   {MI_VIB0, MI_VIB0 + 1, MI_VIB0 + 2, MI_VIB0 + 3, MI_VIB0 + 4, MI_VIB0 + 5, MI_BACK, -1},
   {MI_RESUME, MI_SAVE, MI_LOAD, MI_LOGROS_LIST, MI_VIDEO, MI_OPTIONS, MI_CONTROLS, MI_RESET, MI_HOME, MI_QUIT, -1},
-  {MI_MODE_NORMAL, MI_MODE_LOGROS, MI_LOGROS_LIST, MI_PROFILE_EXPORT, MI_PROFILE_IMPORT, MI_BACK, -1},
+  {MI_MODE_NORMAL, MI_MODE_LOGROS, MI_MODE_SURVIVOR, MI_LOGROS_LIST, MI_PROFILE_EXPORT, MI_PROFILE_IMPORT, MI_BACK, -1},
+  {MI_SV_EASY, MI_SV_NORMAL, MI_SV_HARD, MI_BACK, -1},
 };
 static const char* page_titles[2][PAGE_COUNT] = {
-  {"MASTER OF DARKNESS", "VIDEO", "SOUND & LANGUAGE", "CHEATS", "GAME", "CONTROLS", "OPTIONS", "VIBRATION", "ACHIEVEMENTS MODE", "PLAY"},
-  {"MASTER OF DARKNESS", "IMAGEN", "SONIDO E IDIOMA", "TRUCOS", "JUEGO", "CONTROLES", "OPCIONES", "VIBRACIÓN", "MODO LOGROS", "JUGAR"}};
+  {"MASTER OF DARKNESS", "VIDEO", "SOUND & LANGUAGE", "CHEATS", "GAME", "CONTROLS", "OPTIONS", "VIBRATION", "ACHIEVEMENTS MODE", "PLAY", "SURVIVOR MODE"},
+  {"MASTER OF DARKNESS", "IMAGEN", "SONIDO E IDIOMA", "TRUCOS", "JUEGO", "CONTROLES", "OPCIONES", "VIBRACIÓN", "MODO LOGROS", "JUGAR", "MODO SURVIVOR"}};
 static const char* touch_names[2][3] = {{"No", "Yes", "Only without a gamepad"}, {"No", "Sí", "Solo sin mando"}};
 static const char* touch_size_names[2][3] = {{"Small", "Normal", "Big"}, {"Pequeños", "Normales", "Grandes"}};
 static int in_launcher = 1;   // the start screen is shown (the game waits)
@@ -606,6 +612,8 @@ static void menu_label(int i, char* out, size_t n) {
   case MI_HOME: snprintf(out, n, "%s", T("Start screen", "Pantalla de inicio")); break;
   case MI_MODE_NORMAL: snprintf(out, n, "%s", T("Normal game", "Partida normal")); break;
   case MI_MODE_LOGROS: snprintf(out, n, "%s", T("Achievements mode", "Modo logros")); break;
+  case MI_MODE_SURVIVOR: snprintf(out, n, "%s  ›", T("Survivor mode", "Modo Survivor")); break;
+  case MI_SV_EASY: case MI_SV_NORMAL: case MI_SV_HARD: snprintf(out, n, "%s", diff_names[L][i - MI_SV_EASY]); break;
   case MI_LOGROS_LIST: snprintf(out, n, "%s (%d/%d)  ›", T("Achievements", "Logros"), logros_unlocked_count(), logros_count()); break;
   case MI_PROFILE_EXPORT: snprintf(out, n, "%s", T("Export profile", "Exportar perfil")); break;
   case MI_PROFILE_IMPORT: snprintf(out, n, "%s", T("Import profile", "Importar perfil")); break;
@@ -682,14 +690,18 @@ static void menu_label(int i, char* out, size_t n) {
 
 // Each kind of game has its own state: one saved in a normal game (with cheats, at any round) cannot be
 // loaded where achievements count. These also carry how the game was going (logros_run_*).
-static void state_file(char* out, size_t n) { cfg_path(out, n, game_mode == GM_LOGROS ? "estado_logros.sav" : "estado1.sav"); }
+static void state_file(char* out, size_t n) {
+  static const char* sv[3] = {"estado_survivor_0.sav", "estado_survivor_1.sav", "estado_survivor_2.sav"};
+  cfg_path(out, n, game_mode == GM_LOGROS ? "estado_logros.sav" : game_mode == GM_SURVIVOR ? sv[sv_diff] : "estado1.sav");
+}
+static void sv_reset(void);
 
 // After the state itself: how the achievements game was going (only in that mode) and the music.
 typedef struct { int32_t id, from_pack; } state_music_t;
 
 static void do_save_state(void) {
   char p[1100]; state_file(p, sizeof p);
-  size_t base = sms_state_size(), run = game_mode == GM_LOGROS ? logros_run_size() : 0;
+  size_t base = sms_state_size(), run = LOGROS_ON ? logros_run_size() : 0;
   size_t n = base + run + sizeof(state_music_t);
   uint8_t* buf = malloc(n);
   sms_save_state(&S, buf);
@@ -716,13 +728,14 @@ static void do_load_state(void) {
   char p[1100]; state_file(p, sizeof p);
   size_t n = 0;
   uint8_t* buf = load_file(p, &n);
-  size_t base = sms_state_size(), run = game_mode == GM_LOGROS ? logros_run_size() : 0;
+  size_t base = sms_state_size(), run = LOGROS_ON ? logros_run_size() : 0;
   state_music_t m = {0, 0};
   // states saved by v0.10.1 and earlier have no music after them
   int has_music = n == base + run + sizeof m;
   int ok = buf && (has_music || n == base + run) && sms_load_state(&S, buf, base);
   if (ok) {
     if (run) logros_run_load(buf + base);
+    if (game_mode == GM_SURVIVOR) sv_reset();   // energy and lives are read again from the state
     if (has_music) memcpy(&m, buf + base + run, sizeof m);
     restore_state_music(&m);
     mod_respawn_forget_slots(&E);
@@ -749,6 +762,7 @@ static void menu_change(int dir) {
     f = (f + dir + 3) % 3;
     cfg.widescreen = f == 0;
     cfg.crt = f == 2;
+    if (cfg.crt) cfg.scale = SCALE_STRETCH;   // 8:7 fills the whole screen (user's choice); Scaling can still change it
     mod_enhance_set_wide(&E, cfg.widescreen, MOD_WIDE_EXT);
     break;
   }
@@ -901,9 +915,107 @@ static int show_logros, logros_page;
 static int waiting_import;
 
 // Plays a mode: the current game goes on if it is the same mode, otherwise a new one starts
+// ---------------------------------------------------------------- Survivor mode
+#define RAM_ENERGY 0xCA3A   // hero energy, 0x20 = full bar
+#define MUS_SV_CONTINUE 0x82
+#define MUS_SV_ROUND_CLEAR 0x86
+static int sv_over;            // the game has ended: the result screen is shown and the game waits
+static Uint32 sv_over_at;      // the life was lost: the screen comes after the fall
+static int sv_refill_round = -1;   // normal: energy comes back once, at the start of this round
+static int sv_end_round, sv_end_stage;
+
+static void sv_reset(void) {
+  sv_over = 0; sv_over_at = 0; sv_refill_round = -1;
+  E.energy_lock = false; E.energy_keep = 0;
+}
+
+static void sv_game_over(void) {
+  if (sv_over) return;
+  sv_over = 1;
+  sv_over_at = 0;
+  music_stop();
+  logros_flush();
+}
+
+// Every frame of a Survivor game (after the emulated frame, with its events)
+static void sv_frame(uint32_t ev) {
+  if (sv_over) return;
+  if (sv_over_at && (Sint32)(SDL_GetTicks() - sv_over_at) >= 0) { sv_game_over(); return; }
+  if (rom_crc != KNOWN_CRC) return;
+  int playing = mod_is_gameplay(&S);
+  if ((ev & MOD_EV_DEATH) && !sv_over_at) {
+    sv_end_round = gram(RAM_ROUND); sv_end_stage = gram(RAM_STAGE);
+    sv_over_at = SDL_GetTicks() + 2500;   // the fall is seen, then the game ends
+  }
+  if (!playing) return;
+  // a single life: the counter shows 0 lives left, also after picking up an extra life
+  if (gram(RAM_LIVES) != 1) { gram_w(RAM_LIVES, 1); mod_request_hud(&E, MOD_HUD_LIVES); }
+  // energy: easy as in the game; normal only at the start of the round after a boss; hard never
+  int round = gram(RAM_ROUND);
+  if (sv_refill_round >= 0 && round == sv_refill_round) sv_refill_round = -1;   // that start has been and gone
+  E.energy_lock = sv_diff == 2 || (sv_diff == 1 && sv_refill_round < 0);
+  uint8_t en = gram(RAM_ENERGY);
+  if (en && en <= 0x20) E.energy_keep = en;
+}
+
+static void sv_music(int id) {
+  if (id == MUS_SV_CONTINUE) { sv_end_round = gram(RAM_ROUND); sv_end_stage = gram(RAM_STAGE); sv_game_over(); }
+  if (id == MUS_SV_ROUND_CLEAR && sv_diff == 1 && gram(RAM_STAGE) == 2) {
+    sv_refill_round = gram(RAM_ROUND) + 1;
+    E.energy_lock = false;
+  }
+}
+
+static void start_mode(int mode);
+static void sv_retry(void) {
+  game_mode = GM_NORMAL;   // makes start_mode begin a new game
+  start_mode(GM_SURVIVOR);
+}
+
+static void draw_sv_over(void) {
+  ui_rect(0, 0, UI_W, UI_H, 0xC8000000);
+  int by = UI_H / 2 - 90;
+  ui_rect(UI_W / 2 - 280, by, 560, 180, 0xF0140C18);
+  ui_rect(UI_W / 2 - 280, by, 560, 2, 0xFFB0302A);
+  ui_rect(UI_W / 2 - 280, by + 178, 560, 2, 0xFFB0302A);
+  char t[96];
+  snprintf(t, sizeof t, "SURVIVOR  ·  %s", diff_names[ES][sv_diff]);
+  ui_text_center(by + 14, t, 0xE8C060);
+  ui_text_center(by + 48, T("Your only life is gone", "Has perdido tu única vida"), 0xFFFFFF);
+  snprintf(t, sizeof t, T("You reached round %d-%d", "Llegaste a la ronda %d-%d"), sv_end_round + 1, sv_end_stage + 1);
+  ui_text_center(by + 74, t, 0xB8B0A8);
+  ui_rect(UI_W / 2 - 250, by + 116, 240, 40, 0xFF5A1A1A);
+  ui_rect(UI_W / 2 + 10, by + 116, 240, 40, 0xFF2A2430);
+  ui_text(UI_W / 2 - 225, by + 125, T("A: Try again", "A: Otra vez"), 0xFFFFFF);
+  ui_text(UI_W / 2 + 40, by + 125, T("B: Start screen", "B: Pantalla de inicio"), 0xFFFFFF);
+}
+
+// the result screen takes every button: A plays again, B goes to the start screen
+static int sv_over_event(SDL_Event* e) {
+  int ok = 0, back = 0;
+  if (e->type == SDL_KEYDOWN && !e->key.repeat) {
+    SDL_Keycode k = e->key.keysym.sym;
+    ok = k == SDLK_RETURN || k == SDLK_z || k == SDLK_SPACE;
+    back = k == SDLK_ESCAPE || k == SDLK_AC_BACK || k == SDLK_x || k == SDLK_BACKSPACE;
+  } else if (e->type == SDL_CONTROLLERBUTTONDOWN) {
+    int b = e->cbutton.button;
+    ok = b == SDL_CONTROLLER_BUTTON_A || b == SDL_CONTROLLER_BUTTON_START;
+    back = b == SDL_CONTROLLER_BUTTON_B || b == SDL_CONTROLLER_BUTTON_BACK;
+  } else if (e->type == SDL_FINGERDOWN) {
+    ok = e->tfinger.x < 0.5f; back = !ok;
+  } else return e->type == SDL_KEYUP || e->type == SDL_CONTROLLERBUTTONUP || e->type == SDL_FINGERUP || e->type == SDL_FINGERMOTION;
+  if (ok) sv_retry();
+  else if (back) { sv_retry(); in_launcher = 1; music_set_paused(true); SDL_ClearQueuedAudio(audio_dev); }
+  return 1;
+}
+
 static void start_mode(int mode) {
-  if (mode != game_mode) {
+  static int last_sv = -1;
+  if (mode != game_mode || (mode == GM_SURVIVOR && sv_diff != last_sv)) {
     game_mode = mode;
+    if (mode == GM_SURVIVOR) last_sv = sv_diff;
+    logros_set_survivor(mode == GM_SURVIVOR ? sv_diff : -1);
+    sv_reset();
     music_stop();
     sms_reset(&S);
     warp_pending = 0;
@@ -917,6 +1029,7 @@ static void start_mode(int mode) {
   in_launcher = 0;
   music_set_paused(false);
   if (mode == GM_LOGROS) show_toast(T("Achievements mode: no rewind or cheats", "Modo logros: sin rebobinado ni trucos"), 3000);
+  else if (mode == GM_SURVIVOR) show_toast(T("Survivor: a single life. Good luck", "Survivor: una sola vida. Suerte"), 3000);
   else show_toast(T("Press SELECT or BACK to open the menu", "Pulsa SELECT o ATRÁS para abrir el menú"), 3000);
 }
 
@@ -952,6 +1065,11 @@ static void menu_activate(void) {
   case MI_MODE_LOGROS:
     if (rom_crc != KNOWN_CRC) { show_toast(T("Achievements need the original ROM", "Los logros necesitan la ROM original"), 2500); break; }
     start_mode(GM_LOGROS); break;
+  case MI_MODE_SURVIVOR:
+    if (rom_crc != KNOWN_CRC) { show_toast(T("Achievements need the original ROM", "Los logros necesitan la ROM original"), 2500); break; }
+    menu_goto(PAGE_SURVIVOR); menu_sel = sv_diff; break;
+  case MI_SV_EASY: case MI_SV_NORMAL: case MI_SV_HARD:
+    sv_diff = cur_item() - MI_SV_EASY; start_mode(GM_SURVIVOR); break;
   case MI_LOGROS_LIST: show_logros = 1; logros_page = 0; break;
   case MI_PROFILE_EXPORT: profile_transfer(0); break;
   case MI_PROFILE_IMPORT: profile_transfer(1); break;
@@ -1058,6 +1176,7 @@ static void draw_ui(void) {
   if (viewer_active()) draw_viewer_ui();
   else if (show_logros) draw_logros();
   else if (show_credits) draw_credits();
+  else if (sv_over && !in_launcher && !menu_open) draw_sv_over();
   else if (menu_open) {
     int n = page_count(menu_page);
     ui_rect(0, 0, UI_W, UI_H, 0xA0000000);
@@ -1066,7 +1185,10 @@ static void draw_ui(void) {
     ui_rect(bx, by, bw, bh, 0xE0140C18);
     ui_rect(bx, by, bw, 2, 0xFFB0302A);
     ui_rect(bx, by + bh - 2, bw, 2, 0xFFB0302A);
-    ui_text_center(by + 10, page_titles[ES][menu_page], 0xE8C060);
+    if (menu_page == PAGE_MAIN_LOCKED && game_mode == GM_SURVIVOR) {
+      char tt[64]; snprintf(tt, sizeof tt, "SURVIVOR  ·  %s", diff_names[ES][sv_diff]);
+      ui_text_center(by + 10, tt, 0xE8C060);
+    } else ui_text_center(by + 10, page_titles[ES][menu_page], 0xE8C060);
     for (int i = 0; i < n; i++) {
       char l[160]; menu_label(page_items[menu_page][i], l, sizeof l);
       int y = by + 40 + i * 26;
@@ -1108,13 +1230,23 @@ static void draw_ui(void) {
              it == MI_VIB0 + 5 ? T("Boss appears, is hit and is defeated", "Aparece el jefe, le aciertas y lo derrotas") :
              T("A gamepad with rumble vibrates instead of the phone", "Si el mando vibra, vibra el mando en vez del móvil");
     }
-    if (menu_page == PAGE_MODES)
-      foot = menu_sel == 0 ? T("Every option and cheat. Achievements do not count", "Con todas las opciones y trucos. Los logros no cuentan") :
-             menu_sel == 1 ? T("No rewind or cheats. Achievements count here", "Sin rebobinado ni trucos. Aquí cuentan los logros") :
-             menu_sel == 2 ? T("See the ones you have and the ones left", "Mira los que tienes y los que te faltan") :
-             menu_sel == 3 ? T("Saves your achievements to a file", "Guarda tus logros en un archivo") :
-             menu_sel == 4 ? T("Adds a saved profile to this one", "Añade un perfil guardado a este") :
+    if (menu_page == PAGE_MODES) {
+      int it = cur_item();
+      foot = it == MI_MODE_NORMAL ? T("Every option and cheat. Achievements do not count", "Con todas las opciones y trucos. Los logros no cuentan") :
+             it == MI_MODE_LOGROS ? T("No rewind or cheats. Achievements count here", "Sin rebobinado ni trucos. Aquí cuentan los logros") :
+             it == MI_MODE_SURVIVOR ? T("The whole game with a single life. Achievements count", "Todo el juego con una sola vida. Cuentan los logros") :
+             it == MI_LOGROS_LIST ? T("See the ones you have and the ones left", "Mira los que tienes y los que te faltan") :
+             it == MI_PROFILE_EXPORT ? T("Saves your achievements to a file", "Guarda tus logros en un archivo") :
+             it == MI_PROFILE_IMPORT ? T("Adds a saved profile to this one", "Añade un perfil guardado a este") :
              T("Back to the start screen", "Vuelve a la pantalla de inicio");
+    }
+    if (menu_page == PAGE_SURVIVOR) {
+      int it = cur_item();
+      foot = it == MI_SV_EASY ? T("Energy comes back as in the normal game", "La energía se recupera como en el juego normal") :
+             it == MI_SV_NORMAL ? T("Energy only comes back after each boss", "La energía solo se recupera tras cada jefe") :
+             it == MI_SV_HARD ? T("Energy never comes back", "La energía no se recupera nunca") :
+             T("Back", "Volver");
+    }
     ui_text_center(by + bh - 26, foot, 0x807870);
   } else if (rewinding || fast_forward) {
     const char* t = rewinding ? "◄◄" : "►►";
@@ -1381,14 +1513,14 @@ static struct {
   int cur;
   SDL_Texture* tex; int tw, th;
   double zoom, cx, cy; // zoom over "fits the screen"; picture point at the centre (0..1)
-  Uint32 hud_until;
+  Uint32 hud_until; int hud_seen;
   // touch
   int fingers; float dx, dy; float down_x, down_y; int moved; Uint32 last_tap;
   int stick_dir;
 } viewer;
 
 static int viewer_active(void) { return viewer.kind || viewer.prompt; }
-static void viewer_hud(void) { viewer.hud_until = SDL_GetTicks() + 3000; }
+static void viewer_hud(void) { viewer.hud_until = SDL_GetTicks() + 2000; }   // the buttons go away after 2 s
 
 static void pack_path(int kind, char* out, size_t n) {
   const char* f = kind == PACK_MANUAL ? "manual.zip" : "galeria.zip";
@@ -1400,6 +1532,9 @@ static void pack_path(int kind, char* out, size_t n) {
 }
 
 static int ui_scale_xy(float x, float y, int ww, int wh, float* ux, float* uy);
+// Where the UI layer starts on screen: centred, except over a picture of the gallery or manual, where it
+// sits on the bottom edge (the viewer's buttons go at the very bottom of any screen shape).
+static double ui_top(int wh, double uh) { return viewer.kind && !viewer.prompt ? wh - uh : (wh - uh) / 2; }
 
 static void viewer_set_picture(uint8_t* data, size_t size) {
   if (viewer.tex) { SDL_DestroyTexture(viewer.tex); viewer.tex = NULL; }
@@ -1585,16 +1720,17 @@ static void draw_viewer_ui(void) {
     snprintf(cap, sizeof cap, "%s", *s ? s : viewer.name[viewer.cur]);
     snprintf(t, sizeof t, "%s   ‹ %d/%d ›", cap, viewer.cur + 1, viewer.n);
   }
+  // everything on the bottom edge, so the middle of the picture stays clean
   int w = text_width(t) + 24;
-  ui_rect((UI_W - w) / 2, UI_H - 34, w, 26, 0xC0000000);
-  ui_text_center(UI_H - 31, t, 0xFFFFFF);
+  ui_rect((UI_W - w) / 2, UI_H - 30, w, 24, 0xC0000000);
+  ui_text_center(UI_H - 28, t, 0xFFFFFF);
   const char* close = T("X  Close", "X  Cerrar");
-  ui_rect(UI_W - text_width(close) - 24, 6, text_width(close) + 18, 24, 0xC0000000);
-  ui_text(UI_W - text_width(close) - 15, 9, close, 0xFFFFFF);
+  ui_rect(UI_W - text_width(close) - 24, UI_H - 30, text_width(close) + 18, 24, 0xC0000000);
+  ui_text(UI_W - text_width(close) - 15, UI_H - 28, close, 0xFFFFFF);
   if (viewer.kind != VIEW_TICKET) {
     const char* ch = T("Change pack", "Cambiar pack");
-    ui_rect(6, 6, text_width(ch) + 18, 24, 0xC0000000);
-    ui_text(15, 9, ch, 0xB8B0A8);
+    ui_rect(6, UI_H - 30, text_width(ch) + 18, 24, 0xC0000000);
+    ui_text(15, UI_H - 28, ch, 0xB8B0A8);
   }
 }
 
@@ -1622,6 +1758,7 @@ static void viewer_touch(SDL_Event* e, int ww, int wh) {
   float x = e->tfinger.x * ww, y = e->tfinger.y * wh;
   if (e->type == SDL_FINGERDOWN) {
     viewer.fingers++;
+    viewer.hud_seen = (Sint32)(SDL_GetTicks() - viewer.hud_until) < 0;   // the buttons only work while shown
     viewer_hud();
     if (viewer.fingers == 1) { viewer.down_x = x; viewer.down_y = y; viewer.moved = 0; }
     else viewer.moved = 1;
@@ -1649,8 +1786,8 @@ static void viewer_touch(SDL_Event* e, int ww, int wh) {
   }
   float ux, uy;
   ui_scale_xy(x, y, ww, wh, &ux, &uy);
-  if (uy < 34 && ux > UI_W - 140) { viewer_close(); return; }
-  if (uy < 34 && ux < 160 && viewer.kind != VIEW_TICKET) { viewer_pick_file(viewer.kind); return; }
+  if (viewer.hud_seen && uy > UI_H - 36 && ux > UI_W - 140) { viewer_close(); return; }
+  if (viewer.hud_seen && uy > UI_H - 36 && ux < 160 && viewer.kind != VIEW_TICKET) { viewer_pick_file(viewer.kind); return; }
   Uint32 now = SDL_GetTicks();
   if (now - viewer.last_tap < 350) { viewer.last_tap = 0; viewer_zoom_step(); return; }
   viewer.last_tap = now;
@@ -1729,7 +1866,7 @@ static int viewer_event(SDL_Event* e) {
 
 static void launcher_activate(int i) {
   switch (launch_art[i]) {
-  case ART_PLAY: menu_open_at(PAGE_MODES); menu_sel = game_mode == GM_LOGROS ? 1 : 0; break;
+  case ART_PLAY: menu_open_at(PAGE_MODES); menu_sel = game_mode == GM_LOGROS ? 1 : game_mode == GM_SURVIVOR ? 2 : 0; break;
   case ART_OPTIONS: menu_open_at(PAGE_HOME); break;
   case ART_CONTROLS: menu_open_at(PAGE_CONTROLS); break;
   case ART_GALLERY: viewer_open_pack(PACK_GALLERY); break;
@@ -1862,7 +1999,7 @@ static void draw_touch(int ww, int wh) {
 static int ui_scale_xy(float x, float y, int ww, int wh, float* ux, float* uy) {
   double us = (double)ww / UI_W < (double)wh / UI_H ? (double)ww / UI_W : (double)wh / UI_H;
   *ux = (float)((x - (ww - UI_W * us) / 2) / us);
-  *uy = (float)((y - (wh - UI_H * us) / 2) / us);
+  *uy = (float)((y - ui_top(wh, UI_H * us)) / us);
   return 1;
 }
 
@@ -1950,7 +2087,7 @@ static void present(void) {
     draw_ui();
     SDL_UpdateTexture(tex_ui, NULL, ui, UI_W * 4);
     double us = (double)ww / UI_W < (double)wh / UI_H ? (double)ww / UI_W : (double)wh / UI_H;
-    SDL_Rect udst = {(int)((ww - UI_W * us) / 2), (int)((wh - UI_H * us) / 2), (int)(UI_W * us), (int)(UI_H * us)};
+    SDL_Rect udst = {(int)((ww - UI_W * us) / 2), (int)ui_top(wh, UI_H * us), (int)(UI_W * us), (int)(UI_H * us)};
     SDL_RenderCopy(ren, tex_ui, NULL, &udst);
     SDL_RenderPresent(ren);
     return;
@@ -2066,6 +2203,7 @@ static int pad_slot(SDL_JoystickID id) {
 
 static void handle_event(SDL_Event* e) {
   if (viewer_active() && viewer_event(e)) return;
+  if (sv_over && !in_launcher && sv_over_event(e)) return;
   // list of achievements: left and right change the page, anything else closes it
   if (show_logros && (e->type == SDL_KEYDOWN || e->type == SDL_CONTROLLERBUTTONDOWN || e->type == SDL_FINGERDOWN)) {
     int d = 0;
@@ -2432,6 +2570,7 @@ int main(int argc, char** argv) {
       }
       if (getenv("MOD_EVENTS_LOG")) printf("sel=%d credits=%d viewer=%d prompt=%d cur=%d zoom=%.1f menu=%d\n", launch_sel, show_credits, viewer.kind, viewer.prompt, viewer.cur, viewer.zoom, menu_open);
     }
+    if (getenv("MOD_SVOVER")) { game_mode = GM_SURVIVOR; sv_diff = atoi(getenv("MOD_SVOVER")); sv_over = 1; sv_end_round = 1; sv_end_stage = 2; }
     if (getenv("MOD_LOGROS_LIST")) { show_logros = 1; logros_page = atoi(getenv("MOD_LOGROS_LIST")); }
     if (getenv("MOD_MENU")) { menu_open = 1; menu_sel = atoi(getenv("MOD_MENU")); if (getenv("MOD_PAGE")) menu_page = atoi(getenv("MOD_PAGE")); }
     toast_until = 0;
@@ -2464,7 +2603,7 @@ int main(int argc, char** argv) {
     if (rw_count_reset) { rw_count = 0; rw_count_reset = 0; }
     rewinding = !menu_open && !in_launcher && cfg.triggers && !ADVANTAGES_BLOCKED && (any_trigger(trig_l) || key_rewind);
     fast_forward = !menu_open && !rewinding && !in_launcher && cfg.triggers && !ADVANTAGES_BLOCKED && (any_trigger(trig_r) || key_ff);
-    if (!menu_open && !in_launcher) {
+    if (!menu_open && !in_launcher && !sv_over) {
       // keep the audio queue around 3 frames by nudging the emulation speed slightly
       double queued = audio_dev ? SDL_GetQueuedAudioSize(audio_dev) / 2.0 / SMS_SAMPLES_PER_FRAME : 3.0;
       double speed = 1.0 + 0.01 * (3.0 - queued);
@@ -2493,14 +2632,16 @@ int main(int argc, char** argv) {
           mod_enhance_frame(&S, &E);
           { uint32_t gev = mod_events_take(&E);
             if (!fast_forward && gev) vibrate_game(gev);
-            if (game_mode == GM_LOGROS) {
+            if (game_mode == GM_SURVIVOR) sv_frame(gev);
+            if (LOGROS_ON) {
               logros_in_t li = {gev, mod_is_gameplay(&S), gram(RAM_ROUND), gram(RAM_STAGE), (uint8_t)(gram(RAM_WEAPON) & 3), (uint8_t)(gram(RAM_SUBWEAPON) & 3), gram(RAM_AMMO)};
               logros_frame(&li);
             }
           }
           for (int ev; (ev = mod_music_poll(&E)); ) {
             int kind = ev & 0xF00, id = ev & 0xFF;
-            if (game_mode == GM_LOGROS && id) logros_music(id);
+            if (LOGROS_ON && id) logros_music(id);
+            if (game_mode == GM_SURVIVOR && id) sv_music(id);
             if (kind == MOD_MUSIC_PLAY) { music_current = id; music_play(id); }
             else if (kind == MOD_MUSIC_STOP) { if (id) music_current = id; music_stop(); }
             else if (kind == MOD_MUSIC_FADE) music_fade();
@@ -2508,7 +2649,7 @@ int main(int argc, char** argv) {
           if (cfg.triggers && !ADVANTAGES_BLOCKED && (++rw_tick & 1) == 0) rw_push();
           // several at once are shown one after another
           static Uint32 logro_shown_until;
-          if (game_mode == GM_LOGROS && (Sint32)(SDL_GetTicks() - logro_shown_until) >= 0) {
+          if (LOGROS_ON && (Sint32)(SDL_GetTicks() - logro_shown_until) >= 0) {
             int nl = logros_pop_new();
             if (nl >= 0) {
               char t[96]; snprintf(t, sizeof t, T("Achievement: %s", "Logro: %s"), logros_get(nl)->name[ES]);

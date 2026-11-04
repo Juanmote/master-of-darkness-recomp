@@ -4,8 +4,14 @@
 #include <stdlib.h>
 #include <string.h>
 
-enum { L_ROUND1, L_ROUND2, L_ROUND3, L_ROUND4, L_FINAL, L_NOCONT, L_NODEATH, L_STAGE_CLEAN, L_STAGE_NOSUB, L_ROUND_CLEAN, L_ROUND_NOSUB,
-       L_BOSS_CLEAN, L_BOSS_KNIFE, L_BOSS_AXE, L_KILL100, L_KILL1000, L_SECRET, L_WEAPONS, L_SUBS, L_MASK50, L_COUNT };
+// Shown in this order, grouped by kind. The profile stores the ids, so the order can change freely.
+enum { L_ROUND1, L_ROUND2, L_ROUND3, L_ROUND4, L_FINAL,                       // story
+       L_NOCONT, L_NODEATH,                                                   // a whole game
+       L_STAGE_CLEAN, L_STAGE_NOSUB, L_ROUND_CLEAN, L_ROUND_NOSUB,            // stages and rounds
+       L_BOSS_CLEAN, L_BOSS_KNIFE, L_BOSS_AXE,                                // bosses
+       L_SECRET, L_WEAPONS, L_SUBS, L_MASK50, L_KILL100, L_KILL1000,          // collected over any games
+       L_SV_ROUND1, L_SV_ROUND2, L_SV_ROUND3, L_SV_ROUND4,                    // Survivor mode
+       L_SV_EASY, L_SV_NORMAL, L_SV_HARD, L_SV_NOSTATE, L_COUNT };
 
 static const logro_t list[L_COUNT] = {
   {"round1", {"Goodbye, Jack", "Adiós, Jack"}, {"Clear round 1", "Supera la ronda 1"}},
@@ -22,12 +28,20 @@ static const logro_t list[L_COUNT] = {
   {"bossclean", {"Untouchable", "Intocable"}, {"Beat a boss without taking damage", "Vence a un jefe sin recibir daño"}},
   {"bossknife", {"They got you", "Te la colaron"}, {"Beat a boss with the knife", "Vence a un jefe con el cuchillo"}},
   {"bossaxe", {"Lumberjack", "Leñador"}, {"Beat a boss with the axe", "Vence a un jefe con el hacha"}},
-  {"kill100", {"Hunter", "Cazador"}, {"Destroy 100 enemies in total", "Destruye 100 enemigos en total"}},
-  {"kill1000", {"Exterminator", "Exterminador"}, {"Destroy 1000 enemies in total", "Destruye 1000 enemigos en total"}},
   {"secret", {"Sounds hollow", "Suena a hueco"}, {"Find an object hidden in a wall", "Descubre un objeto escondido en una pared"}},
   {"weapons", {"Full arsenal", "Arsenal completo"}, {"Attack with the 4 main weapons (over any games)", "Ataca con las 4 armas principales (en cualquier partida)"}},
   {"subs", {"Bag of tricks", "Caja de sorpresas"}, {"Throw the 4 subweapons (over any games)", "Lanza las 4 subarmas (en cualquier partida)"}},
   {"mask50", {"Carnival is over", "Se acabó el carnaval"}, {"Destroy 50 masks in total", "Destruye 50 máscaras en total"}},
+  {"kill100", {"Hunter", "Cazador"}, {"Destroy 100 enemies in total", "Destruye 100 enemigos en total"}},
+  {"kill1000", {"Exterminator", "Exterminador"}, {"Destroy 1000 enemies in total", "Destruye 1000 enemigos en total"}},
+  {"sv_round1", {"First night", "Primera noche"}, {"Clear round 1 in Survivor mode", "Supera la ronda 1 en modo Survivor"}},
+  {"sv_round2", {"Still standing", "Sigo en pie"}, {"Clear round 2 in Survivor mode", "Supera la ronda 2 en modo Survivor"}},
+  {"sv_round3", {"Among the graves", "Entre tumbas"}, {"Clear round 3 in Survivor mode", "Supera la ronda 3 en modo Survivor"}},
+  {"sv_round4", {"At the gates", "A las puertas"}, {"Clear round 4 in Survivor mode", "Supera la ronda 4 en modo Survivor"}},
+  {"sv_easy", {"Survivor", "Superviviente"}, {"Finish Survivor mode on Easy (or harder)", "Termina el modo Survivor en Fácil (o más difícil)"}},
+  {"sv_normal", {"Hard to kill", "Duro de matar"}, {"Finish Survivor mode on Normal (or harder)", "Termina el modo Survivor en Normal (o más difícil)"}},
+  {"sv_hard", {"Legend of London", "Leyenda de Londres"}, {"Finish Survivor mode on Hard", "Termina el modo Survivor en Difícil"}},
+  {"sv_nostate", {"No safety net", "Sin red"}, {"Finish Survivor mode without loading a state", "Termina el modo Survivor sin cargar estados"}},
 };
 
 #define LAST_ROUND 4          // rounds are 0..4 in the game's RAM
@@ -43,6 +57,7 @@ static bool got[L_COUNT];
 static unsigned kills, masks;
 static unsigned weapons_used, subs_used;   // one bit per weapon, kept between games
 static bool dirty;
+static int survivor = -1;     // Survivor difficulty of the games being played, -1 none
 static int pending[L_COUNT], n_pending;
 
 static struct {
@@ -53,7 +68,8 @@ static struct {
   bool round_hurt, round_sub, stage_hurt, stage_sub;
   bool boss_on, boss_hurt, last_boss_down;
   bool state_loaded;          // for achievements earned without loading a state (Survivor)
-  uint8_t spare[32];          // room for new fields: saved states keep their size
+  uint8_t sv_on, sv_diff;     // a Survivor game, and its difficulty (0 easy .. 2 hard)
+  uint8_t spare[30];          // room for new fields: saved states keep their size
 } run;
 
 // ---------------------------------------------------------------- profile file
@@ -161,7 +177,13 @@ static void unlock(int i) {
 }
 
 // ---------------------------------------------------------------- what happens in the game
-void logros_reset_run(void) { memset(&run, 0, sizeof run); }
+void logros_reset_run(void) {
+  memset(&run, 0, sizeof run);
+  run.sv_on = survivor >= 0;
+  run.sv_diff = (uint8_t)(survivor < 0 ? 0 : survivor);
+}
+
+void logros_set_survivor(int diff) { survivor = diff; run.sv_on = diff >= 0; run.sv_diff = (uint8_t)(diff < 0 ? 0 : diff); }
 
 size_t logros_run_size(void) { return sizeof run; }
 void logros_run_save(void* out) { memcpy(out, &run, sizeof run); }
@@ -174,6 +196,7 @@ static void finish_stage(void) {
 
 static void finish_round(int r) {
   if (r < LAST_ROUND) unlock(L_ROUND1 + r);
+  if (r < LAST_ROUND && run.sv_on) unlock(L_SV_ROUND1 + r);
   if (!run.round_hurt) unlock(L_ROUND_CLEAN);
   if (!run.round_sub) unlock(L_ROUND_NOSUB);
 }
@@ -193,6 +216,12 @@ void logros_music(int id) {
     unlock(L_FINAL);
     if (!run.continues) unlock(L_NOCONT);
     if (!run.deaths) unlock(L_NODEATH);
+    if (run.sv_on && !run.deaths) {
+      unlock(L_SV_EASY);
+      if (run.sv_diff >= 1) unlock(L_SV_NORMAL);
+      if (run.sv_diff >= 2) unlock(L_SV_HARD);
+      if (!run.state_loaded) unlock(L_SV_NOSTATE);
+    }
     run.valid = false;
   }
 }

@@ -248,6 +248,8 @@ int main(int argc, char** argv) {
     if (getenv("RESPDBG")) for (int k = 0; k < 46; k++) if (E.slot_entry[k]) for (int j = 0; j < E.n_killed; j++)
       if (E.killed[j].slot == k && E.killed[j].y == E.slot_y[k] && E.killed[j].sect == S.st.ram[0x1FC1] && abs(E.killed[j].world - E.slot_world[k]) <= 112) {
         static int last[46]; if (last[k] != E.slot_world[k]) { last[k] = E.slot_world[k]; printf("BACK frame %u slot %d world %d list %d\n", fr, k, E.slot_world[k], E.slot_list[k]); } }
+    if (getenv("SVLOCK") && mod_is_gameplay(&S)) { E.energy_lock = true; uint8_t en = S.st.ram[0xA3A]; if (en && en <= 0x20) E.energy_keep = en; }   // Survivor hard
+    if (getenv("GPLOG")) { static int lg = -1, le = -1; int g = mod_is_gameplay(&S), en = S.st.ram[0xA3A]; if (g != lg || en != le) printf("GP %u g=%d en=%d st=%02X\n", fr, g, en, S.st.ram[0x90E]); lg = g; le = en; }
     if (getenv("KILLLOG")) { static int lk = -1; if (E.n_killed != lk) { printf("KILL %u n=%d lives=%d round=%d-%d\n", fr, E.n_killed, S.st.ram[0x1FBA], S.st.ram[0x1FC0], S.st.ram[0x1FC1]); lk = E.n_killed; } }
     mod_wide_info_t info;
     mod_render(&S, pix, W, ext, &info, E.wide ? E.shown : NULL, E.wide ? E.n_shown : 0);

@@ -57,6 +57,10 @@ typedef struct {
   bool (*music_has)(int id);   // set by the app: a replacement exists for this track
   int music_events[8];         // MOD_MUSIC_* | id, read by the app with mod_music_poll
   int n_music_events;
+  // Survivor: when energy_lock is on, potions heal nothing and a new stage starts with energy_keep
+  // (the energy the hero had) instead of a full bar. The app keeps energy_keep up to date.
+  bool energy_lock;
+  uint8_t energy_keep;
   // double jump
   bool double_jump;
   bool air_jump_used;

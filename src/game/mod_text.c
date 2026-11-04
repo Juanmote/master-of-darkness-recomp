@@ -58,9 +58,36 @@ static bool build(const sms_t* s) {
   return true;
 }
 
+// The score label of the status bar (ROM 10024, 5 letters) in the top rows: a level is running, even when
+// mod_is_gameplay says no (boss dialogs cover the playfield). Then tiles 1B0-1B8 belong to the level.
+static bool hud_visible(const sms_t* s) {
+  if (s->rom_size < 0x10029) return false;
+  const uint8_t* lab = s->rom + 0x10024;
+  const uint8_t* v = s->st.vdp.vram;
+  uint16_t nt = (s->st.vdp.reg[2] & 0x0E) << 10;
+  for (int row = 0; row < 4; row++)
+    for (int c = 0; c + 5 <= 32; c++) {
+      int k = 0;
+      while (k < 5) {
+        const uint8_t* e = &v[(nt + (row * 32 + c + k) * 2) & 0x3FFF];
+        if (e[0] != lab[k] || !(e[1] & 1)) break;
+        k++;
+      }
+      if (k == 5) return true;
+    }
+  return false;
+}
+
+// Text screens leave the extra letters' tiles empty; anything drawn there is someone else's.
+static bool glyph_tiles_free(const sms_t* s) {
+  const uint8_t* v = s->st.vdp.vram;
+  for (int i = 0; i < MOD_GLYPH_COUNT * 32; i++) if (v[(MOD_GLYPH_FIRST * 32 + i) & 0x3FFF]) return false;
+  return true;
+}
+
 void mod_text_frame(sms_t* s, bool on) {
   s->glyphs = NULL;
-  if (!on || mod_is_gameplay(s) || !build(s)) return;
+  if (!on || mod_is_gameplay(s) || hud_visible(s) || !glyph_tiles_free(s) || !build(s)) return;
   s->glyphs = (const uint8_t(*)[32])glyphs;
   s->glyph_first = MOD_GLYPH_FIRST;
   s->glyph_count = MOD_GLYPH_COUNT;

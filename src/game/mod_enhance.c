@@ -455,6 +455,16 @@ static bool on_hook(sms_t* s, uint16_t pc) {
   case 0x4506:  // a broken wall tile had an object listed behind it (table at C902)
     g->events |= MOD_EV_SECRET;
     return false;
+  case 0x13D3:  // hero set up for a new stage: IX+1A (CA3A) has just been filled with 20
+    if (g->energy_lock && g->energy_keep && z->ix == 0xCA20) ram_w(s, 0xCA3A, g->energy_keep);
+    return false;
+  case 0x4233:  // potion: adds 16 energy one by one. Survivor without healing: only its sound, then back
+    if (!g->energy_lock) return false;
+    ram_w(s, 0xC104, 0x99);
+    z->pc = (uint16_t)(ram8(s, z->sp) | (ram8(s, (uint16_t)(z->sp + 1)) << 8));
+    z->sp += 2;
+    z->cyc += 10;
+    return true;
   case 0x46F1:  // damage to the player (B), energy in CA3A
     if (g->difficulty != MOD_DIFF_NORMAL) z->b = (uint8_t)scale_damage(z->b, &g->frac_taken, true);
     if (z->b) g->events |= MOD_EV_HURT;
@@ -565,6 +575,7 @@ static const struct { uint16_t addr; uint8_t b[4]; } signature[] = {
   {0x6198, {0x3A, 0x3A, 0xCB, 0x90}}, {0x3DD3, {0xDD, 0x7E, 0x1A, 0xFD}}, {0x3DD9, {0xDD, 0x77, 0x1A, 0xDD}},
   {0x3DFA, {0x3E, 0xA0, 0x32, 0x05}}, {0x41AE, {0xC5, 0xD5, 0xDD, 0x36}},
   {0x441A, {0xDD, 0x36, 0x01, 0x00}}, {0x4506, {0xDD, 0x36, 0x00, 0xFF}},
+  {0x13CF, {0xDD, 0x36, 0x1A, 0x20}}, {0x13D3, {0xDD, 0x36, 0x00, 0xFF}}, {0x4233, {0x06, 0x10, 0xCB, 0x40}},
   {0x4A07, {0xCD, 0x4D, 0x4B, 0x3A}}, {0x4A10, {0xCD, 0x7E, 0x4B, 0x3A}}, {0x4A2C, {0x3A, 0xBA, 0xDF, 0x3D}},
   // extra projectiles
   {0x147E, {0x3E, 0xFF, 0x21, 0x40}}, {0x1521, {0x3E, 0xFF, 0x21, 0x40}}, {0x1577, {0x3E, 0xFF, 0x21, 0x40}},
@@ -605,7 +616,7 @@ void mod_enhance_attach(sms_t* s, mod_enhance_t* e) {
   if (!mod_enhance_compatible(s)) { s->hook_map = NULL; s->hook2_pc = 0; return; }
   memset(hook_map, 0, sizeof hook_map);
   static const uint16_t addrs[] = {0x51B6, 0x5228, 0x0DD1, 0x520E, 0x51D5, 0x3CD0, 0x52E7, 0x3CDD, 0x52F4,
-                                   0x3DFA, 0x41AE, 0x441A, 0x4506, 0x46F1, 0x6198, 0x3DD6, 0x3DD9};
+                                   0x3DFA, 0x41AE, 0x441A, 0x4506, 0x46F1, 0x6198, 0x3DD6, 0x3DD9, 0x13D3, 0x4233};
   for (unsigned i = 0; i < sizeof addrs / sizeof addrs[0]; i++) hook_map[addrs[i]] = 1;
   memset(ms_hook_map, 0, sizeof ms_hook_map);
   static const uint16_t ms_addrs[] = {0x147E, 0x1521, 0x1577, 0x15D8, 0x22B9, 0x2379, 0x43D5, 0x43E8, 0x446D,
@@ -620,6 +631,7 @@ void mod_enhance_attach(sms_t* s, mod_enhance_t* e) {
   for (int k = 0; k < 2; k++) e->spawn[k].edge_ok_r = e->spawn[k].edge_ok_l = false;
   e->n_killed = 0; e->kill_key = 0xFFFFFFFFu; e->saved_dmg_addr = 0;
   e->difficulty = MOD_DIFF_NORMAL; e->respawn = MOD_RESPAWN_ON;
+  e->energy_lock = false; e->energy_keep = 0;
   memset(e->slot_entry, 0, sizeof e->slot_entry);
   memset(e->seen_in, 0, sizeof e->seen_in);
   s->hook_map = hook_map;
