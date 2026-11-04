@@ -7,6 +7,18 @@ usuario, con 16:9 real, trucos, opciones de juego, filtros, paletas, pack de mú
 Detalles técnicos de cada versión: [`docs/NOTAS_TECNICAS.md`](docs/NOTAS_TECNICAS.md). Pack de música:
 [`docs/PACK_MUSICA.md`](docs/PACK_MUSICA.md). Guion de narración: [`docs/GUION_NARRACION.md`](docs/GUION_NARRACION.md).
 
+## Para seguir en un chat nuevo (4-11-2026, noche)
+
+- **Dónde estamos:** v0.13.1 publicada (build 47). El usuario la va a probar en la Retroid Pocket Classic.
+- **Qué tiene que probar:** desbloquear los cinco jefes (partida normal, "Empezar en cualquier ronda" en la fase 3 de cada ronda, la 5 solo
+  tiene una, con invencible, y caminar hasta el jefe: debe salir "Boss Rush: jefe N desbloqueado") y jugar el Boss Rush entero. También
+  Miniyo, bandas Ambiente en 8:7 y repetir fase en Survivor.
+- **Logros:** el usuario tiene todos los de la historia y Survivor menos 1000 enemigos (lo sacará jugando).
+- **Siguiente, en este orden:** arreglar lo que salga de la prueba del Boss Rush; iconos propios de logros; subir y bajar escaleras al saltar
+  (opcional); antes de la versión final, quitar "Invencible (pruebas)"; al terminar, la versión completa privada (punto 12 de Próximas tareas).
+- **Para trabajar:** clonar `Juanmote/master-of-darkness-recomp`, pedir la ROM al usuario (no está en el repositorio) y compilar como en
+  "Cómo compilar y probar". En escritorio hace falta `libsdl2-dev`.
+
 ROM necesaria: *Master of Darkness (Europe, Brazil) (En).sms*, CRC32 `96FB4D4B`. Con otra ROM el juego
 arranca, pero las mejoras se desactivan solas (se comprueban los bytes de cada punto enganchado).
 
@@ -271,9 +283,9 @@ apagadas, la huella no debe cambiar.
 8. **Hecho en v0.11.0:** descripciones del menú "Jugar", 4 logros nuevos, pantalla de inicio con Galería y Manual, huevo de pascua.
 9. **Hecho en v0.12.0:** letras sueltas en diálogos de jefe, franja del final, visor, 8:7 con Estirar, logros ordenados, modo Survivor.
    Siguiente: probar Survivor en consola, luego iconos de logros, Boss Rush (y sus logros) y escaleras.
+10. **Antes de la versión final:** quitar "Invencible (pruebas)" (`test_inv` en `main.c`).
 11. **Hecho en v0.13.1:** Boss Rush con jefes desbloqueados y sus logros, logro Miniyo. Siguiente: probar Boss Rush en consola, iconos de logros, escaleras.
 12. **Plan del usuario para el final (4-11-2026):** la versión pública se queda con los jefes desbloqueables. Al terminar el proyecto, una
     **versión completa privada** solo para su uso y recuerdo, en un repositorio privado de GitHub: APK con todo dentro (su ROM, packs de música,
     galería, manual y las salas de los jefes ya desbloqueadas). Ahí también, si se quiere, que exportar/importar perfil lleve las salas de los
     jefes. Nada de eso va en el repositorio público.
-10. **Antes de la versión final:** quitar "Invencible (pruebas)" (`test_inv` en `main.c`).
