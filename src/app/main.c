@@ -20,7 +20,7 @@
 #include "stb_image.h"
 
 #include "miniz.h"
-#define APP_VERSION "0.15.1"
+#define APP_VERSION "0.15.2"
 #define KNOWN_CRC 0x96FB4D4Bu
 #define UI_W 640
 #define UI_H 360
@@ -239,7 +239,7 @@ static SDL_Window* win;
 static SDL_Renderer* ren;
 static SDL_Texture *tex_game, *tex_ui, *tex_scan, *tex_sharp;
 static int tex_game_w, tex_game_h, sharp_k;
-static int game_h = SMS_H;   // lines of the picture sent to the screen (144 in the Game Gear format)
+static int game_h = SMS_H;   // lines of the picture sent to the screen (170 in the Game Gear format)
 static SDL_Texture* tex_hud;  // Game Gear format: the status bar, shown over the picture during the pause
 static SDL_AudioDeviceID audio_dev;
 static SDL_GameController* pads[8];
@@ -817,9 +817,9 @@ static void menu_change(int dir) {
     cfg.gg = f == 3;
     // 8:7 keeps its shape (fit) and the bands left on a square screen take the picture's colours
     if (cfg.crt || cfg.gg) { cfg.scale = SCALE_FIT; cfg.bands = 1; }
-    if (cfg.gg) show_toast(T("Game Gear: a smaller window that follows you. Pause shows the status bar",
-                             "Game Gear: ventana más pequeña que te sigue. La pausa enseña el marcador"), 3500);
-    mod_enhance_set_wide(&E, cfg.widescreen, MOD_WIDE_EXT);
+    if (cfg.gg) show_toast(T("Game Gear: a smaller window that follows you.\nPause shows the status bar",
+                             "Game Gear: ventana más pequeña que te sigue.\nLa pausa enseña el marcador"), 3500);
+    mod_enhance_set_wide(&E, cfg.widescreen || cfg.gg, MOD_WIDE_EXT);
     break;
   }
   case MI_SCALE: cfg.scale = (cfg.scale + dir + SCALE_COUNT) % SCALE_COUNT; break;
@@ -1618,9 +1618,22 @@ static void draw_ui(void) {
     ui_text(UI_W - 56, 14, t, 0xFFFFFF);
   }
   if (toast[0] && SDL_GetTicks() < toast_until) {
-    int w = text_width(toast) + 24;
-    ui_rect((UI_W - w) / 2, UI_H - 44, w, 28, 0xD0000000);
-    ui_text_center(UI_H - 40, toast, 0xFFFFFF);
+    // one line, or several split by '\n'
+    char lines[3][256];
+    int nl = 0, w = 0;
+    for (const char* t = toast; *t && nl < 3; nl++) {
+      const char* e = strchr(t, '\n');
+      size_t len = e ? (size_t)(e - t) : strlen(t);
+      if (len > 255) len = 255;
+      memcpy(lines[nl], t, len); lines[nl][len] = 0;
+      int lw = text_width(lines[nl]);
+      if (lw > w) w = lw;
+      t = e ? e + 1 : t + len;
+    }
+    w += 24;
+    int h = 28 + (nl - 1) * 24, y = UI_H - 16 - h;
+    ui_rect((UI_W - w) / 2, y, w, h, 0xD0000000);
+    for (int i = 0; i < nl; i++) ui_text_center(y + 4 + i * 24, lines[i], 0xFFFFFF);
   }
 }
 
@@ -1767,25 +1780,42 @@ static void draw_ambient(int gw, int ww, int wh) {
 
 // ---------------------------------------------------------------- Game Gear format
 // Like the Game Gear version: a smaller piece of the picture that follows the hero (it looks bigger, enemies come
-// in suddenly) and, instead of the status bar, one line with energy, subweapon ammo and time (the pause shows the
-// whole bar). The piece takes the full height of the stage (160 lines), so the floor is always in sight, and
-// 182 columns, 8:7. It only moves sideways, when the hero leaves a margin in its middle: no shaking while the
-// game itself scrolls. Title, story and other screens are shown whole.
-#define GG_W 182
-#define GG_H 160
+// in suddenly) and, above the stage, one line with energy, subweapon ammo and time (the pause shows the whole bar).
+// The piece takes the full height of the stage (160 lines, nothing covered: v0.15.1) under that 10-line band, and
+// 194 columns, so the whole is 8:7 with square pixels. It is cut from the 16:9 picture (rebuilt from the map, with
+// the 16:9 engine on, as in that format), so the hero can stay in the middle also when the game keeps him near an
+// edge. It only moves sideways, following the hero's position in the stage: no shaking while the game scrolls.
+// Title, story and other screens are shown whole.
+#define GG_W 194
+#define GG_LINE 10               // the Game Gear status line, above the stage
+#define GG_STAGE 160             // stage lines (32-191 of the picture)
+#define GG_H (GG_LINE + GG_STAGE)
 #define HUD_H 32                 // status bar lines at the top of the picture
-#define GG_MARGIN 62             // the hero is kept between these columns of the piece and GG_W - GG_MARGIN
-static uint32_t gg_full[SMS_W * SMS_H];
+#define GG_DEAD 6                // the hero may move this much from the middle before the piece follows
+static uint32_t gg_full[SMS_W * SMS_H];      // the 4:3 picture (status bar, pause)
+static uint32_t gg_wide[WIDE_W * SMS_H];     // the 16:9 picture the piece is cut from
 static int gg_x = -1;
 static int gg_on;                // the piece is being shown (in a stage)
 
-static void gg_window(void) {
-  int hx = (int16_t)(gram(0xCA24) | gram(0xCA25) << 8) + 8;
-  if (gg_x < 0) gg_x = hx - GG_W / 2;
-  if (hx < gg_x + GG_MARGIN) gg_x = hx - GG_MARGIN;
-  if (hx > gg_x + GG_W - GG_MARGIN) gg_x = hx - (GG_W - GG_MARGIN);
+static void gg_window(const mod_wide_info_t* in) {
+  int cx = in->map_valid ? in->cx : MOD_WIDE_EXT;
+  int hx = (int16_t)(gram(0xCA24) | gram(0xCA25) << 8) + 8 + cx;
+  // the part of the 16:9 picture that belongs to the stage section
+  int l = cx, r = cx + SMS_W;
+  if (in->map_valid) { l = cx - (in->cam - in->left_limit); r = cx + (in->right_limit - in->cam); }
+  if (l < 0) l = 0;
+  if (r > WIDE_W) r = WIDE_W;
+  int mid = GG_W / 2;
+  if (gg_x < 0) gg_x = hx - mid;
+  if (hx < gg_x + mid - GG_DEAD) gg_x = hx - (mid - GG_DEAD);
+  if (hx > gg_x + mid + GG_DEAD) gg_x = hx - (mid + GG_DEAD);
+  if (r - l < GG_W) gg_x = (l + r - GG_W) / 2;
+  else {
+    if (gg_x < l) gg_x = l;
+    if (gg_x > r - GG_W) gg_x = r - GG_W;
+  }
   if (gg_x < 0) gg_x = 0;
-  if (gg_x > SMS_W - GG_W) gg_x = SMS_W - GG_W;
+  if (gg_x > WIDE_W - GG_W) gg_x = WIDE_W - GG_W;
 }
 
 // a piece of the status bar (x, y, width; 8 lines) to (dx, 1) of the piece
@@ -1793,13 +1823,16 @@ static void gg_hud_part(int x, int y, int w, int dx) {
   for (int r = 0; r < 8; r++) memcpy(pix + (r + 1) * GG_W + dx, gg_full + (y + r) * SMS_W + x, (size_t)w * 4);
 }
 
-static void gg_crop(void) {
-  if (mod_is_gameplay(&S) || gg_x < 0) gg_window();
-  for (int y = 0; y < GG_H; y++) memcpy(pix + y * GG_W, gg_full + (y + HUD_H) * SMS_W + gg_x, GG_W * 4);
+static void gg_render(void) {
+  mod_wide_info_t in;
+  mod_render(&S, gg_wide, WIDE_W, MOD_WIDE_EXT, &in, E.wide ? E.shown : NULL, E.wide ? E.n_shown : 0);
+  mod_render_full43(&S, gg_full, SMS_W);
+  if (mod_is_gameplay(&S) || gg_x < 0) gg_window(&in);
+  for (int y = 0; y < GG_STAGE; y++) memcpy(pix + (y + GG_LINE) * GG_W, gg_wide + (y + HUD_H) * WIDE_W + gg_x, GG_W * 4);
   // the Game Gear line: energy (label and dots), subweapon ammo and time, on a black band
-  for (int i = 0; i < 10 * GG_W; i++) pix[i] = 0xFF000000u;
+  for (int i = 0; i < GG_LINE * GG_W; i++) pix[i] = 0xFF000000u;
   gg_hud_part(40, 16, 96, 3);                   // LIFE / VIDA and the energy dots
-  gg_hud_part(176, 16, 24, 3 + 96 + 10);        // =NN, subweapon ammo
+  gg_hud_part(176, 16, 24, 3 + 96 + 16);        // =NN, subweapon ammo
   gg_hud_part(224, 16, 24, GG_W - 24 - 3);      // time
 }
 
@@ -1822,7 +1855,7 @@ static SDL_Rect dest_rect(int ww, int wh, int gw) {
   int mx = 0, my = 0;
   if (cfg.margin) { my = wh * (cfg.margin == 1 ? 3 : 6) / 100; mx = ww * (cfg.margin == 1 ? 2 : 4) / 100; }
   ww -= 2 * mx; wh -= 2 * my;
-  // pixel aspect ratio: CRT 8:7 pixels; Game Gear, 160x144 shown as 8:7
+  // pixel aspect ratio: CRT 8:7 pixels; Game Gear, 194x170 shown as 8:7
   double par = (!cfg.widescreen && cfg.crt) ? 8.0 / 7.0 : gw == GG_W ? (8.0 / 7.0) / ((double)GG_W / GG_H) : 1.0;
   double sx = (double)ww / (gw * par), sy = (double)wh / game_h;
   double s = sx < sy ? sx : sy;
@@ -2549,7 +2582,7 @@ static void present(void) {
   game_h = gg_on ? GG_H : SMS_H;
   ensure_textures(gw);
   if (cfg.widescreen) mod_render(&S, pix, gw, MOD_WIDE_EXT, NULL, E.wide ? E.shown : NULL, E.wide ? E.n_shown : 0);
-  else if (gg_on) { mod_render_full43(&S, gg_full, SMS_W); gg_crop(); }
+  else if (gg_on) gg_render();
   else mod_render_full43(&S, pix, gw);   // also fills the column the game blanks on the left
   SDL_UpdateTexture(tex_game, NULL, pix, gw * 4);
   int ww, wh;
@@ -2956,7 +2989,7 @@ int main(int argc, char** argv) {
   apply_palette();
   sms_init(&S, rom, (int)rom_size);
   mod_enhance_attach(&S, &E);
-  mod_enhance_set_wide(&E, cfg.widescreen, MOD_WIDE_EXT);
+  mod_enhance_set_wide(&E, cfg.widescreen || cfg.gg, MOD_WIDE_EXT);
   apply_game_options();
   load_music_pack();
   E.music_has = music_enabled_has;
@@ -3035,6 +3068,7 @@ int main(int argc, char** argv) {
     if (getenv("MOD_LOGROS_LIST")) { show_logros = 1; logros_page = atoi(getenv("MOD_LOGROS_LIST")); }
     if (getenv("MOD_MENU")) { menu_open = 1; menu_sel = atoi(getenv("MOD_MENU")); if (getenv("MOD_PAGE")) menu_page = atoi(getenv("MOD_PAGE")); }
     toast_until = 0;
+    if (getenv("MOD_TOAST")) show_toast(cfg.gg ? T("Game Gear: a smaller window that follows you.\nPause shows the status bar", "Game Gear: ventana más pequeña que te sigue.\nLa pausa enseña el marcador") : getenv("MOD_TOAST"), 99999);   // tests
     if (getenv("MOD_SUB")) { gram_w(RAM_SUBWEAPON, (uint8_t)atoi(getenv("MOD_SUB"))); gram_w(RAM_AMMO, getenv("MOD_AMMO") ? (uint8_t)atoi(getenv("MOD_AMMO")) : 9); }
     if (getenv("MOD_TOUCHDIR")) {   // a finger on the right arm of the cross
       cfg.touch = 1;

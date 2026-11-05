@@ -1,6 +1,6 @@
 # Estado del proyecto — Master of Darkness Re-Master-Ed
 
-Última actualización: 5 de noviembre de 2026 (noche). Versión publicada: **v0.15.1**.
+Última actualización: 5 de noviembre de 2026 (noche). Versión publicada: **v0.15.2**.
 
 Launcher para Android (y escritorio) que ejecuta *Master of Darkness* (Master System) desde la ROM del
 usuario, con 16:9 real, trucos, opciones de juego, filtros, paletas, pack de música y controles táctiles.
@@ -9,13 +9,15 @@ Detalles técnicos de cada versión: [`docs/NOTAS_TECNICAS.md`](docs/NOTAS_TECNI
 
 ## Para seguir en un chat nuevo (5-11-2026, tarde)
 
+- **v0.15.2 (notas del usuario sobre Game Gear):** el héroe va en el medio de la ventana (se recorta de la imagen 16:9, con el motor del 16:9
+  encendido); la línea de marcador va encima del escenario y ya no tapa sus 10 primeras líneas (lámparas, etc.); el aviso del formato sale en dos líneas.
 - **v0.15.1:** nueva opción **Jugar › Exportar estado**: copia el estado guardado de la partida normal (`estado1.sav`) a un archivo que
   elige el usuario (`MasterOfDarkness_estado.sav`), para que pueda mandarlo. Se carga aquí con `headless -l archivo` o copiándolo como
   `estado1.sav` en la carpeta de configuración del ejecutable de escritorio.
 - **Dónde estamos:** v0.15.0 publicada. El usuario probó la v0.14.0 en la Classic: logros todos bien (también el jefe 2), escaleras perfectas.
 - **Qué tiene que probar:** Game Gear nuevo (ventana con toda la altura, sin temblor, línea de marcador), iconos de logros, "La cagaste",
   Opciones con gárgolas, el menú oculto bloqueado en modo logros y Survivor, escaleras ahora en Juego.
-- **Pendiente de él:** un estado guardado (Guardar estado en partida normal, luego Jugar › Exportar estado) justo en los dos fallos gráficos de 3-1 en 16:9 (columna azul en los bloques de la
+- **Pendiente de él:** un estado guardado (Guardar estado en partida normal, luego Jugar › Exportar estado) justo en los dos fallos gráficos de 3-1 en **8:7 a pantalla completa** (en 16:9 sale perfecto) (columna azul en los bloques de la
   izquierda y murciélago cortado a la mitad en el borde): con un bot no se reproducen.
 - **APK privada:** su perfil está guardado en el proyecto de claude.ai (`claude/perfil_usuario_apk_privada.md`). El Boss Rush no depende del perfil:
   hacen falta sus cinco `jefe_N.sav` (o generarlos de nuevo).
@@ -53,8 +55,8 @@ arranca, pero las mejoras se desactivan solas (se comprueban los bytes de cada p
 - Instalación nueva = **versión remasterizada** (ver Juego).
 
 **Imagen**
-- **Formato Game Gear (8:7, v0.15.0):** una ventana de 182×160 (toda la altura del escenario, el suelo siempre a la vista) que sigue al héroe solo
-  en horizontal y sin temblor, con una línea de marcador como la de Game Gear (vida, munición, tiempo); la pausa enseña el marcador entero.
+- **Formato Game Gear (8:7, v0.15.2):** una ventana de 194×160 (toda la altura del escenario, el suelo siempre a la vista) que lleva al héroe en el medio,
+  solo en horizontal y sin temblor, con una línea de marcador como la de Game Gear (vida, munición, tiempo) encima, sin tapar nada; la pausa enseña el marcador entero.
   Título, historia y diálogos de jefe se ven enteros.
 - Formatos 16:9 panorámico real (43 px de escenario extra por lado, reconstruidos del mapa del juego en RAM),
   4:3 y 8:7 (tele de tubo). Al elegir 8:7 se pone Ajustar (sin deformar) y "Bandas vacías: Ambiente" (v0.12.1): las bandas
@@ -156,7 +158,7 @@ Probado por el usuario y compañeros en Odin 3 Max, Retroid Pocket Classic y mó
 
 - **v0.15.0 sin probar en consola:** todo lo de la v0.15.0 (ver arriba).
 - **Probado por el usuario (5-11-2026):** v0.14.0, logros (jefe 2 incluido) y escaleras con salto bien.
-- **Fallos menores en 3-1, 16:9 (5-11-2026, fotos del usuario):** columna azul en los bloques de la izquierda; murciélago cortado a la mitad en el
+- **Fallos menores en 3-1, 8:7 a pantalla completa (5-11-2026, fotos del usuario; en 16:9 no salen):** columna azul en los bloques de la izquierda; murciélago cortado a la mitad en el
   borde. No reproducidos con bot: pedirle un estado guardado en el sitio.
 - **Antes, v0.14.0 sin probar en consola:** logro y reloj del jefe 2 en el Boss Rush, escaleras con salto, formato Game Gear, botones del inicio.
 - **Jefe 2 (5-11-2026):** el usuario vio saltar el logro del jefe 2 antes de vencerlo. Ese jefe vacía su barra al acabar su primera forma; ahora

@@ -519,3 +519,12 @@ Cabecera TMR SEGA válida, checksum 6FE6 correcto, región SMS Export, mapper Se
   candado, demonio, cronómetro) con metal por nivel (bronce, plata, oro) y puntos en el marco para la ronda o el jefe. Bloqueado: silueta gris.
 - **Inicio:** Opciones lleva la placa de gárgolas de Salir (placa limpiada con relleno de la propia textura y letras originales); Salir vuelve a
   la suya. Los dos con ancho 250.
+
+## v0.15.1 / v0.15.2 (5-11-2026) — Exportar estado, Game Gear centrado
+- **Jugar › Exportar estado** (`MI_STATE_EXPORT`, mensaje Android `0x8008`): `GameActivity.copyOut` copia `estado1.sav` (partida normal) al
+  archivo elegido con `ACTION_CREATE_DOCUMENT` (`MasterOfDarkness_estado.sav`). Se carga con `headless -l` (lee los primeros `sms_state_size` bytes).
+- **Game Gear:** la ventana se recorta de `mod_render` a 16:9 (`gg_wide`, 342 px; el 4:3 sigue en `gg_full` para el marcador y la pausa) y
+  `mod_enhance_set_wide` se enciende también con `cfg.gg`, así salen los sprites de los laterales como en 16:9. Héroe en `CA24`+8+`info.cx`;
+  la ventana lo deja en el medio con un margen de ±6 px (`GG_DEAD`), limitada a la sección (`left_limit`/`right_limit`) y al ancho de la imagen.
+  Imagen de 194×170: 10 líneas de marcador Game Gear encima y las 160 del escenario debajo (antes la banda tapaba las líneas 32-41).
+- **Avisos en varias líneas:** `show_toast` admite `\n` (hasta 3 líneas). Prueba: `MOD_TOAST=texto` (con `gg=1` enseña el aviso del Game Gear).
