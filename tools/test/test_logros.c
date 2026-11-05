@@ -25,6 +25,7 @@ static void boss(int round, int weapon, int ammo, bool hurt) {
   fr(MOD_EV_BOSS_START, round, 2, weapon, ammo);
   if (hurt) fr(MOD_EV_HURT, round, 2, weapon, ammo);
   fr(MOD_EV_BOSS_DOWN, round, 2, weapon, ammo);
+  if (round < 4) { logros_music(0x86); drain(); }   // the boss only counts when its round is cleared
 }
 
 int main(void) {
@@ -33,23 +34,34 @@ int main(void) {
   logros_music(0x87);
   fr(0, 0, 0, 0, 0); fr(MOD_EV_HURT, 0, 0, 0, 0);
   boss(0, 1, 0, false);
-  expect("boss without damage (the round was hurt)", "bossclean ");
+  expect("boss without damage (the round was hurt), then its round clear", "bossclean stageclean stagenosub round1 roundnosub ");
   fr(0, 1, 0, 1, 0);
-  expect("round 1 with a hit: no clean round, no subweapon used", "round1 roundnosub ");
+  expect("round 1 already given at its round clear", "");
   boss(1, 0, 16, true);
-  expect("knife, hurt", "bossknife ");
+  expect("knife, hurt", "bossknife round2 ");
   fr(0, 2, 0, 0, 15);
-  expect("round 2: already known ones are not repeated", "round2 ");
+  expect("round 2: already known ones are not repeated", "");
   fr(MOD_EV_DEATH, 2, 1, 3, 15);
   boss(2, 3, 15, true);
-  expect("axe", "bossaxe ");
-  fr(0, 3, 0, 3, 15); expect("round 3", "round3 ");
+  expect("axe", "bossaxe round3 ");
+  fr(0, 3, 0, 3, 15); expect("round 3 was given with its boss", "");
   logros_music(0x8D); expect("story page mid game is not the ending", "");
   fr(0, 4, 0, 3, 15); expect("round 4 (round 3 had no hits)", "round4 roundclean ");
   logros_music(0x8D); expect("story before the last boss is not the ending", "");
   boss(4, 3, 15, true);
   logros_music(0x8D); drain();
-  expect("ending after a death: no immortal, no continue is fine", "stagenosub final nocont ");
+  expect("ending after a death: no immortal, no continue is fine", "final nocont ");
+
+  // a boss with two forms: the bar empties, fills again, and only the round clear counts
+  fresh(P);
+  logros_music(0x87);
+  fr(0, 0, 0, 0, 0); fr(0, 1, 0, 0, 0); got[0] = 0;
+  logros_music(0x88); fr(MOD_EV_BOSS_START, 1, 2, 0, 0);
+  fr(MOD_EV_BOSS_DOWN, 1, 2, 0, 0);
+  expect("first form down: nothing yet", "");
+  fr(MOD_EV_HURT, 1, 2, 1, 0); fr(MOD_EV_BOSS_DOWN, 1, 2, 1, 0);
+  logros_music(0x86); drain();
+  expect("second form down with the sword, hurt: round clear only", "stagenosub round2 ");
 
   fresh(P);
   logros_music(0x87);
@@ -160,9 +172,9 @@ int main(void) {
   fresh(P);
   logros_music(0x87); fr(0, 0, 0, 1, 0); boss(0, 1, 0, true); fr(0, 1, 0, 1, 0); got[0] = 0;
   int g = logros_merge_file(Q);
-  if (g != 2 || logros_kills() != 1000 || logros_unlocked_count() != 4) { printf("FAIL merge %d %u %d\n", g, logros_kills(), logros_unlocked_count()); fails++; } else printf("ok   merge\n");
+  if (g != 2 || logros_kills() != 1000 || logros_unlocked_count() != 5) { printf("FAIL merge %d %u %d\n", g, logros_kills(), logros_unlocked_count()); fails++; } else printf("ok   merge\n");
   logros_init(P);
-  if (logros_unlocked_count() != 4) { printf("FAIL merge saved\n"); fails++; } else printf("ok   merge saved\n");
+  if (logros_unlocked_count() != 5) { printf("FAIL merge saved\n"); fails++; } else printf("ok   merge saved\n");
 
   // damaged and foreign files are refused
   FILE* f = fopen(Q, "rb+"); fseek(f, 20, SEEK_SET); fputc('9', f); fclose(f);

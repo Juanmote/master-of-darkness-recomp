@@ -80,7 +80,9 @@ static struct {
   bool boss_on, boss_hurt, last_boss_down;
   bool state_loaded;          // for achievements earned without loading a state (Survivor)
   uint8_t sv_on, sv_diff;     // a Survivor game, and its difficulty (0 easy .. 2 hard)
-  uint8_t spare[30];          // room for new fields: saved states keep their size
+  bool boss_zero;             // the boss bar has emptied (some bosses fill it again for a second form)
+  uint8_t boss_weapon;        // weapon of that last blow
+  uint8_t spare[28];          // room for new fields: saved states keep their size
 } run;
 
 // ---------------------------------------------------------------- profile file
@@ -217,6 +219,16 @@ size_t logros_run_size(void) { return sizeof run; }
 void logros_run_save(void* out) { memcpy(out, &run, sizeof run); }
 void logros_run_load(const void* in) { memcpy(&run, in, sizeof run); run.state_loaded = true; }
 
+static void boss_beaten(void) {
+  run.boss_on = run.boss_zero = false;
+  run.last_boss_down = run.round == LAST_ROUND;
+  if (run.valid) {
+    if (!run.boss_hurt) unlock(L_BOSS_CLEAN);
+    if (run.boss_weapon == 0) unlock(L_BOSS_KNIFE);
+    if (run.boss_weapon == 3) unlock(L_BOSS_AXE);
+  }
+}
+
 static void finish_stage(void) {
   if (!run.stage_hurt) unlock(L_STAGE_CLEAN);
   if (!run.stage_sub) unlock(L_STAGE_NOSUB);
@@ -231,6 +243,8 @@ static void finish_round(int r) {
 
 void logros_music(int id) {
   if (id == MUS_INTRO) { logros_reset_run(); return; }
+  // a boss only counts as beaten when its stage ends: the second boss empties its bar once before its second form
+  if ((id == MUS_STAGE_CLEAR || id == MUS_ROUND_CLEAR) && run.boss_on && run.boss_zero) boss_beaten();
   if ((id == MUS_STAGE_CLEAR || id == MUS_ROUND_CLEAR) && run.valid) finish_stage();
   if (id == MUS_ROUND_CLEAR && run.valid && run.round < LAST_ROUND && run.stage == LAST_STAGE && !run.round_done) {
     finish_round(run.round);
@@ -312,13 +326,9 @@ void logros_frame(const logros_in_t* in) {
   if (ev & MOD_EV_DEATH) { run.deaths++; run.round_hurt = run.stage_hurt = run.boss_hurt = true; }
   if (ev & MOD_EV_BOSS_START) { run.boss_on = true; run.boss_hurt = false; }
   if ((ev & MOD_EV_BOSS_DOWN) && run.boss_on) {
-    run.boss_on = false;
-    run.last_boss_down = run.round == LAST_ROUND;
-    if (run.valid) {
-      if (!run.boss_hurt) unlock(L_BOSS_CLEAN);
-      if (in->weapon == 0) unlock(L_BOSS_KNIFE);
-      if (in->weapon == 3) unlock(L_BOSS_AXE);
-    }
+    run.boss_zero = true;
+    run.boss_weapon = in->weapon;
+    if (run.round == LAST_ROUND) boss_beaten();   // Dracula: the ending comes without a stage-clear music
   }
 }
 

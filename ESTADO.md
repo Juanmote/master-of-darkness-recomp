@@ -1,21 +1,22 @@
 # Estado del proyecto — Master of Darkness Re-Master-Ed
 
-Última actualización: 4 de noviembre de 2026. Versión publicada: **v0.13.1**.
+Última actualización: 5 de noviembre de 2026. Versión publicada: **v0.14.0**.
 
 Launcher para Android (y escritorio) que ejecuta *Master of Darkness* (Master System) desde la ROM del
 usuario, con 16:9 real, trucos, opciones de juego, filtros, paletas, pack de música y controles táctiles.
 Detalles técnicos de cada versión: [`docs/NOTAS_TECNICAS.md`](docs/NOTAS_TECNICAS.md). Pack de música:
 [`docs/PACK_MUSICA.md`](docs/PACK_MUSICA.md). Guion de narración: [`docs/GUION_NARRACION.md`](docs/GUION_NARRACION.md).
 
-## Para seguir en un chat nuevo (4-11-2026, noche)
+## Para seguir en un chat nuevo (5-11-2026)
 
-- **Dónde estamos:** v0.13.1 publicada (build 47). El usuario la va a probar en la Retroid Pocket Classic.
-- **Qué tiene que probar:** desbloquear los cinco jefes (partida normal, "Empezar en cualquier ronda" en la fase 3 de cada ronda, la 5 solo
-  tiene una, con invencible, y caminar hasta el jefe: debe salir "Boss Rush: jefe N desbloqueado") y jugar el Boss Rush entero. También
-  Miniyo, bandas Ambiente en 8:7 y repetir fase en Survivor.
-- **Logros:** el usuario tiene todos los de la historia y Survivor menos 1000 enemigos (lo sacará jugando).
-- **Siguiente, en este orden:** arreglar lo que salga de la prueba del Boss Rush; iconos propios de logros; subir y bajar escaleras al saltar
-  (opcional); antes de la versión final, quitar "Invencible (pruebas)"; al terminar, la versión completa privada (punto 12 de Próximas tareas).
+- **Dónde estamos:** v0.14.0 publicada. El usuario ya ha jugado el Boss Rush entero (v0.13.1) y ha sacado todos sus logros.
+- **Qué tiene que probar:** el logro del jefe 2 del Boss Rush (antes saltaba al vaciar la barra de su primera forma), escaleras con salto
+  (salto + arriba para agarrarse en el aire, salto + abajo para soltarse), formato Game Gear (y la pausa con el marcador) y los botones nuevos del inicio.
+- **Logros (5-11-2026):** le quedan Miniyo (vida extra) y 1000 enemigos. Perfil que mandó (`MOD-PERFIL 1`): 16 logros (historia, partida, fases,
+  jefes, cazador, secreto), kills=580, masks=7, weapons=11, subs=0, sin Survivor ni Boss Rush: los de esos modos los hizo con "Invencible (pruebas)",
+  que van al perfil de pruebas aparte.
+- **Siguiente, en este orden:** arreglar lo que salga de la prueba; iconos propios de logros; antes de la versión final, quitar "Invencible
+  (pruebas)"; al terminar, la versión completa privada (punto 12 de Próximas tareas).
 - **Para trabajar:** clonar `Juanmote/master-of-darkness-recomp`, pedir la ROM al usuario (no está en el repositorio) y compilar como en
   "Cómo compilar y probar". En escritorio hace falta `libsdl2-dev`.
 
@@ -28,8 +29,9 @@ arranca, pero las mejoras se desactivan solas (se comprueban los bytes de cada p
 
 **Pantalla de inicio y app**
 - Pantalla de inicio con 7 secciones y Jugar en el medio: Opciones, Controles, Galería, Jugar, Manual, Créditos, Salir.
-  Los botones de Galería y Manual imitan el arte del usuario (placa de Créditos, fuente Almendra); se cambian sustituyendo
-  `galeria.png`, `manual.png` y `en_*.png`.
+  **v0.14.0:** a cada lado de Jugar, los de los extremos (Opciones, Galería, Manual, Salir) llevan la misma placa de pizarra y los del medio
+  (Controles, Créditos) la de cobre, con las letras originales del usuario (Galería y Manual siguen con la fuente Almendra). Se cambian
+  sustituyendo los `.png` y `en_*.png`.
 - **Galería y Manual (v0.11.0):** packs opcionales `.zip` de `.jpg`/`.png`, como los de música: la primera vez se elige el archivo
   y se copia dentro de la app. El nombre del archivo, sin el número inicial, es el pie. Mando: izquierda/derecha o L1/R1 pasan,
   A hace zoom, cruceta y stick mueven la imagen con zoom, X cambia de pack, B cierra. Los botones y el pie van en el borde de abajo de la
@@ -48,6 +50,8 @@ arranca, pero las mejoras se desactivan solas (se comprueban los bytes de cada p
 - Instalación nueva = **versión remasterizada** (ver Juego).
 
 **Imagen**
+- **Formato Game Gear (8:7, v0.14.0):** como la versión de Game Gear: una ventana de 160×144 que sigue al héroe (sprites más grandes, los
+  enemigos entran de golpe) y sin marcador; la pausa lo enseña encima. Título, historia y diálogos de jefe se ven enteros.
 - Formatos 16:9 panorámico real (43 px de escenario extra por lado, reconstruidos del mapa del juego en RAM),
   4:3 y 8:7 (tele de tubo). Al elegir 8:7 se pone Ajustar (sin deformar) y "Bandas vacías: Ambiente" (v0.12.1): las bandas
   que quedan en pantallas casi cuadradas toman los colores de la escena, difuminados y oscuros. Llenarla sin deformar no es posible (encima
@@ -66,6 +70,8 @@ arranca, pero las mejoras se desactivan solas (se comprueban los bytes de cada p
   toda la ronda. v0.9.8: el enemigo se reconoce por su sitio en el mapa, así que tampoco vuelve al dar marcha atrás
   (antes salía por la lista de aparición del otro sentido: era el fallo "a veces sí, a veces no").
 - Doble salto.
+- **Escaleras: Con salto** (Controles, v0.14.0): salto + arriba en el aire te agarra a una escalera; salto + abajo en una escalera te suelta sin
+  saltar. Remasterizada: Con salto; juego original: Clásicas. Vale en todos los modos (no es una ventaja).
 - Ralentizaciones eliminadas u originales (CPU al doble durante la partida).
 - "Versión remasterizada (recomendada)": pide confirmación. Dificultad normal, reaparición sí, sin doble salto,
   sin ralentizaciones, 16:9 ajustado, scanlines, colores y traje originales, sin margen, música original, táctiles
@@ -143,7 +149,11 @@ Probado por el usuario y compañeros en Odin 3 Max, Retroid Pocket Classic y mó
 
 ## Errores y puntos pendientes de comprobar
 
-- **v0.13.1 sin probar en consola:** Boss Rush con jefes desbloqueados (desbloquear los cinco en una partida y jugarlo), Miniyo.
+- **v0.14.0 sin probar en consola:** logro y reloj del jefe 2 en el Boss Rush, escaleras con salto, formato Game Gear, botones del inicio.
+- **Jefe 2 (5-11-2026):** el usuario vio saltar el logro del jefe 2 antes de vencerlo. Ese jefe vacía su barra al acabar su primera forma; ahora
+  solo cuenta la música de ronda superada (también para Intocable, cuchillo y hacha en las partidas normales).
+- **Boss Rush (v0.13.1) probado por el usuario (5-11-2026):** jugado entero y todos sus logros.
+- **v0.13.1 sin probar en consola:** Miniyo.
 - **v0.13.0 descartada:** el atajo sacaba al jefe en el pasillo (2-3) y la ronda no terminaba.
 - **Información del usuario (4-11-2026):** con el invencible de pruebas, al caer a un precipicio o al agua se sale por arriba. Survivor completo con el
   truco y todos los logros salvo 1000 enemigos. Decía que al cambiar el traje se perdía el invencible: no se encontró relación; ahora el invencible
@@ -278,8 +288,7 @@ apagadas, la huella no debe cambiar.
      1-2 = Normal, 3-4 = Difícil. Los jefes no dan objetos. Probar antes si se puede saltar de jefe en jefe; no usar estados
      guardados en el APK (llevan datos de la ROM). Oleadas descartadas.
    - **Narración de voz aparcada:** el usuario teme desvirtuar el juego y no encaja con la OST. Si acaso, algún extra en la galería.
-7. **Subir y bajar de las escaleras al saltar** (salto + arriba para agarrarse, salto + abajo para soltarse): petición del usuario, para más
-   adelante. Debe ser opcional o quedar claro cómo afecta a logros y modos.
+7. **Subir y bajar de las escaleras al saltar: hecho en v0.14.0** (opción "Escaleras: Con salto" en Controles).
 8. **Hecho en v0.11.0:** descripciones del menú "Jugar", 4 logros nuevos, pantalla de inicio con Galería y Manual, huevo de pascua.
 9. **Hecho en v0.12.0:** letras sueltas en diálogos de jefe, franja del final, visor, 8:7 con Estirar, logros ordenados, modo Survivor.
    Siguiente: probar Survivor en consola, luego iconos de logros, Boss Rush (y sus logros) y escaleras.
@@ -289,3 +298,4 @@ apagadas, la huella no debe cambiar.
     **versión completa privada** solo para su uso y recuerdo, en un repositorio privado de GitHub: APK con todo dentro (su ROM, packs de música,
     galería, manual y las salas de los jefes ya desbloqueadas). Ahí también, si se quiere, que exportar/importar perfil lleve las salas de los
     jefes. Nada de eso va en el repositorio público.
+13. **Hecho en v0.14.0:** jefe 2, escaleras con salto, formato Game Gear, botones del inicio igualados.

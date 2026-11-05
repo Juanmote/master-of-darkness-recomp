@@ -155,6 +155,7 @@ int main(int argc, char** argv) {
   if (use_recomp) { fprintf(stderr, "built without recompiled code (run tools/recomp/recomp.py first)\n"); return 1; }
 #endif
   if (getenv("DJ")) E.double_jump = true;
+  if (getenv("STAIRS")) E.stairs_jump = true;
   if (getenv("MULTI")) E.multi_shot = true;
   if (getenv("PSGMUTE")) S.psg_mute = (uint8_t)strtol(getenv("PSGMUTE"), NULL, 16);
   if (getenv("VDPREG")) S.hooks.on_vdp_reg = h_vdpreg;
@@ -249,6 +250,13 @@ int main(int argc, char** argv) {
       if (E.killed[j].slot == k && E.killed[j].y == E.slot_y[k] && E.killed[j].sect == S.st.ram[0x1FC1] && abs(E.killed[j].world - E.slot_world[k]) <= 112) {
         static int last[46]; if (last[k] != E.slot_world[k]) { last[k] = E.slot_world[k]; printf("BACK frame %u slot %d world %d list %d\n", fr, k, E.slot_world[k], E.slot_list[k]); } }
     if (getenv("SVLOCK") && mod_is_gameplay(&S)) { E.energy_lock = true; uint8_t en = S.st.ram[0xA3A]; if (en && en <= 0x20) E.energy_keep = en; }   // Survivor hard
+    if (getenv("POSLOG") && fr % 10 == 0) { uint8_t* r = S.st.ram; printf("POS %u s=%d mx=%d y=%d\n", fr, r[0xA31], (r[0x6A0] | r[0x6A1] << 8) + (r[0xA24] | r[0xA25] << 8), r[0xA22]); }
+    if (getenv("STAIRLOG")) {   // hero on stairs: state, position and step counter
+      uint8_t* r = S.st.ram; int st = r[0xA31];
+      static int lst = -1;
+      if (st >= 4 && st <= 5 || lst >= 4 && lst <= 5) printf("ST %u s=%d x=%d y=%d cam=%d c80b=%d c80c=%d vx=%d vy=%d face=%d in=%02X p=%02X/%02X/%02X/%02X\n", fr, st, r[0xA24] | r[0xA25] << 8, r[0xA22], r[0x6A0] | r[0x6A1] << 8, r[0x80B], r[0x80C], (int8_t)r[0xA34], (int8_t)r[0xA32], r[0xA30], r[0x700], r[0x82A], r[0x82B], r[0x82D], r[0x841]);
+      lst = st;
+    }
     if (getenv("GPLOG")) { static int lk = -1; int g = mod_is_gameplay(&S), en = S.st.ram[0xA3A]; int k = g | en << 1 | S.st.ram[0x1FC0] << 9 | S.st.ram[0x1FC1] << 13 | S.st.ram[0x90E] << 17; if (k != lk) printf("GP %u g=%d en=%d st=%02X r=%d s=%d\n", fr, g, en, S.st.ram[0x90E], S.st.ram[0x1FC0], S.st.ram[0x1FC1]); lk = k; }
     if (getenv("KILLLOG")) { static int lk = -1; if (E.n_killed != lk) { printf("KILL %u n=%d lives=%d round=%d-%d\n", fr, E.n_killed, S.st.ram[0x1FBA], S.st.ram[0x1FC0], S.st.ram[0x1FC1]); lk = E.n_killed; } }
     mod_wide_info_t info;

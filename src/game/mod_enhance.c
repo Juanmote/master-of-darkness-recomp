@@ -10,6 +10,7 @@
 // Nothing changes in 4:3 mode.
 #include "mod_enhance.h"
 #include "mod_wide.h"
+#include <stdlib.h>
 #include <string.h>
 
 static mod_enhance_t* g;
@@ -458,6 +459,15 @@ static bool on_hook(sms_t* s, uint16_t pc) {
   case 0x13D3:  // hero set up for a new stage: IX+1A (CA3A) has just been filled with 20
     if (g->energy_lock && g->energy_keep && z->ix == 0xCA20) ram_w(s, 0xCA3A, g->energy_keep);
     return false;
+  case 0x1B15: case 0x1C14:  // on a staircase, between steps: is jump held? (C700)
+    // jump + down: drop off the staircase instead of jumping (199F starts a fall, as when walking off a ledge)
+    if (g->stairs_jump && (ram8(s, 0xC700) & 0x22) == 0x22) {
+      ram_w(s, 0xCA34, 0); ram_w(s, 0xCA35, 0);   // straight down
+      z->pc = 0x199F;
+      z->cyc += 13;
+      return true;
+    }
+    return false;
   case 0x4256:  // extra life picked up (DFBA goes up)
     g->events |= MOD_EV_LIFE;
     return false;
@@ -579,7 +589,8 @@ static const struct { uint16_t addr; uint8_t b[4]; } signature[] = {
   {0x6198, {0x3A, 0x3A, 0xCB, 0x90}}, {0x3DD3, {0xDD, 0x7E, 0x1A, 0xFD}}, {0x3DD9, {0xDD, 0x77, 0x1A, 0xDD}},
   {0x3DFA, {0x3E, 0xA0, 0x32, 0x05}}, {0x41AE, {0xC5, 0xD5, 0xDD, 0x36}},
   {0x441A, {0xDD, 0x36, 0x01, 0x00}}, {0x4506, {0xDD, 0x36, 0x00, 0xFF}},
-  {0x13CF, {0xDD, 0x36, 0x1A, 0x20}}, {0x13D3, {0xDD, 0x36, 0x00, 0xFF}}, {0x4233, {0x06, 0x10, 0xCB, 0x40}}, {0x4256, {0x3E, 0xA6, 0x32, 0x04}}, {0x494F, {0x3A, 0x3A, 0xCA, 0xB7}},
+  {0x13CF, {0xDD, 0x36, 0x1A, 0x20}}, {0x13D3, {0xDD, 0x36, 0x00, 0xFF}}, {0x4233, {0x06, 0x10, 0xCB, 0x40}}, {0x4256, {0x3E, 0xA6, 0x32, 0x04}},
+  {0x1B15, {0x3A, 0x00, 0xC7, 0xE6}}, {0x1C14, {0x3A, 0x00, 0xC7, 0xE6}}, {0x199F, {0xAF, 0x32, 0x2B, 0xCA}}, {0x494F, {0x3A, 0x3A, 0xCA, 0xB7}},
   {0x4A07, {0xCD, 0x4D, 0x4B, 0x3A}}, {0x4A10, {0xCD, 0x7E, 0x4B, 0x3A}}, {0x4A2C, {0x3A, 0xBA, 0xDF, 0x3D}},
   // extra projectiles
   {0x147E, {0x3E, 0xFF, 0x21, 0x40}}, {0x1521, {0x3E, 0xFF, 0x21, 0x40}}, {0x1577, {0x3E, 0xFF, 0x21, 0x40}},
@@ -620,7 +631,8 @@ void mod_enhance_attach(sms_t* s, mod_enhance_t* e) {
   if (!mod_enhance_compatible(s)) { s->hook_map = NULL; s->hook2_pc = 0; return; }
   memset(hook_map, 0, sizeof hook_map);
   static const uint16_t addrs[] = {0x51B6, 0x5228, 0x0DD1, 0x520E, 0x51D5, 0x3CD0, 0x52E7, 0x3CDD, 0x52F4,
-                                   0x3DFA, 0x41AE, 0x441A, 0x4506, 0x46F1, 0x6198, 0x3DD6, 0x3DD9, 0x13D3, 0x4233, 0x4256};
+                                   0x3DFA, 0x41AE, 0x441A, 0x4506, 0x46F1, 0x6198, 0x3DD6, 0x3DD9, 0x13D3, 0x4233, 0x4256,
+                                   0x1B15, 0x1C14};
   for (unsigned i = 0; i < sizeof addrs / sizeof addrs[0]; i++) hook_map[addrs[i]] = 1;
   memset(ms_hook_map, 0, sizeof ms_hook_map);
   static const uint16_t ms_addrs[] = {0x147E, 0x1521, 0x1577, 0x15D8, 0x22B9, 0x2379, 0x43D5, 0x43E8, 0x446D,
@@ -690,6 +702,77 @@ static void double_jump(sms_t* s, mod_enhance_t* e) {
   e->prev_state = st;
 }
 
+
+// Grabbing a staircase in the air (jump + up). Hero: CA31 state (2 falling, 3 rising, 4 on a "/" staircase, 5 on a
+// "\" one), CA24/25 screen X (map X = camera C6A0 + it), CA22 the feet Y, CA30 facing (0 right), C80B frames left
+// of the current step. The map is at D000 (rows of C0 metatiles), their properties at D900: bit 04 "/", bit 08 "\".
+// Steps are 8 px in X and Y; on a "/" tile at map row R, column C the feet run along mapX + Y = 16(C+R) + 32
+// (from its foot at mapX = 16C - 8 to its top at 16C + 8); on a "\" tile along mapX - Y = 16(C-R) - 32 (foot at
+// 16C + 8, top at 16C - 8). Those lines were measured on the game's own staircases (1-1).
+static int stair_prop(const sms_t* s, int row, int col) {
+  if (row < 0 || row > 9 || col < 0 || col >= 0xC0) return 0;
+  return s->st.ram[(0xD900 + s->st.ram[(0xD000 + row * 0xC0 + col) & 0x1FFF]) & 0x1FFF];
+}
+
+// kind 0 "/" (bit 04), 1 "\" (bit 08). For the step point mx (a multiple of 8), the feet Y on the nearest line of
+// that kind to y, if a staircase tile is really there; -1000 otherwise
+static int stair_y(const sms_t* s, int kind, int mx, int y) {
+  int bit = kind ? 0x08 : 0x04;
+  int v = kind ? mx - y : mx + y;
+  int line = (v + 8) & ~15;               // the nearest line (multiples of 16)
+  int ly = kind ? mx - line : line - mx;
+  int c0, r0, c1 = -1, r1 = -1;
+  if (!kind) {
+    int k = (line - 32) / 16;              // C + R
+    if ((mx & 15) == 0) { c0 = mx / 16; r0 = k - c0; }
+    else { c0 = (mx + 8) / 16; r0 = k - c0; c1 = c0 - 1; r1 = r0 + 1; }   // foot of one tile, top of the one below
+  } else {
+    int k = (line + 32) / 16;              // C - R
+    if ((mx & 15) == 0) { c0 = mx / 16; r0 = c0 - k; }
+    else { c0 = (mx - 8) / 16; r0 = c0 - k; c1 = c0 + 1; r1 = r0 + 1; }
+  }
+  // between two steps both tiles must be staircase: the two ends (foot and top) are left alone, so a jump
+  // from the floor next to a staircase is not stopped
+  if (c1 < 0 ? (stair_prop(s, r0, c0) & bit) : (stair_prop(s, r0, c0) & bit) && (stair_prop(s, r1, c1) & bit)) return ly;
+  return -1000;
+}
+
+static void stairs_grab(sms_t* s, mod_enhance_t* e) {
+  if (!s->hook_map || !e->stairs_jump || !mod_is_gameplay(s)) return;
+  uint8_t* r = s->st.ram;
+  int st = r[0x0A31], prev = e->stair_prev;
+  e->stair_prev = st;
+  // a jump off a staircase (holding up-right, say) leaves it: it can only be caught again on the way down
+  if (st == 3 && (prev == 4 || prev == 5)) e->stair_rising = true;
+  if (st != 3) e->stair_rising = false;
+  if ((st != 2 && st != 3) || e->stair_rising) return;
+  if ((r[0x0700] & 0x03) != 0x01 || (r[0x0701] & 0x10)) return;   // up held (not down), and not throwing the subweapon
+  int cam = r[0x06A0] | (r[0x06A1] << 8);
+  int sx = (int16_t)(r[0x0A24] | (r[0x0A25] << 8)), y = r[0x0A22];
+  int mx = cam + sx;
+  int best = 99, bk = -1, bx = 0, by = 0;
+  for (int kind = 0; kind < 2; kind++)
+    for (int dx = -8; dx <= 8; dx += 8) {
+      int px = ((mx + 4) & ~7) + dx;
+      int py = stair_y(s, kind, px, y);
+      if (py < -999) continue;
+      int d = abs(px - mx) + abs(py - y);
+      if (abs(px - mx) <= 6 && abs(py - y) <= 10 && d < best && py >= 0x40 && py < 0xB8) { best = d; bk = kind; bx = px; by = py; }
+    }
+  if (bk < 0) return;
+  int nx = bx - cam;
+  if (nx < 8 || nx > 0xF0) return;
+  r[0x0A24] = (uint8_t)nx; r[0x0A25] = (uint8_t)(nx >> 8);
+  r[0x0A22] = (uint8_t)by;
+  r[0x0A31] = (uint8_t)(4 + bk);
+  r[0x0A2B] = 0;
+  r[0x0A32] = r[0x0A33] = r[0x0A34] = r[0x0A35] = 0;
+  r[0x080B] = 0;                           // between steps: the staircase code reads the pad next
+  int face = r[0x0A30] ? 1 : 0;
+  r[0x0803] = bk == 0 ? (face ? 0x3B : 0x2A) : (face ? 0x2B : 0x3A);   // standing on the staircase
+  e->air_jump_used = false;
+}
+
 uint32_t mod_events_take(mod_enhance_t* e) { uint32_t v = e->events; e->events = 0; return v; }
 
 // attack pressed (C701 holds the buttons pressed on this game frame) and landings (state 2/3 -> 0)
@@ -708,6 +791,7 @@ static void frame_events(const sms_t* s, mod_enhance_t* e) {
 void mod_enhance_frame(const sms_t* s, mod_enhance_t* e) {
   frame_events(s, e);
   double_jump((sms_t*)s, e);
+  stairs_grab((sms_t*)s, e);
   // margins for the next frame's game logic
   if (!e->wide || !mod_visible_margins(s, e->ext, &e->margin_l, &e->margin_r)) {
     e->margin_l = e->margin_r = e->wide ? e->ext : 0;

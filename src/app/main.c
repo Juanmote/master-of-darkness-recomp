@@ -19,7 +19,7 @@
 #include "stb_image.h"
 
 #include "miniz.h"
-#define APP_VERSION "0.13.1"
+#define APP_VERSION "0.14.0"
 #define KNOWN_CRC 0x96FB4D4Bu
 #define UI_W 640
 #define UI_H 360
@@ -64,11 +64,13 @@ typedef struct {
   int palette;     // PAL_*: how the console's 64 colours are shown
   int vib[6];      // vibration strength per kind of moment (VIB_*): 0 off, 1 soft, 2 medium, 3 strong
   int bands;       // empty screen around the picture: 0 black, 1 "ambient" (the picture's own colours, blurred and dark)
+  int stairs;      // 1: jump + up grabs a staircase in the air, jump + down drops off it
+  int gg;          // "Game Gear" format: a 160x144 window that follows the hero, without the status bar (Start shows it)
 } config_t;
 
 // A new installation starts as the "remastered" version (see apply_remaster)
 static config_t cfg = {1, 0, SCALE_FIT, FILTER_SCANLINES, 8, SDL_CONTROLLER_BUTTON_A, SDL_CONTROLLER_BUTTON_Y, 1, -1, 0, 0, 0, 1, MOD_DIFF_NORMAL, MOD_RESPAWN_ON, 0, 0, 2, 1, -1, 0, 0, 1, 0, PAL_ORIGINAL,
-                       {1, 1, 2, 3, 1, 3}, 0};
+                       {1, 1, 2, 3, 1, 3}, 0, 1, 0};
 enum { VIB_TOUCH, VIB_SWING, VIB_HIT, VIB_HURT, VIB_LAND, VIB_BOSS, VIB_COUNT };
 static const char* vib_keys[VIB_COUNT] = {"vib_touch", "vib_swing", "vib_hit", "vib_hurt", "vib_land", "vib_boss"};
 static const int vib_recommended[VIB_COUNT] = {1, 1, 2, 3, 1, 3};   // same as the initial cfg.vib
@@ -112,6 +114,8 @@ static void cfg_load(void) {
     else if (sscanf(line, "margin=%d", &v) == 1 && v >= 0 && v <= 2) cfg.margin = v;
     else if (sscanf(line, "palette=%d", &v) == 1 && v >= 0 && v < PAL_COUNT) cfg.palette = v;
     else if (sscanf(line, "bands=%d", &v) == 1) cfg.bands = v ? 1 : 0;
+    else if (sscanf(line, "stairs=%d", &v) == 1) cfg.stairs = v ? 1 : 0;
+    else if (sscanf(line, "gg=%d", &v) == 1) cfg.gg = v ? 1 : 0;
     else {
       for (int k = 0; k < VIB_COUNT; k++) {
         char fmt[24]; snprintf(fmt, sizeof fmt, "%s=%%d", vib_keys[k]);
@@ -120,6 +124,7 @@ static void cfg_load(void) {
     }
   }
   fclose(f);
+  if (cfg.gg) cfg.widescreen = cfg.crt = 0;
   if (cfg.sub_btn == cfg.jump_btn) cfg.sub_btn = cfg.jump_btn == SDL_CONTROLLER_BUTTON_Y ? SDL_CONTROLLER_BUTTON_X : SDL_CONTROLLER_BUTTON_Y;
 }
 
@@ -129,10 +134,10 @@ static void cfg_save(void) {
   if (!f) return;
   fprintf(f, "widescreen=%d\ncrt=%d\nscale=%d\nfilter=%d\nvolume=%d\njump_btn=%d\nsub_btn=%d\nturbo=%d\nlang=%d\n"
              "suit=%d\ncheat_inv=%d\ncheat_lives=%d\ntriggers=%d\ndifficulty=%d\nrespawn=%d\ndbl_jump=%d\nmusic_pack=%d\ntouch=%d\ntouch_size=%d\n"
-             "ui_lang=%d\nammo_inf=%d\nlock_weapon=%d\nmulti_shot=%d\nmargin=%d\npalette=%d\nbands=%d\n",
+             "ui_lang=%d\nammo_inf=%d\nlock_weapon=%d\nmulti_shot=%d\nmargin=%d\npalette=%d\nbands=%d\nstairs=%d\ngg=%d\n",
           cfg.widescreen, cfg.crt, cfg.scale, cfg.filter, cfg.volume, cfg.jump_btn, cfg.sub_btn, cfg.turbo, cfg.lang,
           cfg.suit, cfg.cheat_inv, cfg.cheat_lives, cfg.triggers, cfg.difficulty, cfg.respawn, cfg.dbl_jump, cfg.music_pack, cfg.touch, cfg.touch_size,
-          cfg.ui_lang, cfg.ammo_inf, cfg.lock_weapon, cfg.multi_shot, cfg.margin, cfg.palette, cfg.bands);
+          cfg.ui_lang, cfg.ammo_inf, cfg.lock_weapon, cfg.multi_shot, cfg.margin, cfg.palette, cfg.bands, cfg.stairs, cfg.gg);
   for (int k = 0; k < VIB_COUNT; k++) fprintf(f, "%s=%d\n", vib_keys[k], cfg.vib[k]);
   fclose(f);
 }
@@ -232,7 +237,9 @@ static void ui_text_center(int y, const char* s, uint32_t rgb) { ui_text((UI_W -
 static SDL_Window* win;
 static SDL_Renderer* ren;
 static SDL_Texture *tex_game, *tex_ui, *tex_scan, *tex_sharp;
-static int tex_game_w, sharp_k;
+static int tex_game_w, tex_game_h, sharp_k;
+static int game_h = SMS_H;   // lines of the picture sent to the screen (144 in the Game Gear format)
+static SDL_Texture* tex_hud;  // Game Gear format: the status bar, shown over the picture during the pause
 static SDL_AudioDeviceID audio_dev;
 static SDL_GameController* pads[8];
 
@@ -535,7 +542,7 @@ static void vibrate_sample(int kind) {
 enum {
   MI_RESUME, MI_SAVE, MI_LOAD, MI_GAME, MI_CHEATS, MI_VIDEO, MI_OPTIONS, MI_RESET, MI_QUIT,
   MI_CONTROLS, MI_HOME, MI_TOUCH, MI_TOUCHSIZE,
-  MI_DIFF, MI_RESPAWN, MI_DJUMP,
+  MI_DIFF, MI_RESPAWN, MI_DJUMP, MI_STAIRS,
   MI_FORMAT, MI_SCALE, MI_FILTER, MI_PALETTE, MI_SUIT, MI_MARGIN, MI_BANDS,
   MI_VOLUME, MI_BUTTONS, MI_SUBBTN, MI_TURBO, MI_TRIGGERS, MI_LANG, MI_MUSIC, MI_MUSPACK, MI_MUSTEST,
   MI_INV, MI_LIVES, MI_WEAPON, MI_SUB, MI_AMMO, MI_MULTI, MI_LOCK, MI_START, MI_WARP, MI_UILANG, MI_ORIGINAL,
@@ -553,7 +560,7 @@ static const int page_items[PAGE_COUNT][PAGE_MAX] = {
   {MI_UILANG, MI_VOLUME, MI_LANG, MI_MUSIC, MI_MUSPACK, MI_MUSTEST, MI_BACK, -1},
   {MI_INV, MI_LIVES, MI_WEAPON, MI_SUB, MI_AMMO, MI_MULTI, MI_LOCK, MI_START, MI_WARP, MI_BACK, -1},
   {MI_DIFF, MI_RESPAWN, MI_DJUMP, MI_TURBO, MI_REMASTER, MI_ORIGINAL, MI_BACK, -1},
-  {MI_BUTTONS, MI_SUBBTN, MI_TRIGGERS, MI_TOUCH, MI_TOUCHSIZE, MI_VIBRA, MI_BACK, -1},
+  {MI_BUTTONS, MI_SUBBTN, MI_STAIRS, MI_TRIGGERS, MI_TOUCH, MI_TOUCHSIZE, MI_VIBRA, MI_BACK, -1},
   {MI_GAME, MI_CHEATS, MI_VIDEO, MI_OPTIONS, MI_BACK, -1},
   {MI_VIB0, MI_VIB0 + 1, MI_VIB0 + 2, MI_VIB0 + 3, MI_VIB0 + 4, MI_VIB0 + 5, MI_BACK, -1},
   {MI_RESUME, MI_SAVE, MI_LOAD, MI_LOGROS_LIST, MI_VIDEO, MI_OPTIONS, MI_CONTROLS, MI_TESTINV, MI_RESET, MI_HOME, MI_QUIT, -1},
@@ -578,6 +585,7 @@ static void apply_game_options(void) {
   E.respawn = ADVANTAGES_BLOCKED ? MOD_RESPAWN_ON : cfg.respawn;
   E.double_jump = !ADVANTAGES_BLOCKED && cfg.dbl_jump != 0;
   E.multi_shot = !ADVANTAGES_BLOCKED && cfg.multi_shot != 0;
+  E.stairs_jump = cfg.stairs != 0;   // a way of moving, not an advantage: also in the achievement modes
 }
 static int menu_page;
 static int confirm_original;   // "back to the original game" (1) or "remastered" (2) was chosen once: the next press confirms
@@ -622,6 +630,7 @@ static void menu_label(int i, char* out, size_t n) {
   case MI_DIFF: snprintf(out, n, "%s  ← %s →", T("Difficulty:", "Dificultad:"), diff_names[L][cfg.difficulty]); break;
   case MI_RESPAWN: snprintf(out, n, "%s ← %s →", T("Enemies respawn:", "Reaparición de enemigos:"), respawn_names[L][cfg.respawn]); break;
   case MI_DJUMP: snprintf(out, n, "%s ← %s →", T("Double jump:", "Doble salto:"), yes_no(cfg.dbl_jump)); break;
+  case MI_STAIRS: snprintf(out, n, "%s ← %s →", T("Stairs:", "Escaleras:"), cfg.stairs ? T("With jump", "Con salto") : T("Classic", "Clásicas")); break;
   case MI_VIDEO: snprintf(out, n, "%s  ›", T("Video", "Imagen")); break;
   case MI_OPTIONS: snprintf(out, n, "%s  ›", T("Sound & language", "Sonido e idioma")); break;
   case MI_CONTROLS: snprintf(out, n, "%s  ›", T("Controls", "Controles")); break;
@@ -660,7 +669,8 @@ static void menu_label(int i, char* out, size_t n) {
   case MI_VIBRA: snprintf(out, n, "%s  ›", T("Vibration", "Vibración")); break;
   case MI_FORMAT:
     snprintf(out, n, "%s  ← %s →", T("Format:", "Formato:"),
-             cfg.widescreen ? T("16:9 widescreen", "16:9 panorámico") : cfg.crt ? T("CRT TV (8:7)", "Tele de tubo (8:7)") : T("4:3 square pixels", "4:3 píxel cuadrado"));
+             cfg.widescreen ? T("16:9 widescreen", "16:9 panorámico") : cfg.crt ? T("CRT TV (8:7)", "Tele de tubo (8:7)") :
+             cfg.gg ? "Game Gear (8:7)" : T("4:3 square pixels", "4:3 píxel cuadrado"));
     break;
   case MI_SCALE: snprintf(out, n, "%s ← %s →", T("Scaling:", "Escalado:"), scale_names[L][cfg.scale]); break;
   case MI_FILTER: snprintf(out, n, "%s   ← %s →", T("Filter:", "Filtro:"), filter_names[L][cfg.filter]); break;
@@ -797,13 +807,16 @@ static void set_test_inv(int on) {
 static void menu_change(int dir) {
   switch (cur_item()) {
   case MI_FORMAT: {
-    // cycle 16:9 -> 4:3 -> CRT 8:7
-    int f = cfg.widescreen ? 0 : cfg.crt ? 2 : 1;
-    f = (f + dir + 3) % 3;
+    // cycle 16:9 -> 4:3 -> CRT 8:7 -> Game Gear
+    int f = cfg.widescreen ? 0 : cfg.crt ? 2 : cfg.gg ? 3 : 1;
+    f = (f + dir + 4) % 4;
     cfg.widescreen = f == 0;
     cfg.crt = f == 2;
+    cfg.gg = f == 3;
     // 8:7 keeps its shape (fit) and the bands left on a square screen take the picture's colours
-    if (cfg.crt) { cfg.scale = SCALE_FIT; cfg.bands = 1; }
+    if (cfg.crt || cfg.gg) { cfg.scale = SCALE_FIT; cfg.bands = 1; }
+    if (cfg.gg) show_toast(T("Game Gear: a smaller window that follows you. Pause shows the status bar",
+                             "Game Gear: ventana más pequeña que te sigue. La pausa enseña el marcador"), 3500);
     mod_enhance_set_wide(&E, cfg.widescreen, MOD_WIDE_EXT);
     break;
   }
@@ -846,6 +859,7 @@ static void menu_change(int dir) {
   case MI_DIFF: cfg.difficulty = (cfg.difficulty + dir + 3) % 3; apply_game_options(); break;
   case MI_RESPAWN: cfg.respawn = (cfg.respawn + dir + 3) % 3; apply_game_options(); break;
   case MI_DJUMP: cfg.dbl_jump ^= 1; apply_game_options(); break;
+  case MI_STAIRS: cfg.stairs ^= 1; apply_game_options(); break;
   case MI_LANG: set_language(!lang_active()); break;
   case MI_INV:
     cfg.cheat_inv ^= 1;
@@ -910,6 +924,7 @@ static void reset_to_original(void) {
   cfg.difficulty = MOD_DIFF_NORMAL;
   cfg.respawn = MOD_RESPAWN_ON;
   cfg.dbl_jump = 0;
+  cfg.stairs = 0;
   cfg.turbo = 0;
   cfg.suit = 0;
   apply_suit();
@@ -937,8 +952,9 @@ static void apply_remaster(void) {
   cfg.difficulty = MOD_DIFF_NORMAL;
   cfg.respawn = MOD_RESPAWN_ON;
   cfg.dbl_jump = 0;
+  cfg.stairs = 1;
   cfg.turbo = 1;
-  cfg.widescreen = 1; cfg.crt = 0;
+  cfg.widescreen = 1; cfg.crt = 0; cfg.gg = 0;
   mod_enhance_set_wide(&E, 1, MOD_WIDE_EXT);
   cfg.scale = SCALE_FIT;
   cfg.filter = FILTER_SCANLINES;
@@ -1099,7 +1115,8 @@ static int sv_over_event(SDL_Event* e) {
 static int br_k;              // boss being fought (0..4)
 static int br_transit;        // a boss has fallen: the next one is loaded when br_next_at comes
 static Uint32 br_next_at;
-static int br_fight, br_down; // its room is loaded / it has fallen
+static int br_fight, br_down; // its room is loaded / it has fallen (the round-clear music has sounded)
+static int br_zero;           // its energy bar is empty: the clock stops, unless the boss comes back (some have two forms)
 static unsigned br_frames;    // time of the run (playing frames, 60 per second)
 static int br_over;           // result screen: 1 life lost, 2 finished
 static Uint32 br_over_at;
@@ -1172,7 +1189,7 @@ static void br_enter(void) {
   gram_w(RAM_ENERGY, E.energy_keep ? E.energy_keep : 0x20);
   gram_w(RAM_INVINCIBLE, 0);
   mod_request_hud(&E, MOD_HUD_WEAPON | MOD_HUD_SUBWEAPON | MOD_HUD_LIVES | MOD_HUD_ENERGY);
-  br_transit = 0; br_fight = 1; br_down = 0;
+  br_transit = 0; br_fight = 1; br_down = 0; br_zero = 0;
   char t[64]; snprintf(t, sizeof t, T("Boss %d of %d", "Jefe %d de %d"), br_k + 1, BR_BOSSES);
   show_toast(t, 2000);
 }
@@ -1181,7 +1198,8 @@ static void br_before_frame(void) {
   if (br_transit && !br_over && (Sint32)(SDL_GetTicks() - br_next_at) >= 0) br_enter();
 }
 
-// the boss of this room has fallen (its energy ran out, or the round is cleared)
+// the boss of this room has fallen: only the round-clear music says so for sure. An empty energy bar is not
+// enough: the second boss (and maybe others) empties it at the end of its first form and then fills it again
 static void br_boss_beaten(void) {
   if (br_down) return;
   br_down = 1;
@@ -1199,8 +1217,9 @@ static void br_frame(uint32_t ev) {
   if (br_over || rom_crc != KNOWN_CRC || !br_fight) return;
   if (br_over_at && (Sint32)(SDL_GetTicks() - br_over_at) >= 0) { br_lost(); return; }
   if ((ev & MOD_EV_DEATH) && !br_over_at) br_over_at = SDL_GetTicks() + 2500;
-  if (ev & MOD_EV_BOSS_DOWN) br_boss_beaten();
-  if (!br_down && !br_over_at) br_frames++;   // the clock runs from entering the room until the boss falls
+  if (ev & MOD_EV_BOSS_DOWN) br_zero = 1;
+  else if (br_zero && !br_down && gram(0xCB3A)) br_zero = 0;   // a new form of the boss, with energy again
+  if (!br_down && !br_zero && !br_over_at) br_frames++;   // the clock runs from entering the room until the boss falls
   if (!mod_is_gameplay(&S)) return;
   if (gram(RAM_LIVES) != 1) { gram_w(RAM_LIVES, 1); mod_request_hud(&E, MOD_HUD_LIVES); }
   // the weapons of the run stay (anything picked up in a boss room does not change them)
@@ -1503,6 +1522,7 @@ static void draw_ui(void) {
       int it = cur_item();
       foot = it == MI_TRIGGERS ? T("L2 rewinds up to 20 s, R2 fast forwards", "L2 rebobina hasta 20 s, R2 acelera") :
              it == MI_VIBRA ? T("Vibration strength for each moment of the game", "Fuerza de la vibración para cada momento del juego") :
+             it == MI_STAIRS ? T("Jump + up grabs a staircase, jump + down lets go", "Salto + arriba: te agarras. Salto + abajo: te sueltas") :
              it == MI_TOUCH ? T("On screen: d-pad, 1 attack, 2 jump, dagger subweapon, START menu, PAUSE pause", "En pantalla: cruceta, 1 ataque, 2 salto, puñal subarma, START menú, PAUSE pausa") :
              T("SELECT or BACK opens the menu while playing", "SELECT o ATRÁS abre el menú durante la partida");
     }
@@ -1579,10 +1599,11 @@ static void draw_ui(void) {
 
 // ---------------------------------------------------------------- video
 static void ensure_textures(int game_w) {
-  if (!tex_game || tex_game_w != game_w) {
+  if (!tex_game || tex_game_w != game_w || tex_game_h != game_h) {
     if (tex_game) SDL_DestroyTexture(tex_game);
-    tex_game = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, game_w, SMS_H);
-    tex_game_w = game_w;
+    tex_game = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, game_w, game_h);
+    tex_game_w = game_w; tex_game_h = game_h;
+    if (tex_scan) { SDL_DestroyTexture(tex_scan); tex_scan = NULL; }
     if (tex_sharp) { SDL_DestroyTexture(tex_sharp); tex_sharp = NULL; }
   }
   if (!tex_ui) {
@@ -1593,8 +1614,8 @@ static void ensure_textures(int game_w) {
   if (!tex_scan) {
     // 4 texture rows per game line: last one darkened
     uint32_t px[SMS_H * 4];
-    for (int i = 0; i < SMS_H * 4; i++) px[i] = (i % 4 == 3) ? 0x90000000 : (i % 4 == 2 ? 0x30000000 : 0x00000000);
-    tex_scan = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STATIC, 1, SMS_H * 4);
+    for (int i = 0; i < game_h * 4; i++) px[i] = (i % 4 == 3) ? 0x90000000 : (i % 4 == 2 ? 0x30000000 : 0x00000000);
+    tex_scan = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STATIC, 1, game_h * 4);
     SDL_UpdateTexture(tex_scan, NULL, px, 4);
     SDL_SetTextureBlendMode(tex_scan, SDL_BLENDMODE_BLEND);
     SDL_SetTextureScaleMode(tex_scan, SDL_ScaleModeLinear);
@@ -1610,13 +1631,13 @@ static SDL_Texture *tex_crt, *tex_mask, *tex_glow;
 static int crt_w, crt_h, crt_k;
 
 static void crt_textures(int gw, int k) {
-  int w = gw * 3, h = SMS_H * k;
+  int w = gw * 3, h = game_h * k;
   if (tex_crt && crt_w == w && crt_h == h) return;
   if (tex_crt) SDL_DestroyTexture(tex_crt);
   if (tex_mask) SDL_DestroyTexture(tex_mask);
   if (tex_glow) SDL_DestroyTexture(tex_glow);
   tex_crt = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, w, h);
-  tex_glow = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, gw / 2, SMS_H / 2);
+  tex_glow = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, gw / 2, game_h / 2);
   tex_mask = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STATIC, w, h);
   uint32_t* px = malloc(sizeof(uint32_t) * w * h);
   for (int y = 0; y < h; y++) {
@@ -1640,7 +1661,7 @@ static void crt_textures(int gw, int k) {
 }
 
 static void draw_crt(SDL_Rect dst, int gw, int curved) {
-  int k = dst.h / SMS_H;
+  int k = dst.h / game_h;
   if (k < 3) k = 3;
   if (k > 6) k = 6;
   crt_textures(gw, k);
@@ -1703,7 +1724,7 @@ static void draw_ambient(int gw, int ww, int wh) {
   static uint32_t px[AMB_W * AMB_H];
   for (int by = 0; by < AMB_H; by++)
     for (int bx = 0; bx < AMB_W; bx++) {
-      int x0 = bx * gw / AMB_W, x1 = (bx + 1) * gw / AMB_W, y0 = by * SMS_H / AMB_H, y1 = (by + 1) * SMS_H / AMB_H;
+      int x0 = bx * gw / AMB_W, x1 = (bx + 1) * gw / AMB_W, y0 = by * game_h / AMB_H, y1 = (by + 1) * game_h / AMB_H;
       unsigned r = 0, g = 0, b = 0, n = 0;
       for (int y = y0; y < y1; y += 2)
         for (int x = x0; x < x1; x += 2) { uint32_t c = pix[y * gw + x]; r += (c >> 16) & 255; g += (c >> 8) & 255; b += c & 255; n++; }
@@ -1716,18 +1737,63 @@ static void draw_ambient(int gw, int ww, int wh) {
   SDL_RenderCopy(ren, tex_amb, NULL, &all);
 }
 
+
+// ---------------------------------------------------------------- Game Gear format
+// The Game Gear version of the game shows a 160x144 piece of the picture: the hero looks bigger, enemies come
+// in suddenly and the status bar is not there (Start shows it). Here the piece follows the hero over the 4:3
+// picture, with a little delay so that it does not shake; title, story and other screens are shown whole.
+#define GG_W 160
+#define GG_H 144
+#define HUD_H 32                 // status bar lines at the top of the picture
+static uint32_t gg_full[SMS_W * SMS_H];
+static double gg_x = -1, gg_y = HUD_H;
+static int gg_on;                // the piece is being shown (in a stage)
+
+static void gg_window(void) {
+  int sx = (int16_t)(gram(0xCA24) | gram(0xCA25) << 8), feet = gram(0xCA22);
+  double tx = sx + 8 - GG_W / 2, ty = feet - 20 - GG_H / 2;
+  if (tx < 0) tx = 0;
+  if (tx > SMS_W - GG_W) tx = SMS_W - GG_W;
+  if (ty < HUD_H) ty = HUD_H;
+  if (ty > SMS_H - GG_H) ty = SMS_H - GG_H;
+  if (gg_x < 0 || fabs(tx - gg_x) > 60) { gg_x = tx; gg_y = ty; return; }   // a new stage or screen: straight there
+  double dx = tx - gg_x, dy = ty - gg_y;
+  gg_x += dx > 3 ? 3 : dx < -3 ? -3 : dx;
+  gg_y += dy > 2 ? 2 : dy < -2 ? -2 : dy;
+}
+
+static void gg_crop(void) {
+  if (mod_is_gameplay(&S)) gg_window();
+  int x0 = (int)(gg_x + 0.5), y0 = (int)(gg_y + 0.5);
+  for (int y = 0; y < GG_H; y++) memcpy(pix + y * GG_W, gg_full + (y + y0) * SMS_W + x0, GG_W * 4);
+}
+
+// during the pause, the status bar over the top of the piece (as Start does on the Game Gear)
+static void gg_draw_hud(SDL_Rect dst) {
+  if (!tex_hud) tex_hud = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, SMS_W, HUD_H);
+  if (!tex_hud) return;
+  SDL_UpdateTexture(tex_hud, NULL, gg_full, SMS_W * 4);
+  SDL_SetTextureScaleMode(tex_hud, SDL_ScaleModeNearest);
+  SDL_Rect r = {dst.x, dst.y, dst.w, dst.w * HUD_H / SMS_W};
+  SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
+  SDL_SetRenderDrawColor(ren, 0, 0, 0, 255);
+  SDL_RenderFillRect(ren, &r);
+  SDL_RenderCopy(ren, tex_hud, NULL, &r);
+}
+
 static SDL_Rect dest_rect(int ww, int wh, int gw) {
   SDL_Rect r;
   // margin: the picture keeps away from the screen edges (phones with rounded corners or a notch)
   int mx = 0, my = 0;
   if (cfg.margin) { my = wh * (cfg.margin == 1 ? 3 : 6) / 100; mx = ww * (cfg.margin == 1 ? 2 : 4) / 100; }
   ww -= 2 * mx; wh -= 2 * my;
-  double par = (!cfg.widescreen && cfg.crt) ? 8.0 / 7.0 : 1.0;  // pixel aspect ratio
-  double sx = (double)ww / (gw * par), sy = (double)wh / SMS_H;
+  // pixel aspect ratio: CRT 8:7 pixels; Game Gear, 160x144 shown as 8:7
+  double par = (!cfg.widescreen && cfg.crt) ? 8.0 / 7.0 : gw == GG_W ? (8.0 / 7.0) / ((double)GG_W / GG_H) : 1.0;
+  double sx = (double)ww / (gw * par), sy = (double)wh / game_h;
   double s = sx < sy ? sx : sy;
   if (cfg.scale == SCALE_STRETCH) { r.x = mx; r.y = my; r.w = ww; r.h = wh; return r; }
   if (cfg.scale == SCALE_INT && s >= 1.0) s = floor(s);
-  r.w = (int)(gw * par * s + 0.5); r.h = (int)(SMS_H * s + 0.5);
+  r.w = (int)(gw * par * s + 0.5); r.h = (int)(game_h * s + 0.5);
   r.x = mx + (ww - r.w) / 2; r.y = my + (wh - r.h) / 2;
   return r;
 }
@@ -1798,7 +1864,7 @@ static int lart(int a) {
 
 static void layout_launcher(int ww, int wh) {
   // widths relative to a 1920-wide screen, in a row at the bottom
-  static const int base_w[LAUNCH_N] = {236, 236, 236, 340, 236, 236, 250};
+  static const int base_w[LAUNCH_N] = {236, 236, 236, 340, 236, 236, 236};
   double k = ww / 1920.0 < wh / 1080.0 ? ww / 1920.0 : wh / 1080.0;
   int total = 0;
   for (int i = 0; i < LAUNCH_N; i++) total += (int)(base_w[i] * k);
@@ -2380,7 +2446,7 @@ static void handle_touch(SDL_Event* e) {
       int it = cur_item();
       int value_row = it == MI_FORMAT || it == MI_SCALE || it == MI_BANDS || it == MI_TESTINV || it == MI_BR_LIFE || it == MI_BR_ARMS ||
                       it == MI_BR_WEAPON || it == MI_BR_SUB || it == MI_FILTER || it == MI_SUIT || it == MI_MARGIN || it == MI_PALETTE || it == MI_VOLUME ||
-                      it == MI_TURBO || it == MI_TRIGGERS || it == MI_DIFF || it == MI_RESPAWN || it == MI_DJUMP ||
+                      it == MI_TURBO || it == MI_TRIGGERS || it == MI_DIFF || it == MI_RESPAWN || it == MI_DJUMP || it == MI_STAIRS ||
                       it == MI_TOUCH || it == MI_TOUCHSIZE || it == MI_INV || it == MI_LIVES || it == MI_WEAPON ||
                       it == MI_SUB || it == MI_START || it == MI_MUSTEST || it == MI_MUSIC || it == MI_AMMO || it == MI_LOCK || it == MI_UILANG || it == MI_MULTI ||
                       (it >= MI_VIB0 && it <= MI_VIB_LAST);
@@ -2437,9 +2503,18 @@ static void present(void) {
     SDL_RenderPresent(ren);
     return;
   }
-  int gw = cfg.widescreen ? WIDE_W : SMS_W;
+  // Game Gear: only while playing. Title, story and continue screens, and the bosses' dialogues (their boxes
+  // are wider than the piece), are shown whole; a few frames without the stage on screen are not enough
+  static int gg_off_frames;
+  if (mod_is_gameplay(&S)) gg_off_frames = 0; else if (gg_off_frames < 1000) gg_off_frames++;
+  if (!cfg.gg || on_title_screens() || gg_off_frames > 20) gg_on = 0;
+  else if (!gg_off_frames) gg_on = 1;
+  if (!gg_on) gg_x = -1;
+  int gw = cfg.widescreen ? WIDE_W : gg_on ? GG_W : SMS_W;
+  game_h = gg_on ? GG_H : SMS_H;
   ensure_textures(gw);
   if (cfg.widescreen) mod_render(&S, pix, gw, MOD_WIDE_EXT, NULL, E.wide ? E.shown : NULL, E.wide ? E.n_shown : 0);
+  else if (gg_on) { mod_render_full43(&S, gg_full, SMS_W); gg_crop(); }
   else mod_render_full43(&S, pix, gw);   // also fills the column the game blanks on the left
   SDL_UpdateTexture(tex_game, NULL, pix, gw * 4);
   int ww, wh;
@@ -2450,12 +2525,14 @@ static void present(void) {
   if (cfg.bands && (dst.w < ww - 2 || dst.h < wh - 2)) draw_ambient(gw, ww, wh);
   if (cfg.filter == FILTER_SHARP_SMOOTH) {
     // integer nearest prescale, then linear down to the final size
-    int k = (int)ceil((double)dst.h / SMS_H);
+    int k = (int)ceil((double)dst.h / game_h);
     if (k < 1) k = 1;
     if (k > 8) k = 8;
-    if (!tex_sharp || sharp_k != k) {
+    static int sharp_w, sharp_h;
+    if (!tex_sharp || sharp_k != k || sharp_w != gw || sharp_h != game_h) {
+      sharp_w = gw; sharp_h = game_h;
       if (tex_sharp) SDL_DestroyTexture(tex_sharp);
-      tex_sharp = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, gw * k, SMS_H * k);
+      tex_sharp = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, gw * k, game_h * k);
       sharp_k = k;
     }
     if (tex_sharp) {
@@ -2475,6 +2552,7 @@ static void present(void) {
     SDL_RenderCopy(ren, tex_game, NULL, &dst);
     if (cfg.filter == FILTER_SCANLINES) SDL_RenderCopy(ren, tex_scan, NULL, &dst);
   }
+  if (gg_on && mod_music_paused(&S)) gg_draw_hud(dst);
   if (touch_visible()) draw_touch(ww, wh);
   draw_ui();
   SDL_UpdateTexture(tex_ui, NULL, ui, UI_W * 4);
@@ -2877,7 +2955,7 @@ int main(int argc, char** argv) {
       int a, b; char t[32] = "";
       if (sscanf(line, "%d %d %31s", &a, &b, t) >= 2) {
         uint8_t m = 0;
-        for (char* c = t; *c; c++) m |= *c == 'R' ? BTN_RIGHT : *c == 'L' ? BTN_LEFT : *c == 'U' ? BTN_UP : *c == 'D' ? BTN_DOWN : *c == '1' ? BTN_1 : *c == '2' ? BTN_2 : 0;
+        for (char* c = t; *c; c++) m |= *c == 'R' ? BTN_RIGHT : *c == 'L' ? BTN_LEFT : *c == 'U' ? BTN_UP : *c == 'D' ? BTN_DOWN : *c == '1' ? BTN_1 : *c == '2' ? BTN_2 : *c == 'P' ? BTN_PAUSE : 0;
         spans[ns].a = a; spans[ns].b = b; spans[ns].btn = m; ns++;
       }
     }
@@ -2888,6 +2966,7 @@ int main(int argc, char** argv) {
       mod_text_frame(&S, lang_active());
       sms_run_frame(&S);
       mod_enhance_frame(&S, &E);
+      for (int ev; (ev = mod_music_poll(&E)); ) if (ev & 0xFF) music_current = ev & 0xFF;   // which screen it is
     }
     if (getenv("MOD_EVENTS")) {
       // tests: l r u d = keys, a = enter, b = x key, A B L R X = gamepad, t<x>,<y>; = a tap (0..1)

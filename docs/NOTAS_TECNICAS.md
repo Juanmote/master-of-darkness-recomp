@@ -473,3 +473,33 @@ Cabecera TMR SEGA válida, checksum 6FE6 correcto, región SMS Export, mapper Se
   juego (`MOD_HUD_ENERGY` → 494F). Ronda superada (86) → 2 s → siguiente sala. Último: 8D → resultado.
 - Ya no hay camino rápido ni tapado: se quitan `br_transit` a 8 fotogramas, el botón automático y el silencio.
 - Prueba en el bucle real con estados hechos a mano (los de v0.13.0): cinco jefes, cambio entre ellos, final, récord y logros correctos.
+
+## v0.14.0 (5-11-2026) — escaleras con salto, formato Game Gear, botones del inicio
+- **Logro del jefe 2 antes de tiempo:** el jefe de la ronda 2 vacía su barra (`CB3A`, gancho 6198 → `MOD_EV_BOSS_DOWN`) al final de su primera
+  forma y luego la vuelve a llenar (`A0`, y `RES 7` → `20`). Ahora un jefe solo cuenta como vencido con la música de fase/ronda superada (81/86; 8D
+  el último del Boss Rush). En el Boss Rush el reloj se para con la barra vacía y vuelve a correr si el jefe recupera energía. En los logros normales
+  (`bossclean`, `bossknife`, `bossaxe`) se guarda el arma del último golpe y se dan con la 81/86; Drácula sigue con `MOD_EV_BOSS_DOWN` (su final no
+  tiene música de fase). Pruebas de `tools/test/test_logros.c` puestas al día (los logros de ronda salen ahora con la 86, como en el juego).
+- **Estados del héroe** (`CA31`, tabla en 1456): 0 quieto, 1 andando, 2 cayendo, 3 subiendo en el salto, 4 escalera "/", 5 escalera "\", 6-9 otros.
+  En escalera: `C80B` fotogramas que quedan del peldaño (7..0), pasos de 8 px en X e Y (lógica a 30 Hz, 1 px por fotograma alternando ejes),
+  `CA30` mirando (0 derecha); en la 4 la cara decide el sentido (0 sube a la derecha, 1 baja a la izquierda). Con `C841 = (cámara + X) & 15 = 8`
+  se comprueba si la escalera termina. Rejilla de sondas `C820..C82E` (5 filas × 3 columnas de metatiles alrededor del héroe, propiedades de D900:
+  bit 04 "/", bit 08 "\", bits 01/02 suelo). `CA22` = pies del héroe.
+- **Geometría medida (1-1):** en un tile "/" (fila R, columna C del mapa D000) los pies van por mapX + Y = 16(C+R) + 32, del pie en mapX = 16C-8 a la
+  cima en 16C+8; en uno "\" por mapX − Y = 16(C−R) − 32 (pie en 16C+8, cima en 16C−8). Comprobado subiendo y bajando las dos de 1-1.
+- **Escaleras: Con salto** (Controles, `cfg.stairs`, `E.stairs_jump`; remasterizada Sí, original No; vale en todos los modos porque no es una ventaja):
+  - Agarrarse: tras cada fotograma, en el aire (2/3) con arriba (sin abajo ni ataque), se busca el punto de peldaño más cercano (X múltiplo de 8) en
+    una línea de escalera a ≤6 px en X y ≤10 en Y; entre dos peldaños los dos tiles deben ser de escalera (los extremos no, para no cortar un salto
+    junto a una escalera). Se coloca al héroe ahí, estado 4/5, `C80B = 0`, velocidades a 0 y la animación de quieto en escalera (2A/3B, 3A/2B).
+    Si se salta desde una escalera, no se vuelve a agarrar hasta que empieza a caer (subir en diagonal y saltar sigue funcionando).
+  - Soltarse: ganchos 1B15 y 1C14 (la comprobación de salto entre peldaños de cada tipo): con salto + abajo se va a 199F (caída, como al salir de un
+    borde) con la velocidad horizontal a 0.
+  - Huellas `-H` idénticas a v0.13.1 con y sin mejoras (opción apagada en headless; `STAIRS=1` la enciende). headless: `STAIRLOG`, `POSLOG`.
+- **Formato Game Gear (8:7)** (Imagen › Formato, cuarto valor; `cfg.gg`): ventana de 160×144 sobre la imagen 4:3 (`mod_render_full43` a `gg_full`),
+  que sigue al héroe (X centrada en `CA24`+8, Y en `CA22`−20, solo entre las líneas 32 y 48 para no enseñar el marcador) con un retardo de 3 px/2 px
+  por fotograma. Se muestra a 8:7 (aspecto de píxel 1,029). Título, historia, continuar y diálogos de jefe (más de 20 fotogramas sin
+  `mod_is_gameplay`) se ven enteros. En la pausa (`C108`) se dibuja encima el marcador (líneas 0-31) a todo el ancho. `game_h` sustituye a `SMS_H`
+  en texturas, scanlines, CRT, bandas y escalado.
+- **Botones del inicio:** esquinas de cada trío (Opciones, Galería, Manual, Salir) con la placa de pizarra de Galería/Manual; los del medio
+  (Controles, Créditos) con la placa de cobre de Controles. Placas limpias reconstruidas de los botones existentes (texto quitado y relleno con la
+  textura de la propia fila) y letras originales del usuario recortadas por color, a la misma altura de mayúsculas. Salir pasa de 250 a 236 de ancho.

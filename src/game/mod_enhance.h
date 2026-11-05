@@ -63,6 +63,9 @@ typedef struct {
   uint8_t energy_keep;
   // double jump
   bool double_jump;
+  bool stairs_jump;      // jump + up grabs a staircase in the air; jump + down on a staircase drops off it
+  int stair_prev;        // hero state on the frame before (for stairs_jump)
+  bool stair_rising;     // jumped off a staircase and still going up: not caught again until it falls
   bool air_jump_used;
   int prev_state;
   int margin_l, margin_r;    // playable pixels visible beyond the original picture (per side)
