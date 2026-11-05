@@ -20,7 +20,7 @@
 #include "stb_image.h"
 
 #include "miniz.h"
-#define APP_VERSION "0.15.0"
+#define APP_VERSION "0.15.1"
 #define KNOWN_CRC 0x96FB4D4Bu
 #define UI_W 640
 #define UI_H 360
@@ -548,7 +548,7 @@ enum {
   MI_VOLUME, MI_BUTTONS, MI_SUBBTN, MI_TURBO, MI_TRIGGERS, MI_LANG, MI_MUSIC, MI_MUSPACK, MI_MUSTEST,
   MI_INV, MI_LIVES, MI_WEAPON, MI_SUB, MI_AMMO, MI_MULTI, MI_LOCK, MI_START, MI_WARP, MI_UILANG, MI_ORIGINAL,
   MI_REMASTER, MI_VIBRA, MI_VIB0, MI_VIB_LAST = MI_VIB0 + VIB_COUNT - 1,
-  MI_MODE_NORMAL, MI_MODE_LOGROS, MI_LOGROS_LIST, MI_PROFILE_EXPORT, MI_PROFILE_IMPORT,
+  MI_MODE_NORMAL, MI_MODE_LOGROS, MI_LOGROS_LIST, MI_PROFILE_EXPORT, MI_PROFILE_IMPORT, MI_STATE_EXPORT,
   MI_MODE_SURVIVOR, MI_SV_EASY, MI_SV_NORMAL, MI_SV_HARD, MI_TESTINV,
   MI_MODE_BOSSRUSH, MI_BR_LIFE, MI_BR_ARMS, MI_BR_WEAPON, MI_BR_SUB, MI_BR_START,
   MI_BACK
@@ -565,7 +565,7 @@ static const int page_items[PAGE_COUNT][PAGE_MAX] = {
   {MI_GAME, MI_CHEATS, MI_VIDEO, MI_OPTIONS, MI_BACK, -1},
   {MI_VIB0, MI_VIB0 + 1, MI_VIB0 + 2, MI_VIB0 + 3, MI_VIB0 + 4, MI_VIB0 + 5, MI_BACK, -1},
   {MI_RESUME, MI_SAVE, MI_LOAD, MI_LOGROS_LIST, MI_VIDEO, MI_OPTIONS, MI_CONTROLS, MI_TESTINV, MI_RESET, MI_HOME, MI_QUIT, -1},
-  {MI_MODE_NORMAL, MI_MODE_LOGROS, MI_MODE_SURVIVOR, MI_MODE_BOSSRUSH, MI_LOGROS_LIST, MI_PROFILE_EXPORT, MI_PROFILE_IMPORT, MI_BACK, -1},
+  {MI_MODE_NORMAL, MI_MODE_LOGROS, MI_MODE_SURVIVOR, MI_MODE_BOSSRUSH, MI_LOGROS_LIST, MI_PROFILE_EXPORT, MI_PROFILE_IMPORT, MI_STATE_EXPORT, MI_BACK, -1},
   {MI_SV_EASY, MI_SV_NORMAL, MI_SV_HARD, MI_BACK, -1},
   {MI_RESUME, MI_LOGROS_LIST, MI_VIDEO, MI_OPTIONS, MI_CONTROLS, MI_TESTINV, MI_RESET, MI_HOME, MI_QUIT, -1},
   {MI_BR_LIFE, MI_BR_ARMS, MI_BR_WEAPON, MI_BR_SUB, MI_BR_START, MI_BACK, -1},
@@ -653,6 +653,7 @@ static void menu_label(int i, char* out, size_t n) {
   case MI_LOGROS_LIST: snprintf(out, n, "%s (%d/%d)  ›", T("Achievements", "Logros"), logros_unlocked_count(), logros_count()); break;
   case MI_PROFILE_EXPORT: snprintf(out, n, "%s", T("Export profile", "Exportar perfil")); break;
   case MI_PROFILE_IMPORT: snprintf(out, n, "%s", T("Import profile", "Importar perfil")); break;
+  case MI_STATE_EXPORT: snprintf(out, n, "%s", T("Export state", "Exportar estado")); break;
   case MI_TOUCH: snprintf(out, n, "%s ← %s →", T("Touch controls:", "Controles táctiles:"), touch_names[L][cfg.touch]); break;
   case MI_TOUCHSIZE: snprintf(out, n, "%s ← %s →", T("Touch size:", "Tamaño táctil:"), touch_size_names[L][cfg.touch_size]); break;
   case MI_RESET: snprintf(out, n, "%s", T("Reset game", "Reiniciar juego")); break;
@@ -1346,6 +1347,19 @@ static void profile_transfer(int import) {
 #endif
 }
 
+// The normal game's saved state (estado1.sav) is copied to a file the player chooses, to send it for bug reports.
+static void state_export(void) {
+#ifdef __ANDROID__
+  char p[1100]; cfg_path(p, sizeof p, "estado1.sav");
+  SDL_RWops* rw = SDL_RWFromFile(p, "rb");
+  if (!rw) { show_toast(T("There is no saved state", "No hay ningún estado guardado"), 2000); return; }
+  SDL_RWclose(rw);
+  SDL_AndroidSendMessage(0x8008, 0);
+#else
+  show_toast(T("Only on Android", "Solo en Android"), 2000);
+#endif
+}
+
 static void import_profile_file(void) {
   char p[1100]; cfg_path(p, sizeof p, "perfil_importado.txt");
   FILE* f = fopen(p, "rb");
@@ -1379,6 +1393,7 @@ static void menu_activate(void) {
   case MI_LOGROS_LIST: show_logros = 1; logros_page = 0; break;
   case MI_PROFILE_EXPORT: profile_transfer(0); break;
   case MI_PROFILE_IMPORT: profile_transfer(1); break;
+  case MI_STATE_EXPORT: state_export(); break;
   case MI_RESUME: menu_set_open(0); break;
   case MI_SAVE: do_save_state(); menu_set_open(0); break;
   case MI_LOAD: do_load_state(); menu_set_open(0); break;
@@ -1566,6 +1581,7 @@ static void draw_ui(void) {
              it == MI_LOGROS_LIST ? T("See the ones you have and the ones left", "Mira los que tienes y los que te faltan") :
              it == MI_PROFILE_EXPORT ? T("Saves your achievements to a file", "Guarda tus logros en un archivo") :
              it == MI_PROFILE_IMPORT ? T("Adds a saved profile to this one", "Añade un perfil guardado a este") :
+             it == MI_STATE_EXPORT ? T("Copies the normal game's saved state to a file", "Copia a un archivo el estado guardado de la partida normal") :
              T("Back to the start screen", "Vuelve a la pantalla de inicio");
     }
     static char br_foot[96];

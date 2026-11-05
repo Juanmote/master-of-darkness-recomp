@@ -1,6 +1,6 @@
 # Estado del proyecto — Master of Darkness Re-Master-Ed
 
-Última actualización: 5 de noviembre de 2026 (tarde). Versión publicada: **v0.15.0**.
+Última actualización: 5 de noviembre de 2026 (noche). Versión publicada: **v0.15.1**.
 
 Launcher para Android (y escritorio) que ejecuta *Master of Darkness* (Master System) desde la ROM del
 usuario, con 16:9 real, trucos, opciones de juego, filtros, paletas, pack de música y controles táctiles.
@@ -9,10 +9,13 @@ Detalles técnicos de cada versión: [`docs/NOTAS_TECNICAS.md`](docs/NOTAS_TECNI
 
 ## Para seguir en un chat nuevo (5-11-2026, tarde)
 
+- **v0.15.1:** nueva opción **Jugar › Exportar estado**: copia el estado guardado de la partida normal (`estado1.sav`) a un archivo que
+  elige el usuario (`MasterOfDarkness_estado.sav`), para que pueda mandarlo. Se carga aquí con `headless -l archivo` o copiándolo como
+  `estado1.sav` en la carpeta de configuración del ejecutable de escritorio.
 - **Dónde estamos:** v0.15.0 publicada. El usuario probó la v0.14.0 en la Classic: logros todos bien (también el jefe 2), escaleras perfectas.
 - **Qué tiene que probar:** Game Gear nuevo (ventana con toda la altura, sin temblor, línea de marcador), iconos de logros, "La cagaste",
   Opciones con gárgolas, el menú oculto bloqueado en modo logros y Survivor, escaleras ahora en Juego.
-- **Pendiente de él:** un estado guardado (Guardar estado) justo en los dos fallos gráficos de 3-1 en 16:9 (columna azul en los bloques de la
+- **Pendiente de él:** un estado guardado (Guardar estado en partida normal, luego Jugar › Exportar estado) justo en los dos fallos gráficos de 3-1 en 16:9 (columna azul en los bloques de la
   izquierda y murciélago cortado a la mitad en el borde): con un bot no se reproducen.
 - **APK privada:** su perfil está guardado en el proyecto de claude.ai (`claude/perfil_usuario_apk_privada.md`). El Boss Rush no depende del perfil:
   hacen falta sus cinco `jefe_N.sav` (o generarlos de nuevo).
@@ -142,6 +145,7 @@ arranca, pero las mejoras se desactivan solas (se comprueban los bytes de cada p
 
 **Guardar**
 - Guardar y cargar estado (1 ranura).
+- Exportar estado (v0.15.1, en Jugar): copia el de la partida normal a un archivo, para mandar fallos.
 
 Probado por el usuario y compañeros en Odin 3 Max, Retroid Pocket Classic y móvil. Confirmado en consola
 (v0.9.6): C y Z, filtros, START en el título, y sin parpadeos con subarmas sin límite.

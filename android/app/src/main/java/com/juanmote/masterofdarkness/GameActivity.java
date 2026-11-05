@@ -26,7 +26,9 @@ public class GameActivity extends SDLActivity {
     private static final int MSG_EXPORT_PROFILE = 0x8005;
     private static final int MSG_IMPORT_PROFILE = 0x8006;
     private static final int MSG_PICK_PACK = 0x8007;   // param: 1 gallery, 2 manual
+    private static final int MSG_EXPORT_STATE = 0x8008;
     private static final int EXPORT_PROFILE = 4;
+    private static final int EXPORT_STATE = 7;
     private static final int PICK_PACK = 6;
     private static int packKind = 1;
     private static final int IMPORT_PROFILE = 5;
@@ -67,6 +69,18 @@ public class GameActivity extends SDLActivity {
                     i.setType(export ? "text/plain" : "*/*");
                     if (export) i.putExtra(Intent.EXTRA_TITLE, "MasterOfDarkness_perfil.txt");
                     startActivityForResult(i, export ? EXPORT_PROFILE : IMPORT_PROFILE);
+                }
+            });
+            return true;
+        }
+        if (command == MSG_EXPORT_STATE) {
+            runOnUiThread(new Runnable() {
+                @Override public void run() {
+                    Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+                    i.addCategory(Intent.CATEGORY_OPENABLE);
+                    i.setType("application/octet-stream");
+                    i.putExtra(Intent.EXTRA_TITLE, "MasterOfDarkness_estado.sav");
+                    startActivityForResult(i, EXPORT_STATE);
                 }
             });
             return true;
@@ -138,6 +152,7 @@ public class GameActivity extends SDLActivity {
         }
         if (requestCode == PICK_PACK) { copyPack(data.getData(), packKind == 2 ? "manual.zip" : "galeria.zip"); return; }
         if (requestCode == EXPORT_PROFILE) { exportProfile(data.getData()); return; }
+        if (requestCode == EXPORT_STATE) { copyOut("estado1.sav", data.getData()); return; }
         if (requestCode == IMPORT_PROFILE) { importProfile(data.getData()); return; }
         if (requestCode != PICK_PATCH) return;
         try {
@@ -174,6 +189,24 @@ public class GameActivity extends SDLActivity {
         } catch (Exception e) {
             tmp.delete();
         }
+    }
+
+    /** A file of the app (the saved state) goes to the file the player chose. */
+    private void copyOut(String name, Uri uri) {
+        boolean ok = false;
+        try {
+            FileInputStream in = new FileInputStream(new File(getFilesDir(), name));
+            OutputStream out = getContentResolver().openOutputStream(uri, "wt");
+            byte[] buf = new byte[65536];
+            int n;
+            while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+            in.close();
+            out.close();
+            ok = true;
+        } catch (Exception e) {
+            // told below
+        }
+        Toast.makeText(this, ok ? "OK" : "Error", Toast.LENGTH_SHORT).show();
     }
 
     /** The profile (logros.txt) goes to the file the player chose. */
