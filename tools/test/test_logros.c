@@ -43,7 +43,7 @@ int main(void) {
   expect("round 2: already known ones are not repeated", "");
   fr(MOD_EV_DEATH, 2, 1, 3, 15);
   boss(2, 3, 15, true);
-  expect("axe", "bossaxe round3 ");
+  expect("axe, after the first death", "firstdeath bossaxe round3 ");
   fr(0, 3, 0, 3, 15); expect("round 3 was given with its boss", "");
   logros_music(0x8D); expect("story page mid game is not the ending", "");
   fr(0, 4, 0, 3, 15); expect("round 4 (round 3 had no hits)", "round4 roundclean ");

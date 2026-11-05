@@ -6,7 +6,7 @@
 
 // Shown in this order, grouped by kind. The profile stores the ids, so the order can change freely.
 enum { L_ROUND1, L_ROUND2, L_ROUND3, L_ROUND4, L_FINAL,                       // story
-       L_NOCONT, L_NODEATH,                                                   // a whole game
+       L_NOCONT, L_NODEATH, L_DEATH1,                                         // a whole game
        L_STAGE_CLEAN, L_STAGE_NOSUB, L_ROUND_CLEAN, L_ROUND_NOSUB,            // stages and rounds
        L_BOSS_CLEAN, L_BOSS_KNIFE, L_BOSS_AXE,                                // bosses
        L_SECRET, L_LIFE, L_WEAPONS, L_SUBS, L_MASK50, L_KILL100, L_KILL1000,  // collected over any games
@@ -23,6 +23,7 @@ static const logro_t list[L_COUNT] = {
   {"final", {"End of the curse", "Fin de la maldición"}, {"Finish the game", "Termina el juego"}},
   {"nocont", {"No second chances", "Sin segundas oportunidades"}, {"Finish the game without continuing", "Termina el juego sin continuar"}},
   {"nodeath", {"Immortal", "Inmortal"}, {"Finish the game without losing a life", "Termina el juego sin perder una vida"}},
+  {"firstdeath", {"You blew it", "La cagaste"}, {"Lose a life for the first time", "Pierde una vida por primera vez"}},
   {"stageclean", {"A quiet walk", "Paseo tranquilo"}, {"Clear a stage without taking damage", "Supera una fase sin recibir daño"}},
   {"stagenosub", {"Saving ammo", "Ahorrando munición"}, {"Clear a stage without using a subweapon", "Supera una fase sin gastar subarma"}},
   {"roundclean", {"Not a scratch", "Ni un rasguño"}, {"Clear a whole round without taking damage", "Supera una ronda entera sin recibir daño"}},
@@ -323,7 +324,7 @@ void logros_frame(const logros_in_t* in) {
     if (kills >= 1000) unlock(L_KILL1000);
   }
   if (ev & MOD_EV_HURT) run.round_hurt = run.stage_hurt = run.boss_hurt = true;
-  if (ev & MOD_EV_DEATH) { run.deaths++; run.round_hurt = run.stage_hurt = run.boss_hurt = true; }
+  if (ev & MOD_EV_DEATH) { unlock(L_DEATH1); run.deaths++; run.round_hurt = run.stage_hurt = run.boss_hurt = true; }
   if (ev & MOD_EV_BOSS_START) { run.boss_on = true; run.boss_hurt = false; }
   if ((ev & MOD_EV_BOSS_DOWN) && run.boss_on) {
     run.boss_zero = true;

@@ -9,6 +9,7 @@
 #include "../game/mod_enhance.h"
 #include "font_data.h"
 #include "music.h"
+#include "logro_icons.h"
 #include "logros.h"
 #include "text_es.h"
 #include "../game/mod_text.h"
@@ -19,7 +20,7 @@
 #include "stb_image.h"
 
 #include "miniz.h"
-#define APP_VERSION "0.14.0"
+#define APP_VERSION "0.15.0"
 #define KNOWN_CRC 0x96FB4D4Bu
 #define UI_W 640
 #define UI_H 360
@@ -559,8 +560,8 @@ static const int page_items[PAGE_COUNT][PAGE_MAX] = {
   {MI_FORMAT, MI_SCALE, MI_BANDS, MI_FILTER, MI_PALETTE, MI_MARGIN, MI_SUIT, MI_BACK, -1},
   {MI_UILANG, MI_VOLUME, MI_LANG, MI_MUSIC, MI_MUSPACK, MI_MUSTEST, MI_BACK, -1},
   {MI_INV, MI_LIVES, MI_WEAPON, MI_SUB, MI_AMMO, MI_MULTI, MI_LOCK, MI_START, MI_WARP, MI_BACK, -1},
-  {MI_DIFF, MI_RESPAWN, MI_DJUMP, MI_TURBO, MI_REMASTER, MI_ORIGINAL, MI_BACK, -1},
-  {MI_BUTTONS, MI_SUBBTN, MI_STAIRS, MI_TRIGGERS, MI_TOUCH, MI_TOUCHSIZE, MI_VIBRA, MI_BACK, -1},
+  {MI_DIFF, MI_RESPAWN, MI_DJUMP, MI_STAIRS, MI_TURBO, MI_REMASTER, MI_ORIGINAL, MI_BACK, -1},
+  {MI_BUTTONS, MI_SUBBTN, MI_TRIGGERS, MI_TOUCH, MI_TOUCHSIZE, MI_VIBRA, MI_BACK, -1},
   {MI_GAME, MI_CHEATS, MI_VIDEO, MI_OPTIONS, MI_BACK, -1},
   {MI_VIB0, MI_VIB0 + 1, MI_VIB0 + 2, MI_VIB0 + 3, MI_VIB0 + 4, MI_VIB0 + 5, MI_BACK, -1},
   {MI_RESUME, MI_SAVE, MI_LOAD, MI_LOGROS_LIST, MI_VIDEO, MI_OPTIONS, MI_CONTROLS, MI_TESTINV, MI_RESET, MI_HOME, MI_QUIT, -1},
@@ -1466,7 +1467,17 @@ static void draw_logros(void) {
     const logro_t* l = logros_get(i);
     int on = logros_has(i);
     ui_rect(26, y + 5, 28, 28, on ? 0xFFE8C060 : 0xFF3A3440);
-    ui_rect(29, y + 8, 22, 22, on ? 0xFFB0302A : 0xFF1C1820);
+    ui_rect(29, y + 8, 22, 22, on ? 0xFF3A1418 : 0xFF1C1820);
+    uint32_t ic[11 * 11]; int dots = 0;
+    if (logro_icon(l->id, ic, &dots))   // locked: a dark silhouette of the icon
+      for (int py = 0; py < 11; py++)
+        for (int px = 0; px < 11; px++) {
+          uint32_t c = ic[py * 11 + px];
+          if (!c) continue;
+          if (!on) c = 0xFF4A4450;
+          ui_rect(29 + px * 2, y + 8 + py * 2, 2, 2, c);
+        }
+    for (int d = 0; d < dots; d++) ui_rect(40 - dots * 3 + d * 6 + 1, y + 30, 4, 3, 0xFF200810);   // on the bottom of the frame
     ui_text(68, y - 1, l->name[ES], on ? 0xFFFFFF : 0x8C8490);
     ui_text(68, y + 18, l->desc[ES], on ? 0xB8B0A8 : 0x6C6470);
     y += 41;
@@ -1522,7 +1533,6 @@ static void draw_ui(void) {
       int it = cur_item();
       foot = it == MI_TRIGGERS ? T("L2 rewinds up to 20 s, R2 fast forwards", "L2 rebobina hasta 20 s, R2 acelera") :
              it == MI_VIBRA ? T("Vibration strength for each moment of the game", "Fuerza de la vibración para cada momento del juego") :
-             it == MI_STAIRS ? T("Jump + up grabs a staircase, jump + down lets go", "Salto + arriba: te agarras. Salto + abajo: te sueltas") :
              it == MI_TOUCH ? T("On screen: d-pad, 1 attack, 2 jump, dagger subweapon, START menu, PAUSE pause", "En pantalla: cruceta, 1 ataque, 2 salto, puñal subarma, START menú, PAUSE pausa") :
              T("SELECT or BACK opens the menu while playing", "SELECT o ATRÁS abre el menú durante la partida");
     }
@@ -1533,6 +1543,7 @@ static void draw_ui(void) {
                                  cfg.respawn == MOD_RESPAWN_MIXED ? T("Enemies you kill come back once you have gone far away", "Los que matas vuelven cuando te has alejado") :
                                  T("Whether the enemies you kill come back", "Si los enemigos que matas vuelven a salir")) :
              it == MI_DJUMP ? T("Press jump again in the air", "Pulsa saltar otra vez en el aire") :
+             it == MI_STAIRS ? T("Jump + up grabs a staircase, jump + down lets go", "Salto + arriba: te agarras. Salto + abajo: te sueltas") :
              it == MI_ORIGINAL ? T("Cheats off, original rules, suit and music", "Trucos fuera, reglas, traje y música originales") :
              it == MI_REMASTER ? T("No slowdowns, 16:9, scanlines, no subweapon limit", "Sin ralentizar, 16:9, scanlines, subarmas sin límite") : T("Game", "Juego");
     }
@@ -1739,33 +1750,41 @@ static void draw_ambient(int gw, int ww, int wh) {
 
 
 // ---------------------------------------------------------------- Game Gear format
-// The Game Gear version of the game shows a 160x144 piece of the picture: the hero looks bigger, enemies come
-// in suddenly and the status bar is not there (Start shows it). Here the piece follows the hero over the 4:3
-// picture, with a little delay so that it does not shake; title, story and other screens are shown whole.
-#define GG_W 160
-#define GG_H 144
+// Like the Game Gear version: a smaller piece of the picture that follows the hero (it looks bigger, enemies come
+// in suddenly) and, instead of the status bar, one line with energy, subweapon ammo and time (the pause shows the
+// whole bar). The piece takes the full height of the stage (160 lines), so the floor is always in sight, and
+// 182 columns, 8:7. It only moves sideways, when the hero leaves a margin in its middle: no shaking while the
+// game itself scrolls. Title, story and other screens are shown whole.
+#define GG_W 182
+#define GG_H 160
 #define HUD_H 32                 // status bar lines at the top of the picture
+#define GG_MARGIN 62             // the hero is kept between these columns of the piece and GG_W - GG_MARGIN
 static uint32_t gg_full[SMS_W * SMS_H];
-static double gg_x = -1, gg_y = HUD_H;
+static int gg_x = -1;
 static int gg_on;                // the piece is being shown (in a stage)
 
 static void gg_window(void) {
-  int sx = (int16_t)(gram(0xCA24) | gram(0xCA25) << 8), feet = gram(0xCA22);
-  double tx = sx + 8 - GG_W / 2, ty = feet - 20 - GG_H / 2;
-  if (tx < 0) tx = 0;
-  if (tx > SMS_W - GG_W) tx = SMS_W - GG_W;
-  if (ty < HUD_H) ty = HUD_H;
-  if (ty > SMS_H - GG_H) ty = SMS_H - GG_H;
-  if (gg_x < 0 || fabs(tx - gg_x) > 60) { gg_x = tx; gg_y = ty; return; }   // a new stage or screen: straight there
-  double dx = tx - gg_x, dy = ty - gg_y;
-  gg_x += dx > 3 ? 3 : dx < -3 ? -3 : dx;
-  gg_y += dy > 2 ? 2 : dy < -2 ? -2 : dy;
+  int hx = (int16_t)(gram(0xCA24) | gram(0xCA25) << 8) + 8;
+  if (gg_x < 0) gg_x = hx - GG_W / 2;
+  if (hx < gg_x + GG_MARGIN) gg_x = hx - GG_MARGIN;
+  if (hx > gg_x + GG_W - GG_MARGIN) gg_x = hx - (GG_W - GG_MARGIN);
+  if (gg_x < 0) gg_x = 0;
+  if (gg_x > SMS_W - GG_W) gg_x = SMS_W - GG_W;
+}
+
+// a piece of the status bar (x, y, width; 8 lines) to (dx, 1) of the piece
+static void gg_hud_part(int x, int y, int w, int dx) {
+  for (int r = 0; r < 8; r++) memcpy(pix + (r + 1) * GG_W + dx, gg_full + (y + r) * SMS_W + x, (size_t)w * 4);
 }
 
 static void gg_crop(void) {
-  if (mod_is_gameplay(&S)) gg_window();
-  int x0 = (int)(gg_x + 0.5), y0 = (int)(gg_y + 0.5);
-  for (int y = 0; y < GG_H; y++) memcpy(pix + y * GG_W, gg_full + (y + y0) * SMS_W + x0, GG_W * 4);
+  if (mod_is_gameplay(&S) || gg_x < 0) gg_window();
+  for (int y = 0; y < GG_H; y++) memcpy(pix + y * GG_W, gg_full + (y + HUD_H) * SMS_W + gg_x, GG_W * 4);
+  // the Game Gear line: energy (label and dots), subweapon ammo and time, on a black band
+  for (int i = 0; i < 10 * GG_W; i++) pix[i] = 0xFF000000u;
+  gg_hud_part(40, 16, 96, 3);                   // LIFE / VIDA and the energy dots
+  gg_hud_part(176, 16, 24, 3 + 96 + 10);        // =NN, subweapon ammo
+  gg_hud_part(224, 16, 24, GG_W - 24 - 3);      // time
 }
 
 // during the pause, the status bar over the top of the piece (as Start does on the Game Gear)
@@ -1774,7 +1793,7 @@ static void gg_draw_hud(SDL_Rect dst) {
   if (!tex_hud) return;
   SDL_UpdateTexture(tex_hud, NULL, gg_full, SMS_W * 4);
   SDL_SetTextureScaleMode(tex_hud, SDL_ScaleModeNearest);
-  SDL_Rect r = {dst.x, dst.y, dst.w, dst.w * HUD_H / SMS_W};
+  SDL_Rect r = {dst.x, dst.y, dst.w, dst.w * HUD_H / SMS_W};   // over the Game Gear line
   SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
   SDL_SetRenderDrawColor(ren, 0, 0, 0, 255);
   SDL_RenderFillRect(ren, &r);
@@ -1864,7 +1883,7 @@ static int lart(int a) {
 
 static void layout_launcher(int ww, int wh) {
   // widths relative to a 1920-wide screen, in a row at the bottom
-  static const int base_w[LAUNCH_N] = {236, 236, 236, 340, 236, 236, 236};
+  static const int base_w[LAUNCH_N] = {250, 236, 236, 340, 236, 236, 250};
   double k = ww / 1920.0 < wh / 1080.0 ? ww / 1920.0 : wh / 1080.0;
   int total = 0;
   for (int i = 0; i < LAUNCH_N; i++) total += (int)(base_w[i] * k);
@@ -2509,7 +2528,7 @@ static void present(void) {
   if (mod_is_gameplay(&S)) gg_off_frames = 0; else if (gg_off_frames < 1000) gg_off_frames++;
   if (!cfg.gg || on_title_screens() || gg_off_frames > 20) gg_on = 0;
   else if (!gg_off_frames) gg_on = 1;
-  if (!gg_on) gg_x = -1;
+  if (!gg_on) gg_x = -1;   // the next stage starts centred on the hero
   int gw = cfg.widescreen ? WIDE_W : gg_on ? GG_W : SMS_W;
   game_h = gg_on ? GG_H : SMS_H;
   ensure_textures(gw);
@@ -3089,6 +3108,9 @@ int main(int argc, char** argv) {
         acc -= frame_time;
         frames++;
         S.input = kb_input | pad_buttons() | stick_dirs() | touch_input;
+        // the game's hidden options menu (up + 1 + 2 and start on the title screen: hit check, round select...) is
+        // not reachable in the modes where advantages are locked
+        if (ADVANTAGES_BLOCKED && on_title_screens() && (S.input & (BTN_UP | BTN_1 | BTN_2)) == (BTN_UP | BTN_1 | BTN_2)) S.input &= (uint8_t)~BTN_UP;
         // faster CPU only while playing: menus and story screens time themselves with CPU loops
         S.cpu_mult = (cfg.turbo && mod_is_gameplay(&S)) ? 2 : 1;
         if (rewinding) {

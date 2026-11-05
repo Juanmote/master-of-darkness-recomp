@@ -503,3 +503,19 @@ Cabecera TMR SEGA válida, checksum 6FE6 correcto, región SMS Export, mapper Se
 - **Botones del inicio:** esquinas de cada trío (Opciones, Galería, Manual, Salir) con la placa de pizarra de Galería/Manual; los del medio
   (Controles, Créditos) con la placa de cobre de Controles. Placas limpias reconstruidas de los botones existentes (texto quitado y relleno con la
   textura de la propia fila) y letras originales del usuario recortadas por color, a la misma altura de mayúsculas. Salir pasa de 250 a 236 de ancho.
+
+## v0.15.0 (5-11-2026) — Game Gear afinado, iconos de logros
+- **Game Gear:** la ventana pasa a 182×160 (toda la altura del escenario, líneas 32-191, sigue siendo 8:7): el suelo se ve siempre y ya no se mueve
+  en vertical (en el vídeo del usuario la ventana subía con el salto y se perdía el suelo). En horizontal solo se mueve cuando el héroe sale de una
+  franja central (`GG_MARGIN` = 62 px a cada lado), sin suavizado: quieta mientras el propio juego desplaza la pantalla, que era el temblor.
+  Línea de marcador al estilo Game Gear arriba (banda negra de 10 líneas): etiqueta VIDA/LIFE y puntos (x 40-135, línea 16), munición `=NN`
+  (x 176-199) y tiempo (x 224-247), copiados del marcador del juego. La pausa sigue enseñando el marcador entero.
+- **Menú oculto del juego** (arriba + 1 + 2 y start en el título: hit check, selección de ronda): en los modos con ventajas bloqueadas se quita
+  "arriba" de la entrada mientras se ve el título, la intro o la historia (`on_title_screens`).
+- **Escaleras: Con salto** pasa a Juego, junto al doble salto (sigue valiendo en todos los modos; se cambia desde una partida normal).
+- **Logro nuevo "La cagaste"** (`firstdeath`): la primera vida perdida (`MOD_EV_DEATH`). 37 logros.
+- **Iconos de logros** (`src/app/logro_icons.h`): dibujos propios de 11×11 a 2x, uno por motivo (sombrero, vela, tumba, torre, cruz, corazón,
+  corona, calavera, escudo, bolsa, puño, estrella, cuchillo, hacha, muro, miniyo, espada, bomba, máscara, murciélago, calavera con huesos, luna,
+  candado, demonio, cronómetro) con metal por nivel (bronce, plata, oro) y puntos en el marco para la ronda o el jefe. Bloqueado: silueta gris.
+- **Inicio:** Opciones lleva la placa de gárgolas de Salir (placa limpiada con relleno de la propia textura y letras originales); Salir vuelve a
+  la suya. Los dos con ancho 250.
