@@ -1,14 +1,20 @@
 # Estado del proyecto — Master of Darkness Re-Master-Ed
 
-Última actualización: 5 de noviembre de 2026 (noche). Versión publicada: **v0.15.2**.
+Última actualización: 5 de noviembre de 2026 (noche). Versión publicada: **v0.16.0**.
 
 Launcher para Android (y escritorio) que ejecuta *Master of Darkness* (Master System) desde la ROM del
 usuario, con 16:9 real, trucos, opciones de juego, filtros, paletas, pack de música y controles táctiles.
 Detalles técnicos de cada versión: [`docs/NOTAS_TECNICAS.md`](docs/NOTAS_TECNICAS.md). Pack de música:
 [`docs/PACK_MUSICA.md`](docs/PACK_MUSICA.md). Guion de narración: [`docs/GUION_NARRACION.md`](docs/GUION_NARRACION.md).
 
-## Para seguir en un chat nuevo (5-11-2026, tarde)
+## Para seguir en un chat nuevo (5-11-2026, noche)
 
+- **v0.16.0 (candidata a final):** arreglados los dos fallos de 3-1 en 4:3/8:7 con los estados del usuario: la regla de borde de la torre del
+  campanario tapaba 16 px de cielo en 16:9 pero en 4:3 solo se copiaba la columna oculta de 8 px (salía la columna azul y la muesca negra); y los
+  sprites en la columna oculta de la izquierda (el murciélago) los borraba el núcleo: ahora se guardan (`fb_left`) y se pintan encima.
+  Quitados del menú "Invencible (pruebas)" (modo logros, Survivor, Boss Rush) y "Jugar › Exportar estado". Prueba de escritorio nueva:
+  `MOD_LOADSTATE=archivo.sav` arranca desde un estado guardado.
+- **Lo que queda:** que pruebe la v0.16.0 en consola; luego la APK privada (ver punto 12 del plan).
 - **v0.15.2 (notas del usuario sobre Game Gear):** el héroe va en el medio de la ventana (se recorta de la imagen 16:9, con el motor del 16:9
   encendido); la línea de marcador va encima del escenario y ya no tapa sus 10 primeras líneas (lámparas, etc.); el aviso del formato sale en dos líneas.
 - **v0.15.1:** nueva opción **Jugar › Exportar estado**: copia el estado guardado de la partida normal (`estado1.sav`) a un archivo que
@@ -17,12 +23,10 @@ Detalles técnicos de cada versión: [`docs/NOTAS_TECNICAS.md`](docs/NOTAS_TECNI
 - **Dónde estamos:** v0.15.0 publicada. El usuario probó la v0.14.0 en la Classic: logros todos bien (también el jefe 2), escaleras perfectas.
 - **Qué tiene que probar:** Game Gear nuevo (ventana con toda la altura, sin temblor, línea de marcador), iconos de logros, "La cagaste",
   Opciones con gárgolas, el menú oculto bloqueado en modo logros y Survivor, escaleras ahora en Juego.
-- **Pendiente de él:** un estado guardado (Guardar estado en partida normal, luego Jugar › Exportar estado) justo en los dos fallos gráficos de 3-1 en **8:7 a pantalla completa** (en 16:9 sale perfecto) (columna azul en los bloques de la
-  izquierda y murciélago cortado a la mitad en el borde): con un bot no se reproducen.
 - **APK privada:** su perfil está guardado en el proyecto de claude.ai (`claude/perfil_usuario_apk_privada.md`). El Boss Rush no depende del perfil:
   hacen falta sus cinco `jefe_N.sav` (o generarlos de nuevo).
 - **Logros:** le quedan Miniyo y 1000 enemigos. El de "Suena a hueco" salta con cualquier objeto escondido en una pared, de cualquier fase.
-- **Siguiente:** lo que salga de la prueba; fallos de 3-1 con su estado; quitar "Invencible (pruebas)" antes de la versión final; APK privada.
+- **Siguiente:** lo que salga de la prueba de la v0.16.0; APK privada.
 - **Para trabajar:** clonar `Juanmote/master-of-darkness-recomp`, pedir la ROM al usuario (no está en el repositorio) y compilar como en
   "Cómo compilar y probar". En escritorio hace falta `libsdl2-dev`.
 
@@ -132,8 +136,7 @@ arranca, pero las mejoras se desactivan solas (se comprueban los bytes de cada p
   Difícil, nunca. Donde no cura, la poción no hace nada (solo suena) y cada fase empieza con la energía que se tenía. Sin guardar ni cargar a mano (v0.12.1):
   se guarda solo al empezar cada fase. Al perder la vida sale "Has perdido tu única vida" con la ronda alcanzada: A repetir fase, X reiniciar,
   B pantalla de inicio. Repetir fase quita el logro "Sin red".
-- **TEMPORAL (quitar antes de la versión final):** "Invencible (pruebas)" en el menú del modo logros y de Survivor, para que el usuario pueda
-  comprobar los logros difíciles. R2 acelera y los logros van a un perfil de pruebas aparte (`logros_pruebas.txt`); al apagarlo vuelve el suyo.
+- "Invencible (pruebas)" quitado del menú en v0.16.0 (el código de `test_inv` sigue para los bots de prueba, `MOD_LOOPMODE`).
 - Perfil `logros.txt` con comprobación: exportar a un archivo; importar suma lo que falte, nunca quita nada.
 
 **Sonido**
@@ -158,8 +161,7 @@ Probado por el usuario y compañeros en Odin 3 Max, Retroid Pocket Classic y mó
 
 - **v0.15.0 sin probar en consola:** todo lo de la v0.15.0 (ver arriba).
 - **Probado por el usuario (5-11-2026):** v0.14.0, logros (jefe 2 incluido) y escaleras con salto bien.
-- **Fallos menores en 3-1, 8:7 a pantalla completa (5-11-2026, fotos del usuario; en 16:9 no salen):** columna azul en los bloques de la izquierda; murciélago cortado a la mitad en el
-  borde. No reproducidos con bot: pedirle un estado guardado en el sitio.
+- **Fallos de 3-1 en 8:7 (columna azul, murciélago cortado): arreglados en v0.16.0** con los estados del usuario; falta verlos en consola.
 - **Antes, v0.14.0 sin probar en consola:** logro y reloj del jefe 2 en el Boss Rush, escaleras con salto, formato Game Gear, botones del inicio.
 - **Jefe 2 (5-11-2026):** el usuario vio saltar el logro del jefe 2 antes de vencerlo. Ese jefe vacía su barra al acabar su primera forma; ahora
   solo cuenta la música de ronda superada (también para Intocable, cuchillo y hacha en las partidas normales).
@@ -303,7 +305,7 @@ apagadas, la huella no debe cambiar.
 8. **Hecho en v0.11.0:** descripciones del menú "Jugar", 4 logros nuevos, pantalla de inicio con Galería y Manual, huevo de pascua.
 9. **Hecho en v0.12.0:** letras sueltas en diálogos de jefe, franja del final, visor, 8:7 con Estirar, logros ordenados, modo Survivor.
    Siguiente: probar Survivor en consola, luego iconos de logros, Boss Rush (y sus logros) y escaleras.
-10. **Antes de la versión final:** quitar "Invencible (pruebas)" (`test_inv` en `main.c`).
+10. **Hecho en v0.16.0:** quitado "Invencible (pruebas)" del menú.
 11. **Hecho en v0.13.1:** Boss Rush con jefes desbloqueados y sus logros, logro Miniyo. Siguiente: probar Boss Rush en consola, iconos de logros, escaleras.
 12. **Plan del usuario para el final (4-11-2026):** la versión pública se queda con los jefes desbloqueables. Al terminar el proyecto, una
     **versión completa privada** solo para su uso y recuerdo, en un repositorio privado de GitHub: APK con todo dentro (su ROM, packs de música,

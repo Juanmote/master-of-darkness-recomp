@@ -528,3 +528,10 @@ Cabecera TMR SEGA válida, checksum 6FE6 correcto, región SMS Export, mapper Se
   la ventana lo deja en el medio con un margen de ±6 px (`GG_DEAD`), limitada a la sección (`left_limit`/`right_limit`) y al ancho de la imagen.
   Imagen de 194×170: 10 líneas de marcador Game Gear encima y las 160 del escenario debajo (antes la banda tapaba las líneas 32-41).
 - **Avisos en varias líneas:** `show_toast` admite `\n` (hasta 3 líneas). Prueba: `MOD_TOAST=texto` (con `gg=1` enseña el aviso del Game Gear).
+
+## v0.16.0 (5-11-2026) — fallos de 3-1 en 4:3, fuera las opciones de prueba
+- `mod_render_full43` copia ahora toda la línea de la imagen reconstruida (antes solo los 8 px de la columna oculta): así también se ven las
+  reglas de borde con `cover` (3-1 campanario: 16 px de ladrillo sobre la columna de cielo). Con estados del usuario, cam=1792 = borde de la sala.
+- Núcleo: `fb_left[y][8]` guarda los sprites de la columna oculta antes de borrarla (bit 5 del registro 0); `mod_render` los pinta sobre el
+  mapa en esa columna (4:3, 8:7, 16:9 y Game Gear). Antes, un murciélago entrando por la izquierda salía cortado.
+- Menú: fuera `MI_TESTINV` y `MI_STATE_EXPORT` de las páginas (el código queda). Prueba: `MOD_LOADSTATE=archivo.sav`.

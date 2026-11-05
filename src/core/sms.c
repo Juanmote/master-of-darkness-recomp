@@ -265,6 +265,7 @@ static void render_line(sms_t* s, int y) {
       else if (!prio[x]) { out[x] = 16 + c; s->fb_spr[y][x] = 1; s->fb_sprtile[y][x] = d->vram[sat + 0x81 + i * 2]; }
     }
   }
+  for (int x = 0; x < 8; x++) s->fb_left[y][x] = s->fb_spr[y][x] ? out[x] : 0;
   if (d->reg[0] & 0x20) { memset(out, backdrop, 8); memset(s->fb_bg[y], backdrop, 8); memset(s->fb_spr[y], 0, 8); }
 }
 

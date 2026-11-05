@@ -371,6 +371,8 @@ void mod_render(const sms_t* s, uint32_t* out, int pitch, int ext, mod_wide_info
       int c = tile_px(vram, t, wx & 7, wy & 7);
       row[x] = pal[c];
       cidx[x] = (uint8_t)c;
+      // the console hides sprites in the masked left column too: they are drawn over the map there
+      if (in_center && left_blank && x < off + 8 && s->fb_left[y][x - off]) row[x] = pal[s->fb_left[y][x - off]];
     }
     // sprites the game keeps outside its 256-pixel picture (captured by mod_enhance)
     if (n_pieces) {
@@ -468,7 +470,8 @@ void mod_render_full43(const sms_t* s, uint32_t* out, int pitch) {
   for (int y = 0; y < SMS_H; y++) {
     if (!(s->line_reg0[y] & 0x20)) continue;
     uint32_t* row = out + y * pitch;
-    if (scene && y >= GAME_Y0) { memcpy(row, tmp + y * TW + info.cx, 8 * sizeof(uint32_t)); continue; }
+    // the whole line: the masked column and any edge covered by a hand-picked rule (3-1 bell tower: the sky column)
+    if (scene && y >= GAME_Y0) { memcpy(row, tmp + y * TW + info.cx, SMS_W * sizeof(uint32_t)); continue; }
     // other screens (ending, story, title): a line whose next 8 pixels are one plain colour carries on with it,
     // so a coloured background has no black stripe; pictures are left as the console shows them
     bool plain = true;

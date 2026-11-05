@@ -77,6 +77,7 @@ struct sms {
   uint8_t fb_idx[SMS_H][SMS_W];                    // CRAM index per pixel
   uint8_t fb_bg[SMS_H][SMS_W];                     // same, background layer only
   uint8_t fb_spr[SMS_H][SMS_W];                    // 1 where a sprite pixel is visible
+  uint8_t fb_left[SMS_H][8];                       // sprites under the left-column mask (CRAM index, 0 = none)
   uint8_t fb_sprtile[SMS_H][SMS_W];                // sprite table tile number of that pixel
   uint8_t spr_over[SMS_H][SMS_SPR_OVER];           // sprite pixels past x=255 (0 = none, else 16+c)
   uint8_t line_hscroll[SMS_H];
