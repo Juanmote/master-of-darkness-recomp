@@ -542,7 +542,7 @@ Cabecera TMR SEGA válida, checksum 6FE6 correcto, región SMS Export, mapper Se
 - `gg_in_stage`: sigue en Game Gear si el nombre de tabla del marcador (filas 2-3, columnas 5-8: LIFE/BOSS) es el del último fotograma de juego.
   `gg_dialog`: cuenta entradas con `(attr & 0x19) == 0x19`; con texto la ventana va al centro de la imagen, sin texto sigue al héroe;
   al cambiar se desliza a 4 px por fotograma (`GG_SLIDE`).
-- Banda en pelea de jefe (`C90E` = 3): puntos de vida (72-135, fila 16) en 3, del jefe (72-135, fila 24) en 72, munición en 139, tiempo al final.
+- Banda en pelea de jefe (v0.16.2: música 88 u 8E; `C90E` = 3 solo pasa al forzarlo con `-p`): puntos de vida (72-135, fila 16) en 3, del jefe (72-135, fila 24) en 72, munición en 139, tiempo al final.
 - Sprites en las líneas 22-31 (dentro del marcador) se copian sobre lo negro de la banda.
 - Pruebas: `MOD_ATSHOT=N` dibuja cada fotograma en `MOD_AUTOTEST` y guarda `salida.NNNNN.bmp` cada N; `MOD_MUSIC=88` fija la música al
   cargar un estado sin música (los de `headless -S`); `GGTRACE=1` saca on/x/slide/juego/diálogo por fotograma. Jefe: `headless -p 1350-1351:DFC1=02

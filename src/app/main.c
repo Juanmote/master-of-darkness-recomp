@@ -20,7 +20,7 @@
 #include "stb_image.h"
 
 #include "miniz.h"
-#define APP_VERSION "0.16.1"
+#define APP_VERSION "0.16.2"
 #define KNOWN_CRC 0x96FB4D4Bu
 #define UI_W 640
 #define UI_H 360
@@ -1876,7 +1876,7 @@ static void gg_render(void) {
   // the Game Gear line on a black band: energy, subweapon ammo and time; in a boss fight, without the label
   // and with the boss energy next to the hero's
   for (int i = 0; i < GG_LINE * GG_W; i++) pix[i] = 0xFF000000u;
-  if (gram(RAM_STAGE_STATE) == 3) {
+  if (music_current == 0x88 || music_current == 0x8E) {   // boss music (rounds 1-4, round 5): a boss fight
     gg_hud_part(72, 16, 64, 3);                 // hero energy dots
     gg_hud_part(72, 24, 64, 72);                // boss energy dots
     gg_hud_part(176, 16, 24, 139);              // =NN
