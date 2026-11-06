@@ -20,7 +20,7 @@
 #include "stb_image.h"
 
 #include "miniz.h"
-#define APP_VERSION "0.16.2"
+#define APP_VERSION "1.0.0"
 #define KNOWN_CRC 0x96FB4D4Bu
 #define UI_W 640
 #define UI_H 360
@@ -79,6 +79,34 @@ static const int vib_recommended[VIB_COUNT] = {1, 1, 2, 3, 1, 3};   // same as t
 static char pref_path[1024];
 
 static void cfg_path(char* out, size_t n, const char* name) { snprintf(out, n, "%s%s", pref_path, name); }
+
+// Complete edition (private, for the owner only): an APK that carries its files in assets/completa/ (ROM, music
+// packs, gallery, manual, profile and boss rooms). The first time, each one is copied inside the app, unless that
+// file is already there. The public APK has no such folder: nothing happens.
+static void completa_install(void) {
+#ifdef __ANDROID__
+  static const char* files[] = {"rom.sms", "musica.zip", "musica2.zip", "musica3.zip", "galeria.zip", "manual.zip",
+                                "logros.txt", "jefe_1.sav", "jefe_2.sav", "jefe_3.sav", "jefe_4.sav", "jefe_5.sav"};
+  for (unsigned i = 0; i < sizeof files / sizeof files[0]; i++) {
+    char src[64], dst[1100];
+    snprintf(src, sizeof src, "completa/%s", files[i]);
+    snprintf(dst, sizeof dst, "%s/%s", SDL_AndroidGetInternalStoragePath(), files[i]);
+    FILE* t = fopen(dst, "rb");
+    if (t) { fclose(t); continue; }
+    SDL_RWops* in = SDL_RWFromFile(src, "rb");
+    if (!in) continue;
+    char tmp[1110]; snprintf(tmp, sizeof tmp, "%s.part", dst);
+    FILE* out = fopen(tmp, "wb");
+    int ok = out != NULL;
+    static char buf[1 << 16];
+    size_t n;
+    while (ok && (n = SDL_RWread(in, buf, 1, sizeof buf)) > 0) ok = fwrite(buf, 1, n, out) == n;
+    SDL_RWclose(in);
+    if (out) ok = (fclose(out) == 0) && ok;
+    if (ok) rename(tmp, dst); else remove(tmp);
+  }
+#endif
+}
 
 static void cfg_load(void) {
   char p[1100]; cfg_path(p, sizeof p, "config.ini");
@@ -3020,6 +3048,7 @@ int main(int argc, char** argv) {
   }
   char* pp = SDL_GetPrefPath("Juanmote", "MasterOfDarkness");
   snprintf(pref_path, sizeof pref_path, "%s", pp ? pp : "./");
+  completa_install();   // before the profile is read
   { char lp[1100]; cfg_path(lp, sizeof lp, "logros.txt"); logros_init(lp); }
   SDL_free(pp);
   cfg_load();

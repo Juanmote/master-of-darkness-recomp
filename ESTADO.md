@@ -9,6 +9,17 @@ Detalles técnicos de cada versión: [`docs/NOTAS_TECNICAS.md`](docs/NOTAS_TECNI
 
 ## Para seguir en un chat nuevo (6-11-2026)
 
+- **v1.0.0 (rama `version-1.0`, aún no en `main`):** el usuario da el juego por terminado. Plan: probar la edición completa privada y, si va bien,
+  pasar esta rama a `main` como 1.0 pública (sin archivos extra) y cerrar el proyecto.
+- **Edición completa privada (6-11-2026):** `MoD_Completa-1.0.0.apk`, id `com.juanmote.masterofdarkness.completa` (se instala junto a la pública),
+  nombre "MoD Completa", firmada con la misma clave. Lleva en `assets/completa/` su ROM, los tres packs de música (OST 1 → `musica.zip`, OST 2 →
+  `musica2.zip`, OST YT → `musica3.zip`), galería, manual, su perfil y los cinco `jefe_N.sav`. La primera vez se copian dentro de la app si no están
+  (`completa_install` en C; la ROM la copia `RomPickerActivity.romFromAssets` antes de pedirla). La APK pública no lleva esa carpeta.
+  Los `jefe_N.sav` se generaron aquí (no son los del usuario): `headless -i entrada_R1-1 -p 1000-1290:DFC0=0R -p 1000-1290:DFC1=02 (00 en la ronda 5)
+  -p 1330-1330:C90E=03 -S 1331:raw.sav` (en 1310 la ronda 1 no llega al jefe) + 8 bytes de música (id -1, 0); comprobados cargándolos.
+  Se compiló a mano en la sesión (Gradle no puede bajar de Maven Central aquí): NDK r27c + cmake por ABI, aapt2 link con manifiesto con
+  `package`, javac `--release 8` + d8, zipalign, apksigner. No se pudo crear el repositorio privado desde la sesión (permiso denegado):
+  si el usuario lo crea vacío, se sube ahí la copia con los archivos.
 - **v0.16.1 (prueba del usuario en la Classic, Game Gear con jefes):** el diálogo del jefe se pinta sobre el escenario y luego la zona queda en
   blanco un rato, así que el mapa no cuadra y el Game Gear pasaba a la imagen entera y volvía (el "efecto raro" y el cambio de proporción).
   Ahora sigue en Game Gear mientras el marcador del nombre de tabla sea el de la fase; con texto de diálogo en pantalla la ventana se va al
@@ -20,7 +31,7 @@ Detalles técnicos de cada versión: [`docs/NOTAS_TECNICAS.md`](docs/NOTAS_TECNI
   sprites en la columna oculta de la izquierda (el murciélago) los borraba el núcleo: ahora se guardan (`fb_left`) y se pintan encima.
   Quitados del menú "Invencible (pruebas)" (modo logros, Survivor, Boss Rush) y "Jugar › Exportar estado". Prueba de escritorio nueva:
   `MOD_LOADSTATE=archivo.sav` arranca desde un estado guardado.
-- **Lo que queda:** que pruebe la v0.16.1 en consola (el usuario prefiere corregir lo del Game Gear antes de seguir probando); luego la APK privada (ver punto 12 del plan).
+- **Lo que quedaba:** que pruebe la v0.16.1 en consola (el usuario prefiere corregir lo del Game Gear antes de seguir probando); luego la APK privada (ver punto 12 del plan).
   Lo demás de la v0.16.0 lo ve bien.
 - **v0.15.2 (notas del usuario sobre Game Gear):** el héroe va en el medio de la ventana (se recorta de la imagen 16:9, con el motor del 16:9
   encendido); la línea de marcador va encima del escenario y ya no tapa sus 10 primeras líneas (lámparas, etc.); el aviso del formato sale en dos líneas.

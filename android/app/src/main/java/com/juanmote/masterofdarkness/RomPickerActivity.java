@@ -30,11 +30,29 @@ public class RomPickerActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        if (!romFile().exists()) romFromAssets();
         if (romFile().exists()) {
             startGame();
             return;
         }
         buildUi();
+    }
+
+    /** Complete edition (private): the ROM comes inside the APK, in assets/completa/. The public APK has none. */
+    private void romFromAssets() {
+        File tmp = new File(getFilesDir(), "rom.sms.part");
+        try {
+            InputStream in = getAssets().open("completa/rom.sms");
+            FileOutputStream out = new FileOutputStream(tmp);
+            byte[] buf = new byte[65536];
+            int n;
+            while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+            in.close();
+            out.close();
+            tmp.renameTo(romFile());
+        } catch (Exception e) {
+            tmp.delete();
+        }
     }
 
     private void buildUi() {
