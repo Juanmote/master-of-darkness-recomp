@@ -20,7 +20,7 @@
 #include "stb_image.h"
 
 #include "miniz.h"
-#define APP_VERSION "0.16.0"
+#define APP_VERSION "0.16.1"
 #define KNOWN_CRC 0x96FB4D4Bu
 #define UI_W 640
 #define UI_H 360
@@ -1796,8 +1796,36 @@ static uint32_t gg_full[SMS_W * SMS_H];      // the 4:3 picture (status bar, pau
 static uint32_t gg_wide[WIDE_W * SMS_H];     // the 16:9 picture the piece is cut from
 static int gg_x = -1;
 static int gg_on;                // the piece is being shown (in a stage)
+static int gg_slide;             // moving to a new target (dialog box / back to the hero) instead of jumping
+#define GG_SLIDE 4               // pixels per frame while sliding
 
-static void gg_window(const mod_wide_info_t* in) {
+// Still in the stage although the picture does not match the map (boss dialog drawn over the stage, the stage
+// redrawn after it...): the status bar in the name table is the one of the last frame that was clearly gameplay.
+static uint8_t gg_sig[16];
+static int gg_sig_ok;
+static void hud_sig(uint8_t* out) {
+  uint16_t nt = (S.st.vdp.reg[2] & 0x0E) << 10;
+  for (int r = 0; r < 2; r++) memcpy(out + r * 8, &S.st.vdp.vram[(nt + ((2 + r) * 32 + 5) * 2) & 0x3FFF], 8);   // LIFE / BOSS labels
+}
+static int gg_in_stage(int playing) {
+  uint8_t sig[16];
+  hud_sig(sig);
+  if (playing) { memcpy(gg_sig, sig, 16); gg_sig_ok = 1; return 1; }
+  return gg_sig_ok && S.line_display[100] && !memcmp(sig, gg_sig, 16);
+}
+
+// a boss dialog on screen: text tiles (sprite palette, in front) in the name table rows of the stage
+static int gg_dialog(void) {
+  uint16_t nt = (S.st.vdp.reg[2] & 0x0E) << 10;
+  int n = 0;
+  for (int i = 4 * 32; i < 24 * 32; i++) {
+    const uint8_t* e = &S.st.vdp.vram[(nt + i * 2) & 0x3FFF];
+    if ((e[1] & 0x19) == 0x19 && e[0]) n++;
+  }
+  return n;
+}
+
+static void gg_window(const mod_wide_info_t* in, int follow) {
   int cx = in->map_valid ? in->cx : MOD_WIDE_EXT;
   int hx = (int16_t)(gram(0xCA24) | gram(0xCA25) << 8) + 8 + cx;
   // the part of the 16:9 picture that belongs to the stage section
@@ -1806,16 +1834,26 @@ static void gg_window(const mod_wide_info_t* in) {
   if (l < 0) l = 0;
   if (r > WIDE_W) r = WIDE_W;
   int mid = GG_W / 2;
-  if (gg_x < 0) gg_x = hx - mid;
-  if (hx < gg_x + mid - GG_DEAD) gg_x = hx - (mid - GG_DEAD);
-  if (hx > gg_x + mid + GG_DEAD) gg_x = hx - (mid + GG_DEAD);
-  if (r - l < GG_W) gg_x = (l + r - GG_W) / 2;
+  int cur = gg_x < 0 ? hx - mid : gg_x, t = cur;
+  if (!follow) t = cx + SMS_W / 2 - mid;   // boss dialog: the middle of the picture, where the text is
   else {
-    if (gg_x < l) gg_x = l;
-    if (gg_x > r - GG_W) gg_x = r - GG_W;
+    if (hx < t + mid - GG_DEAD) t = hx - (mid - GG_DEAD);
+    if (hx > t + mid + GG_DEAD) t = hx - (mid + GG_DEAD);
+    if (r - l < GG_W) t = (l + r - GG_W) / 2;
+    else {
+      if (t < l) t = l;
+      if (t > r - GG_W) t = r - GG_W;
+    }
   }
-  if (gg_x < 0) gg_x = 0;
-  if (gg_x > WIDE_W - GG_W) gg_x = WIDE_W - GG_W;
+  if (t < 0) t = 0;
+  if (t > WIDE_W - GG_W) t = WIDE_W - GG_W;
+  if (gg_x < 0) { gg_x = t; gg_slide = 0; return; }
+  if (gg_slide) {
+    if (t > gg_x + GG_SLIDE) t = gg_x + GG_SLIDE;
+    else if (t < gg_x - GG_SLIDE) t = gg_x - GG_SLIDE;
+    else gg_slide = 0;
+  }
+  gg_x = t;
 }
 
 // a piece of the status bar (x, y, width; 8 lines) to (dx, 1) of the piece
@@ -1827,13 +1865,38 @@ static void gg_render(void) {
   mod_wide_info_t in;
   mod_render(&S, gg_wide, WIDE_W, MOD_WIDE_EXT, &in, E.wide ? E.shown : NULL, E.wide ? E.n_shown : 0);
   mod_render_full43(&S, gg_full, SMS_W);
-  if (mod_is_gameplay(&S) || gg_x < 0) gg_window(&in);
+  // the window follows the hero, except while a boss dialog is on screen (then the middle, where the text is);
+  // between the two it slides instead of jumping
+  static int was_follow = 1;
+  int follow = !gg_dialog();
+  if (follow != was_follow) gg_slide = 1;
+  was_follow = follow;
+  gg_window(&in, follow);
   for (int y = 0; y < GG_STAGE; y++) memcpy(pix + (y + GG_LINE) * GG_W, gg_wide + (y + HUD_H) * WIDE_W + gg_x, GG_W * 4);
-  // the Game Gear line: energy (label and dots), subweapon ammo and time, on a black band
+  // the Game Gear line on a black band: energy, subweapon ammo and time; in a boss fight, without the label
+  // and with the boss energy next to the hero's
   for (int i = 0; i < GG_LINE * GG_W; i++) pix[i] = 0xFF000000u;
-  gg_hud_part(40, 16, 96, 3);                   // LIFE / VIDA and the energy dots
-  gg_hud_part(176, 16, 24, 3 + 96 + 16);        // =NN, subweapon ammo
-  gg_hud_part(224, 16, 24, GG_W - 24 - 3);      // time
+  if (gram(RAM_STAGE_STATE) == 3) {
+    gg_hud_part(72, 16, 64, 3);                 // hero energy dots
+    gg_hud_part(72, 24, 64, 72);                // boss energy dots
+    gg_hud_part(176, 16, 24, 139);              // =NN
+    gg_hud_part(224, 16, 24, GG_W - 24 - 3);    // time
+  } else {
+    gg_hud_part(40, 16, 96, 3);                 // LIFE / VIDA and the energy dots
+    gg_hud_part(176, 16, 24, 3 + 96 + 16);      // =NN, subweapon ammo
+    gg_hud_part(224, 16, 24, GG_W - 24 - 3);    // time
+  }
+  // sprites that go up into the status bar (the hero's head in a jump) are drawn over the band
+  int cx = in.map_valid || in.scene ? in.cx : MOD_WIDE_EXT;
+  for (int r = 0; r < GG_LINE; r++) {
+    int y = HUD_H - GG_LINE + r;
+    for (int c = 0; c < GG_W; c++) {
+      int px = gg_x + c - cx;
+      if (px < 0 || px >= SMS_W || !S.fb_spr[y][px]) continue;
+      uint32_t* d = pix + r * GG_W + c;
+      if (*d == 0xFF000000u) *d = gg_wide[y * WIDE_W + gg_x + c];
+    }
+  }
 }
 
 // during the pause, the status bar over the top of the piece (as Start does on the Game Gear)
@@ -2574,7 +2637,8 @@ static void present(void) {
   // Game Gear: only while playing. Title, story and continue screens, and the bosses' dialogues (their boxes
   // are wider than the piece), are shown whole; a few frames without the stage on screen are not enough
   static int gg_off_frames;
-  if (mod_is_gameplay(&S)) gg_off_frames = 0; else if (gg_off_frames < 1000) gg_off_frames++;
+  if (!cfg.gg) gg_sig_ok = 0;
+  if (gg_in_stage(mod_is_gameplay(&S))) gg_off_frames = 0; else if (gg_off_frames < 1000) gg_off_frames++;
   if (!cfg.gg || on_title_screens() || gg_off_frames > 20) gg_on = 0;
   else if (!gg_off_frames) gg_on = 1;
   if (!gg_on) gg_x = -1;   // the next stage starts centred on the hero
@@ -3016,6 +3080,7 @@ int main(int argc, char** argv) {
     int total = 0; char out[512] = "";
     sscanf(autotest, "%d:%511s", &total, out);
     if (getenv("MOD_LOADSTATE")) load_state_from(getenv("MOD_LOADSTATE"), "");   // tests: start from a saved state
+    if (getenv("MOD_MUSIC")) music_current = (int)strtol(getenv("MOD_MUSIC"), NULL, 16);   // tests: states without music
     struct { int a, b; uint8_t btn; } spans[256]; int ns = 0;
     const char* inp = getenv("MOD_INPUT");
     FILE* f = inp ? fopen(inp, "r") : NULL;
@@ -3036,6 +3101,20 @@ int main(int argc, char** argv) {
       sms_run_frame(&S);
       mod_enhance_frame(&S, &E);
       for (int ev; (ev = mod_music_poll(&E)); ) if (ev & 0xFF) music_current = ev & 0xFF;   // which screen it is
+      // tests: MOD_ATSHOT=N draws every frame (as on the device) and saves a picture every N frames
+      static int at_every = -1;
+      if (at_every < 0) at_every = getenv("MOD_ATSHOT") ? atoi(getenv("MOD_ATSHOT")) : 0;
+      if (at_every > 0) {
+        present();
+        if (getenv("GGTRACE")) fprintf(stderr, "GG %d on=%d x=%d slide=%d play=%d st=%d dlg=%d\n", fr, gg_on, gg_x, gg_slide, mod_is_gameplay(&S), gram(RAM_STAGE_STATE), gg_dialog());
+        if (fr % at_every == 0) {
+          int ww, wh; SDL_GetRendererOutputSize(ren, &ww, &wh);
+          SDL_Surface* sf = SDL_CreateRGBSurfaceWithFormat(0, ww, wh, 32, SDL_PIXELFORMAT_ARGB8888);
+          SDL_RenderReadPixels(ren, NULL, SDL_PIXELFORMAT_ARGB8888, sf->pixels, sf->pitch);
+          char op[600]; snprintf(op, sizeof op, "%s.%05d.bmp", out, fr);
+          SDL_SaveBMP(sf, op); SDL_FreeSurface(sf);
+        }
+      }
     }
     if (getenv("MOD_EVENTS")) {
       // tests: l r u d = keys, a = enter, b = x key, A B L R X = gamepad, t<x>,<y>; = a tap (0..1)
@@ -3097,6 +3176,7 @@ int main(int argc, char** argv) {
     sscanf(looptest, "%d:%255s", &lt_frames, lt_dir);
     in_launcher = 0;
     if (getenv("MOD_LOOPMODE") && !strcmp(getenv("MOD_LOOPMODE"), "br")) { br_new_run(); test_inv = 1; }
+    if (getenv("MOD_LOADSTATE")) load_state_from(getenv("MOD_LOADSTATE"), "");
   }
   while (running) {
     SDL_Event e;
@@ -3132,8 +3212,11 @@ int main(int argc, char** argv) {
       if (key != lt_last) { printf("LT %d boss=%d transit=%d fight=%d down=%d over=%d time=%u en=%d keep=%d w=%d s=%d a=%d\n", fr, br_k, br_transit, br_fight, br_down, br_over, br_frames,
                                    gram(0xCA3A), E.energy_keep, gram(RAM_WEAPON), gram(RAM_SUBWEAPON), gram(RAM_AMMO)); lt_last = key; }
       static int lt_shot;
-      if (fr / 600 != lt_shot) {
-        lt_shot = fr / 600;
+      static int lt_every;
+      if (!lt_every) lt_every = getenv("MOD_LTSHOT") ? atoi(getenv("MOD_LTSHOT")) : 600;
+      if (getenv("GGTRACE")) fprintf(stderr, "GG %d on=%d x=%d slide=%d play=%d\n", fr, gg_on, gg_x, gg_slide, mod_is_gameplay(&S));
+      if (fr / lt_every != lt_shot) {
+        lt_shot = fr / lt_every;
         present();
         int ww, wh; SDL_GetRendererOutputSize(ren, &ww, &wh);
         SDL_Surface* sf = SDL_CreateRGBSurfaceWithFormat(0, ww, wh, 32, SDL_PIXELFORMAT_ARGB8888);

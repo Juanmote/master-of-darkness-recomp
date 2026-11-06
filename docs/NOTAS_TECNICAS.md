@@ -535,3 +535,15 @@ Cabecera TMR SEGA válida, checksum 6FE6 correcto, región SMS Export, mapper Se
 - Núcleo: `fb_left[y][8]` guarda los sprites de la columna oculta antes de borrarla (bit 5 del registro 0); `mod_render` los pinta sobre el
   mapa en esa columna (4:3, 8:7, 16:9 y Game Gear). Antes, un murciélago entrando por la izquierda salía cortado.
 - Menú: fuera `MI_TESTINV` y `MI_STATE_EXPORT` de las páginas (el código queda). Prueba: `MOD_LOADSTATE=archivo.sav`.
+
+## v0.16.1 (6-11-2026) — Game Gear con jefes
+- Diálogo de jefe: texto con tiles 0x100+ y atributo 0x19 (prioridad, paleta de sprites) en las filas del escenario; al acabar, la zona queda
+  con el tile 0x100 en blanco unos 300 fotogramas y `detect_playfield` falla (52/60 < 90 %) aunque ya se pelea.
+- `gg_in_stage`: sigue en Game Gear si el nombre de tabla del marcador (filas 2-3, columnas 5-8: LIFE/BOSS) es el del último fotograma de juego.
+  `gg_dialog`: cuenta entradas con `(attr & 0x19) == 0x19`; con texto la ventana va al centro de la imagen, sin texto sigue al héroe;
+  al cambiar se desliza a 4 px por fotograma (`GG_SLIDE`).
+- Banda en pelea de jefe (`C90E` = 3): puntos de vida (72-135, fila 16) en 3, del jefe (72-135, fila 24) en 72, munición en 139, tiempo al final.
+- Sprites en las líneas 22-31 (dentro del marcador) se copian sobre lo negro de la banda.
+- Pruebas: `MOD_ATSHOT=N` dibuja cada fotograma en `MOD_AUTOTEST` y guarda `salida.NNNNN.bmp` cada N; `MOD_MUSIC=88` fija la música al
+  cargar un estado sin música (los de `headless -S`); `GGTRACE=1` saca on/x/slide/juego/diálogo por fotograma. Jefe: `headless -p 1350-1351:DFC1=02
+  -p 1350-1351:C90E=03 -S 1404:jefe.sav` con la entrada de R1-1.

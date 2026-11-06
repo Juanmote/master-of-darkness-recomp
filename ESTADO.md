@@ -1,20 +1,26 @@
 # Estado del proyecto — Master of Darkness Re-Master-Ed
 
-Última actualización: 5 de noviembre de 2026 (noche). Versión publicada: **v0.16.0**.
+Última actualización: 5 de noviembre de 2026 (noche). Versión publicada: **v0.16.1**.
 
 Launcher para Android (y escritorio) que ejecuta *Master of Darkness* (Master System) desde la ROM del
 usuario, con 16:9 real, trucos, opciones de juego, filtros, paletas, pack de música y controles táctiles.
 Detalles técnicos de cada versión: [`docs/NOTAS_TECNICAS.md`](docs/NOTAS_TECNICAS.md). Pack de música:
 [`docs/PACK_MUSICA.md`](docs/PACK_MUSICA.md). Guion de narración: [`docs/GUION_NARRACION.md`](docs/GUION_NARRACION.md).
 
-## Para seguir en un chat nuevo (5-11-2026, noche)
+## Para seguir en un chat nuevo (6-11-2026)
 
+- **v0.16.1 (prueba del usuario en la Classic, Game Gear con jefes):** el diálogo del jefe se pinta sobre el escenario y luego la zona queda en
+  blanco un rato, así que el mapa no cuadra y el Game Gear pasaba a la imagen entera y volvía (el "efecto raro" y el cambio de proporción).
+  Ahora sigue en Game Gear mientras el marcador del nombre de tabla sea el de la fase; con texto de diálogo en pantalla la ventana se va al
+  centro (se lee entero) y luego vuelve deslizándose al héroe. En pelea de jefe (`C90E`=3) la línea lleva la vida del héroe, la del jefe, munición
+  y tiempo (sin la palabra VIDA). Los sprites que suben al marcador (la cabeza al saltar) se pintan sobre la banda negra.
 - **v0.16.0 (candidata a final):** arreglados los dos fallos de 3-1 en 4:3/8:7 con los estados del usuario: la regla de borde de la torre del
   campanario tapaba 16 px de cielo en 16:9 pero en 4:3 solo se copiaba la columna oculta de 8 px (salía la columna azul y la muesca negra); y los
   sprites en la columna oculta de la izquierda (el murciélago) los borraba el núcleo: ahora se guardan (`fb_left`) y se pintan encima.
   Quitados del menú "Invencible (pruebas)" (modo logros, Survivor, Boss Rush) y "Jugar › Exportar estado". Prueba de escritorio nueva:
   `MOD_LOADSTATE=archivo.sav` arranca desde un estado guardado.
-- **Lo que queda:** que pruebe la v0.16.0 en consola; luego la APK privada (ver punto 12 del plan).
+- **Lo que queda:** que pruebe la v0.16.1 en consola (el usuario prefiere corregir lo del Game Gear antes de seguir probando); luego la APK privada (ver punto 12 del plan).
+  Lo demás de la v0.16.0 lo ve bien.
 - **v0.15.2 (notas del usuario sobre Game Gear):** el héroe va en el medio de la ventana (se recorta de la imagen 16:9, con el motor del 16:9
   encendido); la línea de marcador va encima del escenario y ya no tapa sus 10 primeras líneas (lámparas, etc.); el aviso del formato sale en dos líneas.
 - **v0.15.1:** nueva opción **Jugar › Exportar estado**: copia el estado guardado de la partida normal (`estado1.sav`) a un archivo que
