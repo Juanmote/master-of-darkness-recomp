@@ -13,7 +13,9 @@ Detalles técnicos de cada versión: [`docs/NOTAS_TECNICAS.md`](docs/NOTAS_TECNI
   pasar esta rama a `main` como 1.0 pública (sin archivos extra) y cerrar el proyecto.
 - **Edición completa privada (6-11-2026):** `MoD_Completa-1.0.0.apk`, id `com.juanmote.masterofdarkness.completa` (se instala junto a la pública),
   nombre "MoD Completa", firmada con la misma clave. Lleva en `assets/completa/` su ROM, los tres packs de música (OST 1 → `musica.zip`, OST 2 →
-  `musica2.zip`, OST YT → `musica3.zip`), galería, manual, su perfil y los cinco `jefe_N.sav`. La primera vez se copian dentro de la app si no están
+  `musica2.zip`, OST YT → `musica3.zip`), galería, manual y los cinco `jefe_N.sav` (sin perfil: los logros empiezan a cero, solo el
+  Boss Rush desbloqueado). Repositorio privado `Juanmote/master-of-darkness-completa`: su `.gitignore` deja pasar solo `assets/completa/rom.sms`
+  (en el build 1 faltaba y pedía la ROM); cada push a `main` publica la APK en sus Releases. La primera vez se copian dentro de la app si no están
   (`completa_install` en C; la ROM la copia `RomPickerActivity.romFromAssets` antes de pedirla). La APK pública no lleva esa carpeta.
   Los `jefe_N.sav` se generaron aquí (no son los del usuario): `headless -i entrada_R1-1 -p 1000-1290:DFC0=0R -p 1000-1290:DFC1=02 (00 en la ronda 5)
   -p 1330-1330:C90E=03 -S 1331:raw.sav` (en 1310 la ronda 1 no llega al jefe) + 8 bytes de música (id -1, 0); comprobados cargándolos.
