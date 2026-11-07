@@ -7,7 +7,20 @@ usuario, con 16:9 real, trucos, opciones de juego, filtros, paletas, pack de mú
 Detalles técnicos de cada versión: [`docs/NOTAS_TECNICAS.md`](docs/NOTAS_TECNICAS.md). Pack de música:
 [`docs/PACK_MUSICA.md`](docs/PACK_MUSICA.md). Guion de narración: [`docs/GUION_NARRACION.md`](docs/GUION_NARRACION.md).
 
-## Para seguir en un chat nuevo (6-11-2026)
+## Para seguir en un chat nuevo (7-11-2026)
+
+- **Ideas de los testers (7-11-2026), pendientes, para la 1.0 antes de publicarla** (la 1.0 sigue en la rama `version-1.0`, sin pasar a `main`):
+  1. Música en el menú del launcher: algo genérico libre de derechos (o compuesto aquí, original), con opción de ponerla y quitarla.
+  2. Probar la música desde el launcher (la "Prueba de pistas" ahora solo está en el menú del juego).
+  3. Al cambiar de OST en el juego y volver a "Original", que vuelva a sonar la música de la fase en la que estás (ahora se queda en silencio
+     hasta la siguiente pista): pedir otra vez al driver de sonido del juego la pista `music_current`.
+  4. Elegir botones: añadir también el de atacar, o una opción "Definir botones" que pida los tres seguidos (atacar, saltar, subarma).
+  5. Doble salto arriba del todo: el héroe sale por encima de la pantalla y el juego lo da por caído (muere). Evitarlo (limitar la altura
+     del segundo salto o no dejar saltar cerca del techo).
+  6. Opción para quitar la mini-pausa al coger un objeto (buscar el contador de congelación en RAM y ponerlo a 0).
+- **Edición completa privada:** build 2 en `Juanmote/master-of-darkness-completa` (con la ROM, sin perfil). Al terminar la 1.0 hay que
+  llevar los cambios también allí (copiar el código de `version-1.0` encima, sin tocar `assets/completa`, `applicationId`, `strings.xml`,
+  el flujo de compilación ni `.gitignore`).
 
 - **v1.0.0 (rama `version-1.0`, aún no en `main`):** el usuario da el juego por terminado. Plan: probar la edición completa privada y, si va bien,
   pasar esta rama a `main` como 1.0 pública (sin archivos extra) y cerrar el proyecto.
