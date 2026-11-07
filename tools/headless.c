@@ -84,7 +84,8 @@ static void h_respdbg(sms_t* s, uint16_t a, uint8_t v) {
 }
 static void h_killpc(sms_t* s, uint16_t pc, int off) {
   (void)off;
-  if (pc != 0x3DFA && pc != 0x41AE && pc != 0x6198 && pc != 0x3DD6) return;
+  if (getenv("PCFRAME") && s->st.frame == (uint32_t)atoi(getenv("PCFRAME")) && pc >= 0x4000 && pc < 0x8000) { static uint16_t last; if (pc < last || pc > last + 4) printf("PC %04X\n", pc); last = pc; }
+  if (pc != 0x3DFA && pc != 0x41AE && pc != 0x6198 && pc != 0x3DD6 && pc != 0x429A && pc != 0x42C7) return;
   uint16_t ix = s->st.cpu.ix; int slot = ix >= 0xCA40 && ix < 0xCA40 + 46 * 0x20 && !(ix & 0x1F) ? (ix - 0xCA40) >> 5 : -1;
   uint8_t* o = &s->st.ram[ix & 0x1FFF];
   printf("KPC %04X frame %u ix %04X slot %d entry %08X type=%02X%02X\n", pc, s->st.frame, ix, slot, slot >= 0 ? E.slot_entry[slot] : 0, o[7], o[6]);
@@ -108,7 +109,8 @@ static uint8_t parse_btn(const char* t) {
   return b;
 }
 
-static bool mus_has_test(int id) { return id == (int)strtol(getenv("MUSHOOK"), NULL, 16); }
+static uint32_t mus_end_frame = 0xFFFFFFFF; static sms_t* mus_s;
+static bool mus_has_test(int id) { if (mus_s && mus_s->st.frame >= mus_end_frame) return false; return id == (int)strtol(getenv("MUSHOOK"), NULL, 16); }
 static uint8_t rammap[0x2000];
 static void h_rammap(sms_t* s, uint16_t a, uint8_t v) { (void)s; if (v) rammap[a & 0x1FFF] = 1; }
 static void rammap_dump(void) {
@@ -156,10 +158,11 @@ int main(int argc, char** argv) {
 #endif
   if (getenv("DJ")) E.double_jump = true;
   if (getenv("STAIRS")) E.stairs_jump = true;
+  if (getenv("NOPAUSE")) E.no_item_pause = true;
   if (getenv("MULTI")) E.multi_shot = true;
   if (getenv("PSGMUTE")) S.psg_mute = (uint8_t)strtol(getenv("PSGMUTE"), NULL, 16);
   if (getenv("VDPREG")) S.hooks.on_vdp_reg = h_vdpreg;
-  if (getenv("MUSHOOK")) E.music_has = mus_has_test;
+  if (getenv("MUSHOOK")) { E.music_has = mus_has_test; mus_s = &S; if (getenv("MUSHOOK_END")) mus_end_frame = (uint32_t)atoi(getenv("MUSHOOK_END")); }
   if (getenv("DIFF")) E.difficulty = atoi(getenv("DIFF")); else E.difficulty = 1;
   if (getenv("RESPAWN")) E.respawn = atoi(getenv("RESPAWN"));
   if (getenv("HERO")) { static uint8_t hm[16]; memset(hm, 0xFF, 16); const char* h = getenv("HERO"); int i, c, n; while (sscanf(h, "%x:%x%n", &i, &c, &n) == 2) { hm[i & 15] = c; h += n; if (*h == ',') h++; else break; } mod_set_hero_colors(hm); }
@@ -234,6 +237,11 @@ int main(int argc, char** argv) {
     }
     { static uint32_t lp; uint32_t p0 = E.passes; sms_run_frame(&S); if (getenv("PASSLOG")) printf("PASS %u %u\n", fr, E.passes - p0); if (getenv("LAGLOG") && E.passes == p0 && lp) printf("LAG %u cam %d\n", fr, S.st.ram[0x6A0] | (S.st.ram[0x6A1] << 8)); lp = E.passes; }
     mod_enhance_frame(&S, &E);
+    if (getenv("PEEK")) {   // PEEK=CA22,CA31: those bytes after every frame
+      printf("PK %u", fr);
+      for (const char* q = getenv("PEEK"); *q; ) { unsigned a = (unsigned)strtoul(q, (char**)&q, 16); printf(" %02X", S.st.ram[a & 0x1FFF]); if (*q == ',') q++; else break; }
+      printf("\n");
+    }
     if (getenv("LOGROS")) {   // real events into the achievements; LOGROS=profile file
       static int init; if (!init) { init = 1; logros_init(getenv("LOGROS")); }
       logros_in_t li = {mod_events_take(&E), mod_is_gameplay(&S), S.st.ram[0x1FC0], S.st.ram[0x1FC1], (uint8_t)(S.st.ram[0x1FB7] & 3), (uint8_t)(S.st.ram[0x1FB8] & 3), S.st.ram[0x1FB9]};

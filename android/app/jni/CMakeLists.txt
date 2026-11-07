@@ -13,6 +13,8 @@ add_library(main SHARED
   ${MOD_ROOT}/src/game/mod_enhance.c
   ${MOD_ROOT}/src/game/mod_text.c
   ${MOD_ROOT}/src/app/music.c
+  ${MOD_ROOT}/src/app/launcher_music.c
+  ${MOD_ROOT}/src/app/jukebox.c
   ${MOD_ROOT}/src/app/logros.c
   ${MOD_ROOT}/third_party/miniz/miniz.c)
 target_include_directories(main PRIVATE ${MOD_ROOT}/third_party/miniz ${MOD_ROOT}/third_party/stb)

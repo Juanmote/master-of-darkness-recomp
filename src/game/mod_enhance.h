@@ -64,6 +64,7 @@ typedef struct {
   // double jump
   bool double_jump;
   bool stairs_jump;      // jump + up grabs a staircase in the air; jump + down on a staircase drops off it
+  bool no_item_pause;    // picking up an item does not stop the game (no 32-frame blink, potion fills at once)
   int stair_prev;        // hero state on the frame before (for stairs_jump)
   bool stair_rising;     // jumped off a staircase and still going up: not caught again until it falls
   bool air_jump_used;

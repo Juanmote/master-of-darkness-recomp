@@ -9,6 +9,8 @@
 #include "../game/mod_enhance.h"
 #include "font_data.h"
 #include "music.h"
+#include "launcher_music.h"
+#include "jukebox.h"
 #include "logro_icons.h"
 #include "logros.h"
 #include "text_es.h"
@@ -67,11 +69,14 @@ typedef struct {
   int bands;       // empty screen around the picture: 0 black, 1 "ambient" (the picture's own colours, blurred and dark)
   int stairs;      // 1: jump + up grabs a staircase in the air, jump + down drops off it
   int gg;          // "Game Gear" format: a 160x144 window that follows the hero, without the status bar (Start shows it)
+  int item_pause;  // 1 (original): the game stops a moment when an item is picked up; 0: it goes on
+  int atk_btn;     // button that attacks; -1 (default): every face button that neither jumps nor throws the subweapon
+  int menu_music;  // 1: the start screen plays its own music
 } config_t;
 
 // A new installation starts as the "remastered" version (see apply_remaster)
 static config_t cfg = {1, 0, SCALE_FIT, FILTER_SCANLINES, 8, SDL_CONTROLLER_BUTTON_A, SDL_CONTROLLER_BUTTON_Y, 1, -1, 0, 0, 0, 1, MOD_DIFF_NORMAL, MOD_RESPAWN_ON, 0, 0, 2, 1, -1, 0, 0, 1, 0, PAL_ORIGINAL,
-                       {1, 1, 2, 3, 1, 3}, 0, 1, 0};
+                       {1, 1, 2, 3, 1, 3}, 0, 1, 0, 1, -1, 1};
 enum { VIB_TOUCH, VIB_SWING, VIB_HIT, VIB_HURT, VIB_LAND, VIB_BOSS, VIB_COUNT };
 static const char* vib_keys[VIB_COUNT] = {"vib_touch", "vib_swing", "vib_hit", "vib_hurt", "vib_land", "vib_boss"};
 static const int vib_recommended[VIB_COUNT] = {1, 1, 2, 3, 1, 3};   // same as the initial cfg.vib
@@ -124,6 +129,8 @@ static void cfg_load(void) {
     else if (sscanf(line, "swap_ab=%d", &v) == 1 && !jump_seen) cfg.jump_btn = v ? SDL_CONTROLLER_BUTTON_B : SDL_CONTROLLER_BUTTON_A;
     else if (sscanf(line, "jump_btn=%d", &v) == 1 && is_face(v)) { cfg.jump_btn = v; jump_seen = 1; }
     else if (sscanf(line, "sub_btn=%d", &v) == 1 && (v == -1 || is_face(v))) cfg.sub_btn = v;
+    else if (sscanf(line, "atk_btn=%d", &v) == 1 && (v == -1 || is_face(v))) cfg.atk_btn = v;
+    else if (sscanf(line, "menu_music=%d", &v) == 1) cfg.menu_music = v ? 1 : 0;
     else if (sscanf(line, "turbo=%d", &v) == 1) cfg.turbo = v ? 1 : 0;
     else if (sscanf(line, "lang=%d", &v) == 1) cfg.lang = v < 0 ? -1 : v ? 1 : 0;
     else if (sscanf(line, "suit=%d", &v) == 1 && v >= 0 && v < 16) cfg.suit = v;
@@ -144,6 +151,7 @@ static void cfg_load(void) {
     else if (sscanf(line, "palette=%d", &v) == 1 && v >= 0 && v < PAL_COUNT) cfg.palette = v;
     else if (sscanf(line, "bands=%d", &v) == 1) cfg.bands = v ? 1 : 0;
     else if (sscanf(line, "stairs=%d", &v) == 1) cfg.stairs = v ? 1 : 0;
+    else if (sscanf(line, "item_pause=%d", &v) == 1) cfg.item_pause = v ? 1 : 0;
     else if (sscanf(line, "gg=%d", &v) == 1) cfg.gg = v ? 1 : 0;
     else {
       for (int k = 0; k < VIB_COUNT; k++) {
@@ -155,6 +163,7 @@ static void cfg_load(void) {
   fclose(f);
   if (cfg.gg) cfg.widescreen = cfg.crt = 0;
   if (cfg.sub_btn == cfg.jump_btn) cfg.sub_btn = cfg.jump_btn == SDL_CONTROLLER_BUTTON_Y ? SDL_CONTROLLER_BUTTON_X : SDL_CONTROLLER_BUTTON_Y;
+  if (cfg.atk_btn == cfg.jump_btn || cfg.atk_btn == cfg.sub_btn) cfg.atk_btn = -1;
 }
 
 static void cfg_save(void) {
@@ -163,10 +172,10 @@ static void cfg_save(void) {
   if (!f) return;
   fprintf(f, "widescreen=%d\ncrt=%d\nscale=%d\nfilter=%d\nvolume=%d\njump_btn=%d\nsub_btn=%d\nturbo=%d\nlang=%d\n"
              "suit=%d\ncheat_inv=%d\ncheat_lives=%d\ntriggers=%d\ndifficulty=%d\nrespawn=%d\ndbl_jump=%d\nmusic_pack=%d\ntouch=%d\ntouch_size=%d\n"
-             "ui_lang=%d\nammo_inf=%d\nlock_weapon=%d\nmulti_shot=%d\nmargin=%d\npalette=%d\nbands=%d\nstairs=%d\ngg=%d\n",
+             "ui_lang=%d\nammo_inf=%d\nlock_weapon=%d\nmulti_shot=%d\nmargin=%d\npalette=%d\nbands=%d\nstairs=%d\ngg=%d\nitem_pause=%d\natk_btn=%d\nmenu_music=%d\n",
           cfg.widescreen, cfg.crt, cfg.scale, cfg.filter, cfg.volume, cfg.jump_btn, cfg.sub_btn, cfg.turbo, cfg.lang,
           cfg.suit, cfg.cheat_inv, cfg.cheat_lives, cfg.triggers, cfg.difficulty, cfg.respawn, cfg.dbl_jump, cfg.music_pack, cfg.touch, cfg.touch_size,
-          cfg.ui_lang, cfg.ammo_inf, cfg.lock_weapon, cfg.multi_shot, cfg.margin, cfg.palette, cfg.bands, cfg.stairs, cfg.gg);
+          cfg.ui_lang, cfg.ammo_inf, cfg.lock_weapon, cfg.multi_shot, cfg.margin, cfg.palette, cfg.bands, cfg.stairs, cfg.gg, cfg.item_pause, cfg.atk_btn, cfg.menu_music);
   for (int k = 0; k < VIB_COUNT; k++) fprintf(f, "%s=%d\n", vib_keys[k], cfg.vib[k]);
   fclose(f);
 }
@@ -571,9 +580,9 @@ static void vibrate_sample(int kind) {
 enum {
   MI_RESUME, MI_SAVE, MI_LOAD, MI_GAME, MI_CHEATS, MI_VIDEO, MI_OPTIONS, MI_RESET, MI_QUIT,
   MI_CONTROLS, MI_HOME, MI_TOUCH, MI_TOUCHSIZE,
-  MI_DIFF, MI_RESPAWN, MI_DJUMP, MI_STAIRS,
+  MI_DIFF, MI_RESPAWN, MI_DJUMP, MI_STAIRS, MI_ITEMPAUSE,
   MI_FORMAT, MI_SCALE, MI_FILTER, MI_PALETTE, MI_SUIT, MI_MARGIN, MI_BANDS,
-  MI_VOLUME, MI_BUTTONS, MI_SUBBTN, MI_TURBO, MI_TRIGGERS, MI_LANG, MI_MUSIC, MI_MUSPACK, MI_MUSTEST,
+  MI_VOLUME, MI_DEFBTNS, MI_ATKBTN, MI_BUTTONS, MI_SUBBTN, MI_TURBO, MI_TRIGGERS, MI_LANG, MI_MUSIC, MI_MUSPACK, MI_MUSTEST, MI_LMUSIC,
   MI_INV, MI_LIVES, MI_WEAPON, MI_SUB, MI_AMMO, MI_MULTI, MI_LOCK, MI_START, MI_WARP, MI_UILANG, MI_ORIGINAL,
   MI_REMASTER, MI_VIBRA, MI_VIB0, MI_VIB_LAST = MI_VIB0 + VIB_COUNT - 1,
   MI_MODE_NORMAL, MI_MODE_LOGROS, MI_LOGROS_LIST, MI_PROFILE_EXPORT, MI_PROFILE_IMPORT, MI_STATE_EXPORT,
@@ -586,10 +595,10 @@ enum { PAGE_MAIN, PAGE_VIDEO, PAGE_OPTIONS, PAGE_CHEATS, PAGE_GAME, PAGE_CONTROL
 static const int page_items[PAGE_COUNT][PAGE_MAX] = {
   {MI_RESUME, MI_SAVE, MI_LOAD, MI_GAME, MI_CHEATS, MI_VIDEO, MI_OPTIONS, MI_CONTROLS, MI_RESET, MI_HOME, MI_QUIT, -1},
   {MI_FORMAT, MI_SCALE, MI_BANDS, MI_FILTER, MI_PALETTE, MI_MARGIN, MI_SUIT, MI_BACK, -1},
-  {MI_UILANG, MI_VOLUME, MI_LANG, MI_MUSIC, MI_MUSPACK, MI_MUSTEST, MI_BACK, -1},
+  {MI_UILANG, MI_VOLUME, MI_LANG, MI_MUSIC, MI_MUSPACK, MI_MUSTEST, MI_LMUSIC, MI_BACK, -1},
   {MI_INV, MI_LIVES, MI_WEAPON, MI_SUB, MI_AMMO, MI_MULTI, MI_LOCK, MI_START, MI_WARP, MI_BACK, -1},
-  {MI_DIFF, MI_RESPAWN, MI_DJUMP, MI_STAIRS, MI_TURBO, MI_REMASTER, MI_ORIGINAL, MI_BACK, -1},
-  {MI_BUTTONS, MI_SUBBTN, MI_TRIGGERS, MI_TOUCH, MI_TOUCHSIZE, MI_VIBRA, MI_BACK, -1},
+  {MI_DIFF, MI_RESPAWN, MI_DJUMP, MI_STAIRS, MI_ITEMPAUSE, MI_TURBO, MI_REMASTER, MI_ORIGINAL, MI_BACK, -1},
+  {MI_DEFBTNS, MI_ATKBTN, MI_BUTTONS, MI_SUBBTN, MI_TRIGGERS, MI_TOUCH, MI_TOUCHSIZE, MI_VIBRA, MI_BACK, -1},
   {MI_GAME, MI_CHEATS, MI_VIDEO, MI_OPTIONS, MI_BACK, -1},
   {MI_VIB0, MI_VIB0 + 1, MI_VIB0 + 2, MI_VIB0 + 3, MI_VIB0 + 4, MI_VIB0 + 5, MI_BACK, -1},
   {MI_RESUME, MI_SAVE, MI_LOAD, MI_LOGROS_LIST, MI_VIDEO, MI_OPTIONS, MI_CONTROLS, MI_RESET, MI_HOME, MI_QUIT, -1},
@@ -615,6 +624,7 @@ static void apply_game_options(void) {
   E.double_jump = !ADVANTAGES_BLOCKED && cfg.dbl_jump != 0;
   E.multi_shot = !ADVANTAGES_BLOCKED && cfg.multi_shot != 0;
   E.stairs_jump = cfg.stairs != 0;   // a way of moving, not an advantage: also in the achievement modes
+  E.no_item_pause = !cfg.item_pause;   // the whole game stops during that pause: no advantage either
 }
 static int menu_page;
 static int confirm_original;   // "back to the original game" (1) or "remastered" (2) was chosen once: the next press confirms
@@ -623,7 +633,9 @@ static int page_count(int p) { int n = 0; while (n < PAGE_MAX && page_items[p][n
 static int cur_item(void) { return page_items[menu_page][menu_sel]; }
 
 static void menu_set_open(int open);
-static int capture_jump;   // waiting for the player to press a button: 1 jump, 2 subweapon
+static void launcher_test_stop(void);
+static int capture_jump;   // waiting for the player to press a button: 1 jump, 2 subweapon, 3 attack; 4-6 "define buttons" (attack, jump, subweapon)
+static int def_btn[3];     // the buttons chosen so far in "define buttons"
 
 static const char* button_name(int b) {
   switch (b) {
@@ -660,6 +672,7 @@ static void menu_label(int i, char* out, size_t n) {
   case MI_RESPAWN: snprintf(out, n, "%s ← %s →", T("Enemies respawn:", "Reaparición de enemigos:"), respawn_names[L][cfg.respawn]); break;
   case MI_DJUMP: snprintf(out, n, "%s ← %s →", T("Double jump:", "Doble salto:"), yes_no(cfg.dbl_jump)); break;
   case MI_STAIRS: snprintf(out, n, "%s ← %s →", T("Stairs:", "Escaleras:"), cfg.stairs ? T("With jump", "Con salto") : T("Classic", "Clásicas")); break;
+  case MI_ITEMPAUSE: snprintf(out, n, "%s ← %s →", T("Pause on pickups:", "Pausa al coger objetos:"), cfg.item_pause ? T("Yes (original)", "Sí (original)") : "No"); break;
   case MI_VIDEO: snprintf(out, n, "%s  ›", T("Video", "Imagen")); break;
   case MI_OPTIONS: snprintf(out, n, "%s  ›", T("Sound & language", "Sonido e idioma")); break;
   case MI_CONTROLS: snprintf(out, n, "%s  ›", T("Controls", "Controles")); break;
@@ -713,6 +726,17 @@ static void menu_label(int i, char* out, size_t n) {
   }
   case MI_SUIT: snprintf(out, n, "%s ← %s →", T("Dr. Social's suit:", "Traje del Dr. Social:"), L ? suits[cfg.suit].es : suits[cfg.suit].en); break;
   case MI_VOLUME: snprintf(out, n, "%s  ← %d%% →", T("Volume:", "Volumen:"), cfg.volume * 10); break;
+  case MI_DEFBTNS:
+    if (capture_jump >= 4) {
+      static const char* what[2][3] = {{"ATTACK", "JUMP", "SUBWEAPON"}, {"ATACAR", "SALTAR", "SUBARMA"}};
+      snprintf(out, n, T("Press the button to %s (%d/3)...", "Pulsa el botón de %s (%d/3)..."), what[L][capture_jump - 4], capture_jump - 3);
+    } else snprintf(out, n, "%s", T("Define buttons (attack, jump, subweapon)", "Definir botones (atacar, saltar, subarma)"));
+    break;
+  case MI_ATKBTN:
+    if (capture_jump == 3) snprintf(out, n, "%s", T("Attack:   press the button you want...", "Atacar:   pulsa el botón que quieras..."));
+    else if (cfg.atk_btn < 0) snprintf(out, n, "%s", T("Attack:   all the other buttons", "Atacar:   todos los demás botones"));
+    else snprintf(out, n, "%s %s", T("Attack:   button", "Atacar:   botón"), button_name(cfg.atk_btn));
+    break;
   case MI_BUTTONS:
     if (capture_jump == 1) snprintf(out, n, "%s", T("Jump:     press the button you want...", "Saltar:   pulsa el botón que quieras..."));
     else snprintf(out, n, "%s %s", T("Jump:     button", "Saltar:   botón"), button_name(cfg.jump_btn));
@@ -735,6 +759,7 @@ static void menu_label(int i, char* out, size_t n) {
     else if (music_pack_loaded()) snprintf(out, n, T("OST %d pack: %d tracks (change)", "Pack OST %d: %d pistas (cambiar)"), cfg.music_pack, music_pack_tracks());
     else snprintf(out, n, T("OST %d pack: none (choose a .zip)", "Pack OST %d: ninguno (elegir .zip)"), cfg.music_pack);
     break;
+  case MI_LMUSIC: snprintf(out, n, "%s ← %s →", T("Start screen music:", "Música del menú:"), yes_no(cfg.menu_music)); break;
   case MI_MUSTEST: {
     const music_track_t* t = &music_tracks[music_test_sel];
     snprintf(out, n, "%s ← %s %s%s →", T("Music test:", "Probar música:"), t->file, L ? t->name : t->name_en, music_has(t->id) && cfg.music_pack ? " (pack)" : "");
@@ -863,6 +888,8 @@ static void menu_change(int dir) {
   case MI_PALETTE: cfg.palette = (cfg.palette + dir + PAL_COUNT) % PAL_COUNT; apply_palette(); break;
 
   case MI_VOLUME: cfg.volume += dir; if (cfg.volume < 0) cfg.volume = 0; if (cfg.volume > 10) cfg.volume = 10; break;
+  case MI_DEFBTNS: capture_jump = 4; return;
+  case MI_ATKBTN: capture_jump = 3; return;
   case MI_BUTTONS: capture_jump = 1; return;
   case MI_SUBBTN: capture_jump = 2; return;
   case MI_TURBO: cfg.turbo ^= 1; break;
@@ -873,7 +900,9 @@ static void menu_change(int dir) {
     cfg.music_pack = (cfg.music_pack + (dir ? dir : 1) + MUSIC_SLOTS + 1) % (MUSIC_SLOTS + 1);
     music_stop();
     load_music_pack();
-    if (music_current > 0 && !in_launcher) mod_music_request(&S, music_current);   // the current track again, from the new source
+    // the current track again, from the new source. Also from the start screen: the request waits in the game's RAM until the
+    // game goes on (a new game or a loaded state replace that RAM, so it is lost there, as it should)
+    if (music_current > 0) mod_music_request(&S, music_current);
     break;
   case MI_MUSPACK:
     if (!cfg.music_pack) { show_toast(T("First choose OST 1, 2 or 3 in Music", "Primero elige OST 1, 2 o 3 en Música"), 2500); return; }
@@ -883,6 +912,7 @@ static void menu_change(int dir) {
     { char t[120]; snprintf(t, sizeof t, T("Copy the pack as %.12s in the data folder", "Copia el pack como %.12s en la carpeta de datos"), music_pack_file(cfg.music_pack)); show_toast(t, 3000); }
 #endif
     return;
+  case MI_LMUSIC: cfg.menu_music ^= 1; break;
   case MI_MUSTEST:
     if (dir) music_test_sel = (music_test_sel + dir + music_track_count) % music_track_count;
     return;
@@ -890,6 +920,7 @@ static void menu_change(int dir) {
   case MI_RESPAWN: cfg.respawn = (cfg.respawn + dir + 3) % 3; apply_game_options(); break;
   case MI_DJUMP: cfg.dbl_jump ^= 1; apply_game_options(); break;
   case MI_STAIRS: cfg.stairs ^= 1; apply_game_options(); break;
+  case MI_ITEMPAUSE: cfg.item_pause ^= 1; apply_game_options(); break;
   case MI_LANG: set_language(!lang_active()); break;
   case MI_INV:
     cfg.cheat_inv ^= 1;
@@ -941,6 +972,7 @@ static void menu_set_open(int open) {
   if (open) { menu_open_at(in_launcher ? PAGE_HOME : game_mode == GM_SURVIVOR ? PAGE_MAIN_SURVIVOR : game_mode == GM_BOSSRUSH ? PAGE_MAIN_BR : ADVANTAGES_BLOCKED ? PAGE_MAIN_LOCKED : PAGE_MAIN); return; }
   menu_open = 0;
   capture_jump = 0;
+  launcher_test_stop();
 }
 
 static void menu_goto(int page) { menu_page = page; menu_sel = 0; capture_jump = 0; confirm_original = 0; }
@@ -955,6 +987,7 @@ static void reset_to_original(void) {
   cfg.respawn = MOD_RESPAWN_ON;
   cfg.dbl_jump = 0;
   cfg.stairs = 0;
+  cfg.item_pause = 1;
   cfg.turbo = 0;
   cfg.suit = 0;
   apply_suit();
@@ -963,7 +996,7 @@ static void reset_to_original(void) {
     cfg.music_pack = 0;
     music_stop();
     load_music_pack();
-    if (music_current > 0 && !in_launcher) mod_music_request(&S, music_current);   // the original track again
+    if (music_current > 0) mod_music_request(&S, music_current);   // the original track again
   }
   cfg_save();
   show_toast(T("Original game restored (picture and controls kept)", "Juego original restablecido (imagen y controles se mantienen)"), 3000);
@@ -997,7 +1030,7 @@ static void apply_remaster(void) {
     cfg.music_pack = 0;
     music_stop();
     load_music_pack();
-    if (music_current > 0 && !in_launcher) mod_music_request(&S, music_current);
+    if (music_current > 0) mod_music_request(&S, music_current);
   }
   cfg_save();
   show_toast(T("Remastered version restored", "Versión remasterizada restablecida"), 3000);
@@ -1401,6 +1434,23 @@ static void import_profile_file(void) {
   show_toast(t, 3000);
 }
 
+// Music test on the start screen (the game is not running): a pack track plays straight from the pack, an original
+// one on a second console that only runs the sound driver. The start screen music waits meanwhile.
+static int lt_playing;   // 0 nothing, 1 a pack track, 2 an original track
+static void launcher_test_stop(void) {
+  if (lt_playing == 1) music_stop();
+  if (lt_playing == 2) jukebox_stop();
+  if (lt_playing) lmusic_reset();   // the start screen music again from the beginning, with its fade-in
+  lt_playing = 0;
+}
+static void launcher_test_play(int id) {
+  launcher_test_stop();
+  if (cfg.music_pack > 0 && music_has(id)) { music_play(id); lt_playing = 1; }
+  else { jukebox_play(rom, (int)rom_size, id); lt_playing = 2; }
+  // the game's own track (a pack one was stopped here) is asked for again: it plays when the game goes on
+  if (music_current > 0) mod_music_request(&S, music_current);
+}
+
 static void menu_activate(void) {
   switch (cur_item()) {
   case MI_MODE_NORMAL:
@@ -1441,7 +1491,7 @@ static void menu_activate(void) {
     music_stop(); sms_reset(&S); if (game_mode == GM_SURVIVOR) sv_reset(); menu_set_open(0); show_toast(T("Game reset", "Juego reiniciado"), 1500); break;
   case MI_MUSTEST:
     if (rom_crc != KNOWN_CRC) break;
-    if (in_launcher) { show_toast(T("Try the music while playing", "Prueba la música durante la partida"), 2000); break; }
+    if (in_launcher) { launcher_test_play(music_tracks[music_test_sel].id); show_toast(ES ? music_tracks[music_test_sel].name : music_tracks[music_test_sel].name_en, 2000); break; }
     mod_music_request(&S, music_tracks[music_test_sel].id);
     menu_set_open(0);
     show_toast(ES ? music_tracks[music_test_sel].name : music_tracks[music_test_sel].name_en, 2000);
@@ -1572,9 +1622,18 @@ static void draw_ui(void) {
              it == MI_LOCK ? T("Pickups no longer change your weapons", "Recoger objetos ya no cambia tus armas") :
              T("Official game cheats and weapon selector", "Trucos oficiales del juego y selector de armas");
     }
+    if (menu_page == PAGE_OPTIONS) {
+      int it = cur_item();
+      if (it == MI_LMUSIC) foot = T("Original music for the start screen", "Música original para la pantalla de inicio");
+      if (it == MI_MUSTEST) foot = in_launcher ? T("A plays the track here; it stops when you leave the menu", "A suena aquí; se para al salir del menú") :
+                                                 T("A plays the track in the game", "A la pone en la partida");
+    }
     if (menu_page == PAGE_CONTROLS) {
       int it = cur_item();
-      foot = it == MI_TRIGGERS ? T("L2 rewinds up to 20 s, R2 fast forwards", "L2 rebobina hasta 20 s, R2 acelera") :
+      foot = it == MI_DEFBTNS ? T("Asks for the three buttons one after another", "Pide los tres botones seguidos") :
+             it == MI_ATKBTN ? (capture_jump == 3 ? T("START: all the buttons that do nothing else attack", "START: atacan todos los botones que no hacen otra cosa") :
+                                T("With one button, the others that are free do nothing", "Con un botón elegido, los demás libres no hacen nada")) :
+             it == MI_TRIGGERS ? T("L2 rewinds up to 20 s, R2 fast forwards", "L2 rebobina hasta 20 s, R2 acelera") :
              it == MI_VIBRA ? T("Vibration strength for each moment of the game", "Fuerza de la vibración para cada momento del juego") :
              it == MI_TOUCH ? T("On screen: d-pad, 1 attack, 2 jump, dagger subweapon, START menu, PAUSE pause", "En pantalla: cruceta, 1 ataque, 2 salto, puñal subarma, START menú, PAUSE pausa") :
              T("SELECT or BACK opens the menu while playing", "SELECT o ATRÁS abre el menú durante la partida");
@@ -1587,6 +1646,7 @@ static void draw_ui(void) {
                                  T("Whether the enemies you kill come back", "Si los enemigos que matas vuelven a salir")) :
              it == MI_DJUMP ? T("Press jump again in the air", "Pulsa saltar otra vez en el aire") :
              it == MI_STAIRS ? T("Jump + up grabs a staircase, jump + down lets go", "Salto + arriba: te agarras. Salto + abajo: te sueltas") :
+             it == MI_ITEMPAUSE ? T("No: the game goes on when you pick something up", "No: el juego sigue al coger algo") :
              it == MI_ORIGINAL ? T("Cheats off, original rules, suit and music", "Trucos fuera, reglas, traje y música originales") :
              it == MI_REMASTER ? T("No slowdowns, 16:9, scanlines, no subweapon limit", "Sin ralentizar, 16:9, scanlines, subarmas sin límite") : T("Game", "Juego");
     }
@@ -2605,9 +2665,9 @@ static void handle_touch(SDL_Event* e) {
       int it = cur_item();
       int value_row = it == MI_FORMAT || it == MI_SCALE || it == MI_BANDS || it == MI_TESTINV || it == MI_BR_LIFE || it == MI_BR_ARMS ||
                       it == MI_BR_WEAPON || it == MI_BR_SUB || it == MI_FILTER || it == MI_SUIT || it == MI_MARGIN || it == MI_PALETTE || it == MI_VOLUME ||
-                      it == MI_TURBO || it == MI_TRIGGERS || it == MI_DIFF || it == MI_RESPAWN || it == MI_DJUMP || it == MI_STAIRS ||
+                      it == MI_TURBO || it == MI_TRIGGERS || it == MI_DIFF || it == MI_RESPAWN || it == MI_DJUMP || it == MI_STAIRS || it == MI_ITEMPAUSE ||
                       it == MI_TOUCH || it == MI_TOUCHSIZE || it == MI_INV || it == MI_LIVES || it == MI_WEAPON ||
-                      it == MI_SUB || it == MI_START || it == MI_MUSTEST || it == MI_MUSIC || it == MI_AMMO || it == MI_LOCK || it == MI_UILANG || it == MI_MULTI ||
+                      it == MI_SUB || it == MI_START || it == MI_MUSTEST || it == MI_MUSIC || it == MI_LMUSIC || it == MI_AMMO || it == MI_LOCK || it == MI_UILANG || it == MI_MULTI ||
                       (it >= MI_VIB0 && it <= MI_VIB_LAST);
       if (value_row) menu_change(ux < UI_W / 2 ? -1 : 1);
       else menu_activate();
@@ -2740,7 +2800,8 @@ static uint8_t keymap(SDL_Keycode k) {
 static uint8_t padmap(int b) {
   if (b == cfg.jump_btn) return BTN_2;
   if (b == cfg.sub_btn) return BTN_UP | BTN_1;   // the game throws the subweapon with up + attack
-  if (is_face(b)) return BTN_1;   // every other face button attacks
+  if (b == cfg.atk_btn) return BTN_1;
+  if (is_face(b)) return cfg.atk_btn < 0 ? BTN_1 : 0;   // every other face button attacks, unless one was chosen for it
   switch (b) {
   case SDL_CONTROLLER_BUTTON_DPAD_UP: return BTN_UP;
   case SDL_CONTROLLER_BUTTON_DPAD_DOWN: return BTN_DOWN;
@@ -2749,6 +2810,35 @@ static uint8_t padmap(int b) {
   case SDL_CONTROLLER_BUTTON_START: return on_title_screens() ? BTN_1 : BTN_PAUSE;
   }
   return 0;
+}
+
+// A face button pressed while the menu waits for one (capture_jump). A button keeps one job: taking it for another
+// swaps the two (jump always has a button; attack and subweapon can have none).
+static void capture_button(int b) {
+  if (capture_jump >= 4) {   // "define buttons": attack, jump, subweapon in a row
+    int k = capture_jump - 4;
+    for (int i = 0; i < k; i++) if (def_btn[i] == b) { show_toast(T("That button is already taken", "Ese botón ya lo has usado"), 1500); return; }
+    def_btn[k] = b;
+    if (k < 2) { capture_jump++; return; }
+    cfg.atk_btn = def_btn[0]; cfg.jump_btn = def_btn[1]; cfg.sub_btn = def_btn[2];
+    show_toast(T("Buttons saved", "Botones guardados"), 1500);
+  } else if (capture_jump == 1) {
+    if (b == cfg.sub_btn) cfg.sub_btn = cfg.jump_btn;   // swap them
+    if (b == cfg.atk_btn) cfg.atk_btn = cfg.jump_btn;
+    cfg.jump_btn = b;
+    show_toast(T("Jump button saved", "Botón de saltar guardado"), 1500);
+  } else if (capture_jump == 2) {
+    if (b == cfg.jump_btn) { show_toast(T("That button already jumps", "Ese botón ya es el de saltar"), 1500); return; }
+    if (b == cfg.atk_btn) cfg.atk_btn = cfg.sub_btn;   // -1 (none) is fine for attack: then all the free buttons attack
+    cfg.sub_btn = b;
+    show_toast(T("Subweapon button saved", "Botón de subarma guardado"), 1500);
+  } else {
+    if (b == cfg.jump_btn) { show_toast(T("That button already jumps", "Ese botón ya es el de saltar"), 1500); return; }
+    if (b == cfg.sub_btn) cfg.sub_btn = cfg.atk_btn;
+    cfg.atk_btn = b;
+    show_toast(T("Attack button saved", "Botón de atacar guardado"), 1500);
+  }
+  cfg_save(); capture_jump = 0;
 }
 
 static uint32_t pad_held_mask;   // SDL controller buttons held (any pad)
@@ -2903,19 +2993,11 @@ static void handle_event(SDL_Event* e) {
       menu_set_open(!menu_open); break;
     }
     if (menu_open && capture_jump) {
-      if (is_face(b)) {
-        if (capture_jump == 1) {
-          if (b == cfg.sub_btn) cfg.sub_btn = cfg.jump_btn;   // swap them
-          cfg.jump_btn = b;
-          show_toast(T("Jump button saved", "Botón de saltar guardado"), 1500);
-        } else {
-          if (b == cfg.jump_btn) { show_toast(T("That button already jumps", "Ese botón ya es el de saltar"), 1500); break; }
-          cfg.sub_btn = b;
-          show_toast(T("Subweapon button saved", "Botón de subarma guardado"), 1500);
-        }
-        cfg_save(); capture_jump = 0;
+      if (is_face(b)) capture_button(b);
+      else if (b == SDL_CONTROLLER_BUTTON_START) {
+        if (capture_jump == 3) { cfg.atk_btn = -1; cfg_save(); show_toast(T("All the free buttons attack", "Atacan todos los botones libres"), 1500); }
+        capture_jump = 0;
       }
-      else if (b == SDL_CONTROLLER_BUTTON_START) capture_jump = 0;
       break;
     }
     if (menu_open) {
@@ -3146,7 +3228,7 @@ int main(int argc, char** argv) {
       }
     }
     if (getenv("MOD_EVENTS")) {
-      // tests: l r u d = keys, a = enter, b = x key, A B L R X = gamepad, t<x>,<y>; = a tap (0..1)
+      // tests: l r u d = keys, a = enter, b = x key, A B X Y L R U D S(elect) T(start) = gamepad, t<x>,<y>; = a tap (0..1)
       SDL_Event ev;
       for (const char* c = getenv("MOD_EVENTS"); *c; c++) {
         memset(&ev, 0, sizeof ev);
@@ -3167,6 +3249,8 @@ int main(int argc, char** argv) {
         else {
           ev.type = SDL_CONTROLLERBUTTONDOWN;
           ev.cbutton.button = *c == 'A' ? SDL_CONTROLLER_BUTTON_A : *c == 'B' ? SDL_CONTROLLER_BUTTON_B : *c == 'X' ? SDL_CONTROLLER_BUTTON_X :
+                              *c == 'Y' ? SDL_CONTROLLER_BUTTON_Y : *c == 'S' ? SDL_CONTROLLER_BUTTON_BACK : *c == 'T' ? SDL_CONTROLLER_BUTTON_START :
+                              *c == 'U' ? SDL_CONTROLLER_BUTTON_DPAD_UP : *c == 'D' ? SDL_CONTROLLER_BUTTON_DPAD_DOWN :
                               *c == 'L' ? SDL_CONTROLLER_BUTTON_DPAD_LEFT : SDL_CONTROLLER_BUTTON_DPAD_RIGHT;
         }
         handle_event(&ev);
@@ -3328,6 +3412,18 @@ int main(int argc, char** argv) {
         }
       }
       if (frames == 4) acc = 0;
+    }
+    // start screen sound (the game waits): its own music, or the track being tried in the music test
+    {
+      static int was_launcher = -1;
+      if (in_launcher != was_launcher) { if (in_launcher) lmusic_reset(); else launcher_test_stop(); was_launcher = in_launcher; }
+      while (in_launcher && audio_dev && SDL_GetQueuedAudioSize(audio_dev) < 3 * sizeof mixbuf) {
+        memset(mixbuf, 0, sizeof mixbuf);
+        if (lt_playing == 2) jukebox_mix(mixbuf, SMS_SAMPLES_PER_FRAME, cfg.volume);
+        else if (lt_playing == 1) music_mix(mixbuf, SMS_SAMPLES_PER_FRAME, cfg.volume);
+        else if (cfg.menu_music) lmusic_mix(mixbuf, SMS_SAMPLES_PER_FRAME, cfg.volume);
+        SDL_QueueAudio(audio_dev, mixbuf, sizeof mixbuf);
+      }
     }
     viewer_tick();
     present();

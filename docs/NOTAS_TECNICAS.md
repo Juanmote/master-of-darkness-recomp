@@ -547,3 +547,27 @@ Cabecera TMR SEGA válida, checksum 6FE6 correcto, región SMS Export, mapper Se
 - Pruebas: `MOD_ATSHOT=N` dibuja cada fotograma en `MOD_AUTOTEST` y guarda `salida.NNNNN.bmp` cada N; `MOD_MUSIC=88` fija la música al
   cargar un estado sin música (los de `headless -S`); `GGTRACE=1` saca on/x/slide/juego/diálogo por fotograma. Jefe: `headless -p 1350-1351:DFC1=02
   -p 1350-1351:C90E=03 -S 1404:jefe.sav` con la entrada de R1-1.
+
+## 1.0.0 (7-11-2026) — ideas de los testers
+- **Volver a Original:** cambiar de OST desde el launcher no pedía otra vez la pista (`!in_launcher`), y al volver a la partida se quedaba en
+  silencio (canales del driver a 0 por el gancho del pack). Ahora se pide siempre `music_current` en `C106`: espera en la RAM del juego hasta que
+  sigue; una partida nueva (`sms_reset`) o un estado cargado la borran. En la emulación, pedirla otra vez funciona también en pausa (`C108`).
+- **Doble salto junto al techo:** `CA22` (pies) es de 8 bits; si baja de 0 da la vuelta y el juego lo toma por caída (estado 9). El arco entero
+  sube 40 px (pasos por fotograma de `CA2B`: 8, 8, 4, 4, 4, 4, 2, 2, 2, 1, 1); el segundo salto empieza el arco en `CA2B` = 0, 1, 2, 4 o 6
+  (sube 40, 32, 24, 16 u 8, siempre múltiplo de 8 para el aterrizaje) para que la cima no baje de `CA22` = 0x10. Si ni 8 px caben, no hay
+  segundo salto. Probado con `-p 1508-1508:CA22=xx` (de 0xA0 a 0x38 aterriza bien).
+- **Pausa al coger objetos** (Juego, `item_pause`, por defecto Sí): `41AE` pone `(IX+1C)` = 0x20 y `429A` espera 32 fotogramas con el héroe
+  parpadeando (`CA26` ↔ 0x0036). Con "No", el gancho en `429A` vuelve enseguida, y en `424D` la poción se salta la espera de 4 fotogramas por
+  punto (sube los 16 de golpe). No es ventaja (todo el juego se para): vale en todos los modos. Firma `429A` 2A 26 CA DD, `424D` 06 04 CD B4.
+- **Botones:** `atk_btn` (-1 = todos los botones libres atacan, como antes). Con uno elegido, los botones libres no hacen nada. "Definir botones"
+  pide atacar, saltar y subarma seguidos (`capture_jump` 4-6, sin repetir). Elegir un botón que ya tiene otra tarea intercambia las dos
+  (saltar siempre tiene botón). En la captura de atacar, START vuelve a "todos los demás".
+- **Música del menú** (`launcher_music.c`, Sonido › Música del menú, `menu_music`, por defecto Sí): pieza original en re menor a 100 ppm,
+  sintetizada (pulso 25 % melodía, cuadrada arpegios, triángulo bajo), 2 compases de entrada y bucle de 16 (A + B). Fundido de 1,5 s.
+- **Prueba de pistas en el launcher:** una pista del pack suena con `music_play`; una original, en una segunda consola (`jukebox.c`) que solo
+  corre el driver: código en `D800` (DI; `LD A,9 / LD (FFFF),A / CALL 8000`; espera al bit 7 de `BF`; repite) y la pista en `C106`. Filtro de
+  continua para no dar chasquidos. Se para al cerrar el menú o salir del launcher, y se pide otra vez `music_current` a la partida.
+- **Pruebas nuevas en `headless`:** `PEEK=CA22,CA31` (bytes tras cada fotograma), `MUSHOOK_END=N` (el pack deja de tener la pista desde N),
+  `NOPAUSE=1` (sin pausa al coger objetos), `PCFRAME=N` con `KILLPC=1` (direcciones 4000-7FFF ejecutadas en ese fotograma).
+  Escritorio: `MOD_EVENTS` admite también `Y U D S` (select) `T` (start) de mando.
+- Regresión: con las opciones apagadas (y con `DJ=1` en un bot normal) la huella `-H` es idéntica a la de antes.

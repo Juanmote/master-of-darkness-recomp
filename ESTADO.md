@@ -1,6 +1,6 @@
 # Estado del proyecto — Master of Darkness Re-Master-Ed
 
-Última actualización: 5 de noviembre de 2026 (noche). Versión publicada: **v0.16.2**.
+Última actualización: 7 de noviembre de 2026. Versión publicada: **v0.16.2** (la 1.0.0 está en la rama `version-1.0`).
 
 Launcher para Android (y escritorio) que ejecuta *Master of Darkness* (Master System) desde la ROM del
 usuario, con 16:9 real, trucos, opciones de juego, filtros, paletas, pack de música y controles táctiles.
@@ -9,15 +9,14 @@ Detalles técnicos de cada versión: [`docs/NOTAS_TECNICAS.md`](docs/NOTAS_TECNI
 
 ## Para seguir en un chat nuevo (7-11-2026)
 
-- **Ideas de los testers (7-11-2026), pendientes, para la 1.0 antes de publicarla** (la 1.0 sigue en la rama `version-1.0`, sin pasar a `main`):
-  1. Música en el menú del launcher: algo genérico libre de derechos (o compuesto aquí, original), con opción de ponerla y quitarla.
-  2. Probar la música desde el launcher (la "Prueba de pistas" ahora solo está en el menú del juego).
-  3. Al cambiar de OST en el juego y volver a "Original", que vuelva a sonar la música de la fase en la que estás (ahora se queda en silencio
-     hasta la siguiente pista): pedir otra vez al driver de sonido del juego la pista `music_current`.
-  4. Elegir botones: añadir también el de atacar, o una opción "Definir botones" que pida los tres seguidos (atacar, saltar, subarma).
-  5. Doble salto arriba del todo: el héroe sale por encima de la pantalla y el juego lo da por caído (muere). Evitarlo (limitar la altura
-     del segundo salto o no dejar saltar cerca del techo).
-  6. Opción para quitar la mini-pausa al coger un objeto (buscar el contador de congelación en RAM y ponerlo a 0).
+- **Ideas de los testers (7-11-2026): hechas** en la rama `version-1.0` (sin pasar a `main`), y llevadas a la edición completa para probarlas:
+  1. Música del menú: pieza original sintetizada en la app (Sonido › Música del menú, Sí por defecto).
+  2. Prueba de pistas también en el launcher (Opciones › Sonido e idioma › Probar música): suena ahí y se para al salir del menú.
+  3. Cambiar de OST y volver a Original: se pide otra vez la pista de la fase (también si se cambia desde el launcher).
+  4. Controles: "Definir botones" (atacar, saltar, subarma seguidos) y "Atacar" (un botón, o todos los libres como antes).
+  5. Doble salto arriba del todo: el segundo salto sube menos si no cabe (o no hay), y ya no se muere por salir por arriba.
+  6. Juego › Pausa al coger objetos: Sí (original) / No. También quita la espera de la poción.
+  Detalles en `docs/NOTAS_TECNICAS.md` (1.0.0). **Falta:** que el usuario lo pruebe en consola (en la Completa).
 - **Edición completa privada:** build 2 en `Juanmote/master-of-darkness-completa` (con la ROM, sin perfil). Al terminar la 1.0 hay que
   llevar los cambios también allí (copiar el código de `version-1.0` encima, sin tocar `assets/completa`, `applicationId`, `strings.xml`,
   el flujo de compilación ni `.gitignore`).
@@ -112,7 +111,8 @@ arranca, pero las mejoras se desactivan solas (se comprueban los bytes de cada p
 - Reaparición de enemigos: Sí (original), No, o Al volver a la zona. Solo cuentan las muertes reales; "No" dura
   toda la ronda. v0.9.8: el enemigo se reconoce por su sitio en el mapa, así que tampoco vuelve al dar marcha atrás
   (antes salía por la lista de aparición del otro sentido: era el fallo "a veces sí, a veces no").
-- Doble salto.
+- Doble salto (1.0: cerca del techo el segundo salto sube menos o no sale, para no salir por arriba y morir).
+- **Pausa al coger objetos** (1.0): Sí (original) o No (el juego sigue y la poción llena de golpe). Vale en todos los modos.
 - **Escaleras: Con salto** (Juego, junto al doble salto; v0.14.0): salto + arriba en el aire te agarra a una escalera; salto + abajo en una escalera te suelta sin
   saltar. Remasterizada: Con salto; juego original: Clásicas. Vale en todos los modos (no es una ventaja).
 - Ralentizaciones eliminadas u originales (CPU al doble durante la partida).
@@ -133,8 +133,8 @@ arranca, pero las mejoras se desactivan solas (se comprueban los bytes de cada p
 - Empezar en cualquier ronda.
 
 **Controles**
-- Saltar y subarma configurables "pulsando el botón" (A, B, X, Y, y también C y Z de mandos de 6 botones como
-  Retroid Pocket Classic o Arc).
+- Atacar, saltar y subarma configurables "pulsando el botón" (A, B, X, Y, y también C y Z de mandos de 6 botones como
+  Retroid Pocket Classic o Arc). 1.0: "Definir botones" pide los tres seguidos; atacar puede ser un botón o todos los libres.
 - L2 rebobina (hasta 20 s) y R2 acelera.
 - SELECT o ATRÁS abren el menú.
 - START en las pantallas de título, intro, historia y continuar empieza la partida (hace de botón 1); en la
@@ -179,7 +179,8 @@ arranca, pero las mejoras se desactivan solas (se comprueban los bytes de cada p
   diálogos de jefes, marcador y rótulos van sin tildes (ahí la consola no tiene sitio para letras nuevas).
 - Packs de música opcionales: `.zip` de `.ogg` nombrados por número de pista, con intro opcional. Tres ranuras:
   «Música: Original / OST 1 / OST 2 / OST 3» (v0.9.7).
-- Prueba de pistas.
+- Prueba de pistas, en la partida y (1.0) también en el launcher.
+- **Música del menú** (1.0): original, sintetizada en la app; se quita en Sonido.
 
 **Guardar**
 - Guardar y cargar estado (1 ranura).

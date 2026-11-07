@@ -468,6 +468,17 @@ static bool on_hook(sms_t* s, uint16_t pc) {
       return true;
     }
     return false;
+  case 0x429A:  // item picked up: the game stops for (IX+1C) = 32 frames, the hero blinking. Without the pause: straight back
+    if (!g->no_item_pause) return false;
+    z->pc = (uint16_t)(ram8(s, z->sp) | (ram8(s, (uint16_t)(z->sp + 1)) << 8));
+    z->sp += 2;
+    z->cyc += 10;
+    return true;
+  case 0x424D:  // potion: 4 frames of waiting for each point of energy (16 points); without the pause, all of them at once
+    if (!g->no_item_pause) return false;
+    z->pc = 0x4252;
+    z->cyc += 7;
+    return true;
   case 0x4256:  // extra life picked up (DFBA goes up)
     g->events |= MOD_EV_LIFE;
     return false;
@@ -590,6 +601,7 @@ static const struct { uint16_t addr; uint8_t b[4]; } signature[] = {
   {0x3DFA, {0x3E, 0xA0, 0x32, 0x05}}, {0x41AE, {0xC5, 0xD5, 0xDD, 0x36}},
   {0x441A, {0xDD, 0x36, 0x01, 0x00}}, {0x4506, {0xDD, 0x36, 0x00, 0xFF}},
   {0x13CF, {0xDD, 0x36, 0x1A, 0x20}}, {0x13D3, {0xDD, 0x36, 0x00, 0xFF}}, {0x4233, {0x06, 0x10, 0xCB, 0x40}}, {0x4256, {0x3E, 0xA6, 0x32, 0x04}},
+  {0x429A, {0x2A, 0x26, 0xCA, 0xDD}}, {0x424D, {0x06, 0x04, 0xCD, 0xB4}},
   {0x1B15, {0x3A, 0x00, 0xC7, 0xE6}}, {0x1C14, {0x3A, 0x00, 0xC7, 0xE6}}, {0x199F, {0xAF, 0x32, 0x2B, 0xCA}}, {0x494F, {0x3A, 0x3A, 0xCA, 0xB7}},
   {0x4A07, {0xCD, 0x4D, 0x4B, 0x3A}}, {0x4A10, {0xCD, 0x7E, 0x4B, 0x3A}}, {0x4A2C, {0x3A, 0xBA, 0xDF, 0x3D}},
   // extra projectiles
@@ -631,7 +643,7 @@ void mod_enhance_attach(sms_t* s, mod_enhance_t* e) {
   if (!mod_enhance_compatible(s)) { s->hook_map = NULL; s->hook2_pc = 0; return; }
   memset(hook_map, 0, sizeof hook_map);
   static const uint16_t addrs[] = {0x51B6, 0x5228, 0x0DD1, 0x520E, 0x51D5, 0x3CD0, 0x52E7, 0x3CDD, 0x52F4,
-                                   0x3DFA, 0x41AE, 0x441A, 0x4506, 0x46F1, 0x6198, 0x3DD6, 0x3DD9, 0x13D3, 0x4233, 0x4256,
+                                   0x3DFA, 0x41AE, 0x441A, 0x4506, 0x46F1, 0x6198, 0x3DD6, 0x3DD9, 0x13D3, 0x4233, 0x4256, 0x429A, 0x424D,
                                    0x1B15, 0x1C14};
   for (unsigned i = 0; i < sizeof addrs / sizeof addrs[0]; i++) hook_map[addrs[i]] = 1;
   memset(ms_hook_map, 0, sizeof ms_hook_map);
@@ -691,11 +703,19 @@ static void double_jump(sms_t* s, mod_enhance_t* e) {
   bool was_in_air = e->prev_state == 2 || e->prev_state == 3;
   if (e->double_jump && in_air && was_in_air && !e->air_jump_used && (s->st.ram[0x0701] & 0x20) &&
       mod_is_gameplay(s)) {
-    s->st.ram[0x0A31] = 3;
-    s->st.ram[0x0A2B] = 0;
     // the arc moves in steps of 8 and the landing check needs the same alignment as a jump
     // from the ground: start the new arc on a multiple of 8
-    s->st.ram[0x0A22] &= 0xF8;
+    int y = s->st.ram[0x0A22] & 0xF8;
+    // a whole arc rises 40 px. Near the top of the screen the feet Y (CA22, 8 bits) would go below 0, wrap
+    // round to the bottom and the game takes it as a fall into a pit: there the arc starts further on, so it
+    // rises less (24, 16 or 8 px, always a multiple of 8), and if not even that fits there is no second jump
+    static const uint8_t arc_start[5] = {0, 1, 2, 4, 6}, arc_rise[5] = {40, 32, 24, 16, 8};
+    int k = 0;
+    while (k < 5 && y - arc_rise[k] < 0x10) k++;
+    if (k == 5) { e->prev_state = st; return; }
+    s->st.ram[0x0A31] = 3;
+    s->st.ram[0x0A2B] = arc_start[k];
+    s->st.ram[0x0A22] = (uint8_t)y;
     s->st.ram[0x0A32] = s->st.ram[0x0A33] = 0;   // no leftover falling speed
     e->air_jump_used = true;
   }
