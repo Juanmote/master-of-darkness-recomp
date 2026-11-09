@@ -583,3 +583,8 @@ Cabecera TMR SEGA válida, checksum 6FE6 correcto, región SMS Export, mapper Se
   muestra), `audio_soft_stop` (rampa de 441 muestras desde la última a 0 y vuelve a cebar el filtro). Se llama cuando cambia lo que suena
   (launcher / juego / nada) y al salir. Fuera los `SDL_ClearQueuedAudio`. Simulado con `headless -a`: los cortes ya no añaden saltos mayores
   que los bordes de la propia onda cuadrada (antes, 10 000-13 000).
+
+## 1.0.2 (9-11-2026)
+- **Game Gear:** fuera `gg_y` (al usuario no le gusta que la ventana baje): el héroe por encima del escenario no se ve. La línea de marcador se
+  copia sin sprites: donde `fb_spr` está puesto se usa `sms_color(line_cram[y][fb_bg[y][x]])`. Era la "imagen duplicada" (trozos del héroe
+  entre los corazones). Ya no se pintan sprites sobre la banda.

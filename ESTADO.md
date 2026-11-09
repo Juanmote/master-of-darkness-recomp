@@ -1,6 +1,6 @@
 # Estado del proyecto — Master of Darkness Re-Master-Ed
 
-Última actualización: 9 de noviembre de 2026. Versión publicada: **v0.16.2** (la 1.0.1 está en la rama `version-1.0`).
+Última actualización: 9 de noviembre de 2026. Versión publicada: **v0.16.2** (la 1.0.2 está en la rama `version-1.0`).
 
 Launcher para Android (y escritorio) que ejecuta *Master of Darkness* (Master System) desde la ROM del
 usuario, con 16:9 real, trucos, opciones de juego, filtros, paletas, pack de música y controles táctiles.
@@ -9,10 +9,14 @@ Detalles técnicos de cada versión: [`docs/NOTAS_TECNICAS.md`](docs/NOTAS_TECNI
 
 ## Para seguir en un chat nuevo (9-11-2026)
 
+- **1.0.2:** el usuario confirma petardeo y aviso de logros perfectos. Game Gear: no le gusta que la ventana baje; prefiere que el héroe no se vea
+  al pasar el borde de arriba. Quitado `gg_y`: el escenario empieza bajo la línea y lo que sube más allá no se ve. La "imagen duplicada" era el
+  sprite del héroe que se copiaba con el marcador (está encima de la barra de la imagen original): `gg_hud_part` pone el fondo (`fb_bg` con
+  `line_cram`) donde hay sprite. La Completa también se llama Re-Master-ed of Darkness. **Falta:** que lo pruebe.
+
 - **1.0.1 (notas del usuario, 9-11-2026), rama `version-1.0`:**
-  1. La app instalada se llama **Re-Master-ed of Darkness** (`strings.xml`; también la ventana de escritorio). La Completa conserva su nombre.
-  2. Game Gear: al saltar muy alto la cabeza se metía en la línea de marcador y se cortaba. Ahora la ventana baja con el héroe (hasta 32
-     líneas, lo que hay por encima del escenario) y vuelve a 2 líneas por fotograma; encima del escenario se ve negro con los sprites.
+  1. La app instalada se llama **Re-Master-ed of Darkness** (`strings.xml`; también la ventana de escritorio). En la 1.0.2 también la Completa.
+  2. Game Gear: ventana que bajaba con el héroe en saltos altos (descartado en la 1.0.2).
   3. Logros: aviso tipo PlayStation arriba a la izquierda (icono con marco dorado, "Logro desbloqueado" y el nombre; entra y sale deslizando, 4 s).
   4. "Petardeo" al abrir/cerrar el menú, empezar o salir: la salida de la consola está muy por debajo de 0 (silencio ≈ -16000) y cada corte
      saltaba a 0. Ahora filtro de continua en el sonido del juego, rampa de 10 ms a silencio en cada cambio (menú, launcher, rebobinar,

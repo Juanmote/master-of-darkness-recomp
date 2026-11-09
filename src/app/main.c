@@ -22,7 +22,7 @@
 #include "stb_image.h"
 
 #include "miniz.h"
-#define APP_VERSION "1.0.1"
+#define APP_VERSION "1.0.2"
 #define KNOWN_CRC 0x96FB4D4Bu
 #define UI_W 640
 #define UI_H 360
@@ -1961,8 +1961,6 @@ static int gg_x = -1;
 static int gg_on;                // the piece is being shown (in a stage)
 static int gg_slide;             // moving to a new target (dialog box / back to the hero) instead of jumping
 #define GG_SLIDE 4               // pixels per frame while sliding
-static int gg_y;                 // 1.0.1: lines the piece is lowered so a hero high in a jump stays whole under the line
-#define GG_DROP 2                // lines per frame the piece goes back up when the hero comes down
 
 // Still in the stage although the picture does not match the map (boss dialog drawn over the stage, the stage
 // redrawn after it...): the status bar in the name table is the one of the last frame that was clearly gameplay.
@@ -2022,8 +2020,15 @@ static void gg_window(const mod_wide_info_t* in, int follow) {
 }
 
 // a piece of the status bar (x, y, width; 8 lines) to (dx, 1) of the piece
+// 1.0.2: without sprites (the hero high in a jump is drawn over the status bar of the picture, and a piece of him
+// showed up among the energy dots): where there is a sprite, the background pixel under it
 static void gg_hud_part(int x, int y, int w, int dx) {
-  for (int r = 0; r < 8; r++) memcpy(pix + (r + 1) * GG_W + dx, gg_full + (y + r) * SMS_W + x, (size_t)w * 4);
+  for (int r = 0; r < 8; r++) {
+    uint32_t* d = pix + (r + 1) * GG_W + dx;
+    const uint32_t* src = gg_full + (y + r) * SMS_W + x;
+    for (int c = 0; c < w; c++)
+      d[c] = S.fb_spr[y + r][x + c] ? sms_color(S.line_cram[y + r][S.fb_bg[y + r][x + c]]) : src[c];
+  }
 }
 
 static void gg_render(void) {
@@ -2037,33 +2042,10 @@ static void gg_render(void) {
   if (follow != was_follow) gg_slide = 1;
   was_follow = follow;
   gg_window(&in, follow);
-  // 1.0.1: the hero high in a jump goes up into the status bar of the picture; instead of cutting his head under the
-  // Game Gear line, the piece goes down with him (as the camera of the Game Gear does) and comes back slowly. Only
-  // the sprites near the hero count (a bat flying up there does not move the piece).
-  int cx = in.map_valid || in.scene ? in.cx : MOD_WIDE_EXT;
-  {
-    int hx = (int16_t)(gram(0xCA24) | gram(0xCA25) << 8) + 8;   // the hero, in the 256-column picture
-    int top = HUD_H;
-    if (follow)
-      for (int y = 0; y < HUD_H && top == HUD_H; y++)
-        for (int x = hx - 16; x <= hx + 16; x++)
-          if (x >= 0 && x < SMS_W && S.fb_spr[y][x]) { top = y; break; }
-    int want = HUD_H - top;
-    if (want > gg_y) gg_y = want;
-    else if (gg_y > want) gg_y = gg_y - GG_DROP > want ? gg_y - GG_DROP : want;
-  }
-  for (int y = 0; y < GG_STAGE; y++) {
-    int sy = y + HUD_H - gg_y;
-    uint32_t* d = pix + (y + GG_LINE) * GG_W;
-    if (sy >= HUD_H) { memcpy(d, gg_wide + sy * WIDE_W + gg_x, GG_W * 4); continue; }
-    // above the stage there is no map: black, with the sprites that are up there
-    for (int c = 0; c < GG_W; c++) {
-      int px = gg_x + c - cx;
-      d[c] = (px >= 0 && px < SMS_W && S.fb_spr[sy][px]) ? gg_wide[sy * WIDE_W + gg_x + c] : 0xFF000000u;
-    }
-  }
+  // the hero above the top of the stage is simply not seen (1.0.2, as the user prefers): the stage starts under the line
+  for (int y = 0; y < GG_STAGE; y++) memcpy(pix + (y + GG_LINE) * GG_W, gg_wide + (y + HUD_H) * WIDE_W + gg_x, GG_W * 4);
   // the Game Gear line on a black band: energy, subweapon ammo and time; in a boss fight, without the label
-  // and with the boss energy next to the hero's (nothing else is drawn on it: the piece keeps the hero below it)
+  // and with the boss energy next to the hero's (nothing else is drawn on it)
   for (int i = 0; i < GG_LINE * GG_W; i++) pix[i] = 0xFF000000u;
   if (music_current == 0x88 || music_current == 0x8E) {   // boss music (rounds 1-4, round 5): a boss fight
     gg_hud_part(72, 16, 64, 3);                 // hero energy dots
@@ -2819,7 +2801,7 @@ static void present(void) {
   if (gg_in_stage(mod_is_gameplay(&S))) gg_off_frames = 0; else if (gg_off_frames < 1000) gg_off_frames++;
   if (!cfg.gg || on_title_screens() || gg_off_frames > 20) gg_on = 0;
   else if (!gg_off_frames) gg_on = 1;
-  if (!gg_on) { gg_x = -1; gg_y = 0; }   // the next stage starts centred on the hero
+  if (!gg_on) gg_x = -1;   // the next stage starts centred on the hero
   int gw = cfg.widescreen ? WIDE_W : gg_on ? GG_W : SMS_W;
   game_h = gg_on ? GG_H : SMS_H;
   ensure_textures(gw);
