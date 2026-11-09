@@ -1,13 +1,23 @@
 # Estado del proyecto — Master of Darkness Re-Master-Ed
 
-Última actualización: 7 de noviembre de 2026. Versión publicada: **v0.16.2** (la 1.0.0 está en la rama `version-1.0`).
+Última actualización: 9 de noviembre de 2026. Versión publicada: **v0.16.2** (la 1.0.1 está en la rama `version-1.0`).
 
 Launcher para Android (y escritorio) que ejecuta *Master of Darkness* (Master System) desde la ROM del
 usuario, con 16:9 real, trucos, opciones de juego, filtros, paletas, pack de música y controles táctiles.
 Detalles técnicos de cada versión: [`docs/NOTAS_TECNICAS.md`](docs/NOTAS_TECNICAS.md). Pack de música:
 [`docs/PACK_MUSICA.md`](docs/PACK_MUSICA.md). Guion de narración: [`docs/GUION_NARRACION.md`](docs/GUION_NARRACION.md).
 
-## Para seguir en un chat nuevo (7-11-2026)
+## Para seguir en un chat nuevo (9-11-2026)
+
+- **1.0.1 (notas del usuario, 9-11-2026), rama `version-1.0`:**
+  1. La app instalada se llama **Re-Master-ed of Darkness** (`strings.xml`; también la ventana de escritorio). La Completa conserva su nombre.
+  2. Game Gear: al saltar muy alto la cabeza se metía en la línea de marcador y se cortaba. Ahora la ventana baja con el héroe (hasta 32
+     líneas, lo que hay por encima del escenario) y vuelve a 2 líneas por fotograma; encima del escenario se ve negro con los sprites.
+  3. Logros: aviso tipo PlayStation arriba a la izquierda (icono con marco dorado, "Logro desbloqueado" y el nombre; entra y sale deslizando, 4 s).
+  4. "Petardeo" al abrir/cerrar el menú, empezar o salir: la salida de la consola está muy por debajo de 0 (silencio ≈ -16000) y cada corte
+     saltaba a 0. Ahora filtro de continua en el sonido del juego, rampa de 10 ms a silencio en cada cambio (menú, launcher, rebobinar,
+     acelerar, salir) y fundido de entrada de 10 ms. Ya no se vacía la cola de audio de golpe.
+  **Falta:** que lo pruebe en consola.
 
 - **Ideas de los testers (7-11-2026): hechas** en la rama `version-1.0` (sin pasar a `main`), y llevadas a la edición completa para probarlas:
   1. Música del menú: pieza original sintetizada en la app (Sonido › Música del menú, Sí por defecto).

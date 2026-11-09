@@ -22,7 +22,7 @@
 #include "stb_image.h"
 
 #include "miniz.h"
-#define APP_VERSION "1.0.0"
+#define APP_VERSION "1.0.1"
 #define KNOWN_CRC 0x96FB4D4Bu
 #define UI_W 640
 #define UI_H 360
@@ -279,6 +279,43 @@ static int tex_game_w, tex_game_h, sharp_k;
 static int game_h = SMS_H;   // lines of the picture sent to the screen (170 in the Game Gear format)
 static SDL_Texture* tex_hud;  // Game Gear format: the status bar, shown over the picture during the pause
 static SDL_AudioDeviceID audio_dev;
+
+// 1.0.1: no clicks when the sound starts or stops. The console's output sits far below 0 (silence is about -16000):
+// stopping it (menu, start screen, leaving the game) made the speaker jump to 0, the "crackle". Now a DC blocker
+// keeps the game's sound around 0, every change of what is playing ends with a short ramp to silence, and the next
+// sound starts with a short fade in.
+#define AUD_RAMP 441                // 10 ms
+static float aud_dc_x, aud_dc_y;
+static int aud_dc_primed;
+static int16_t aud_last;            // last sample queued
+static int aud_fade_in;             // samples of fade in still to apply
+static void audio_queue(int16_t* buf, int n) {
+  for (int i = 0; i < n && aud_fade_in > 0; i++, aud_fade_in--) buf[i] = (int16_t)(buf[i] * (AUD_RAMP - aud_fade_in) / AUD_RAMP);
+  aud_last = buf[n - 1];
+  SDL_QueueAudio(audio_dev, buf, (Uint32)(n * sizeof *buf));
+}
+static void audio_soft_stop(void) {
+  if (!audio_dev) return;
+  if (aud_last) {
+    int16_t r[AUD_RAMP];
+    for (int i = 0; i < AUD_RAMP; i++) r[i] = (int16_t)(aud_last * (AUD_RAMP - 1 - i) / AUD_RAMP);
+    SDL_QueueAudio(audio_dev, r, sizeof r);
+  }
+  aud_last = 0;
+  aud_fade_in = AUD_RAMP;
+  aud_dc_primed = 0;   // the game's level may have changed meanwhile (state loaded, reset): no step when it goes on
+}
+// the game's samples, around 0, at the chosen volume
+static void audio_game(const int16_t* in, int16_t* out, int n, int volume) {
+  if (!aud_dc_primed) { aud_dc_x = in[0]; aud_dc_primed = 1; }
+  for (int i = 0; i < n; i++) {
+    float x = in[i];
+    aud_dc_y = x - aud_dc_x + 0.9995f * aud_dc_y;
+    aud_dc_x = x;
+    float v = aud_dc_y * volume / 10;
+    out[i] = (int16_t)(v > 32767 ? 32767 : v < -32768 ? -32768 : v);
+  }
+}
 static SDL_GameController* pads[8];
 
 static sms_t S;
@@ -965,7 +1002,6 @@ static void menu_open_at(int page) {
   confirm_original = 0;
   menu_root = menu_page = page;
   menu_sel = 0;
-  SDL_ClearQueuedAudio(audio_dev);
 }
 
 static void menu_set_open(int open) {
@@ -1161,7 +1197,7 @@ static int sv_over_event(SDL_Event* e) {
   } else return e->type == SDL_KEYUP || e->type == SDL_CONTROLLERBUTTONUP || e->type == SDL_FINGERUP || e->type == SDL_FINGERMOTION;
   if (ok) sv_retry_stage();
   else if (over) sv_retry();
-  else if (back) { sv_retry(); in_launcher = 1; music_set_paused(true); SDL_ClearQueuedAudio(audio_dev); }
+  else if (back) { sv_retry(); in_launcher = 1; music_set_paused(true); }
   return 1;
 }
 
@@ -1367,7 +1403,7 @@ static int br_over_event(SDL_Event* e) {
     ok = e->tfinger.x < 0.5f; back = !ok;
   } else return e->type == SDL_KEYUP || e->type == SDL_CONTROLLERBUTTONUP || e->type == SDL_FINGERUP || e->type == SDL_FINGERMOTION;
   if (ok) br_new_run();
-  else if (back) { br_new_run(); in_launcher = 1; music_set_paused(true); SDL_ClearQueuedAudio(audio_dev); }
+  else if (back) { br_new_run(); in_launcher = 1; music_set_paused(true); }
   return 1;
 }
 
@@ -1485,7 +1521,7 @@ static void menu_activate(void) {
   case MI_OPTIONS: menu_goto(PAGE_OPTIONS); break;
   case MI_BACK: if (menu_page == PAGE_VIBRA) { menu_goto(PAGE_CONTROLS); menu_sel = 5; } else if (menu_page == menu_root) menu_set_open(0); else menu_goto(menu_root); break;
   case MI_CONTROLS: menu_goto(PAGE_CONTROLS); break;
-  case MI_HOME: menu_set_open(0); in_launcher = 1; music_set_paused(true); SDL_ClearQueuedAudio(audio_dev); break;
+  case MI_HOME: menu_set_open(0); in_launcher = 1; music_set_paused(true); break;
   case MI_RESET:
     if (game_mode == GM_BOSSRUSH) { br_new_run(); break; }
     music_stop(); sms_reset(&S); if (game_mode == GM_SURVIVOR) sv_reset(); menu_set_open(0); show_toast(T("Game reset", "Juego reiniciado"), 1500); break;
@@ -1581,6 +1617,44 @@ static void draw_logros(void) {
 
 static void draw_viewer_ui(void);
 static int viewer_active(void);
+
+// 1.0.1: an achievement just unlocked, as on the PlayStation: a box with its icon in the top left corner that slides
+// in, stays a few seconds and slides out. Several at once come one after another.
+#define ACH_POP_MS 4000
+#define ACH_POP_SLIDE 250
+static int ach_pop = -1;
+static Uint32 ach_pop_t0;
+static void draw_ach_popup(void) {
+  if (ach_pop < 0) return;
+  Uint32 t = SDL_GetTicks() - ach_pop_t0;
+  if (t >= ACH_POP_MS) { ach_pop = -1; return; }
+  const logro_t* l = logros_get(ach_pop);
+  const char* head = T("Achievement unlocked", "Logro desbloqueado");
+  int tw = text_width(head), nw = text_width(l->name[ES]);
+  int w = 8 + 40 + 10 + (tw > nw ? tw : nw) + 14, h = 54;
+  if (w > UI_W - 20) w = UI_W - 20;
+  // slide in from the left and back out (eased)
+  double k = 1.0;
+  if (t < ACH_POP_SLIDE) k = (double)t / ACH_POP_SLIDE;
+  else if (t > ACH_POP_MS - ACH_POP_SLIDE) k = (double)(ACH_POP_MS - t) / ACH_POP_SLIDE;
+  k = 1.0 - (1.0 - k) * (1.0 - k);
+  int x = 10 - (int)((w + 10) * (1.0 - k)), y = 10;
+  ui_rect(x, y, w, h, 0xE8141018);
+  ui_rect(x, y, w, 2, 0xFFE8C060);
+  ui_rect(x, y + h - 2, w, 2, 0xFF3A3440);
+  // the icon in its gold frame, as in the list
+  int ix = x + 8, iy = y + 7;
+  ui_rect(ix, iy, 40, 40, 0xFFE8C060);
+  ui_rect(ix + 3, iy + 3, 34, 34, 0xFF3A1418);
+  uint32_t ic[11 * 11]; int dots = 0;
+  if (logro_icon(l->id, ic, &dots))
+    for (int py = 0; py < 11; py++)
+      for (int px = 0; px < 11; px++)
+        if (ic[py * 11 + px]) ui_rect(ix + 3 + px * 3 + 1, iy + 3 + py * 3 + 1, 3, 3, ic[py * 11 + px]);
+  for (int d = 0; d < dots; d++) ui_rect(ix + 20 - dots * 3 + d * 6 + 1, iy + 37, 4, 3, 0xFF200810);
+  ui_text(ix + 50, y + 4, head, 0xE8C060);
+  ui_text(ix + 50, y + 27, l->name[ES], 0xFFFFFF);
+}
 
 static void draw_br_hud(void);
 static void draw_br_over(void);
@@ -1723,6 +1797,7 @@ static void draw_ui(void) {
     ui_rect((UI_W - w) / 2, y, w, h, 0xD0000000);
     for (int i = 0; i < nl; i++) ui_text_center(y + 4 + i * 24, lines[i], 0xFFFFFF);
   }
+  if (!show_logros && !in_launcher) draw_ach_popup();
 }
 
 // ---------------------------------------------------------------- video
@@ -1886,6 +1961,8 @@ static int gg_x = -1;
 static int gg_on;                // the piece is being shown (in a stage)
 static int gg_slide;             // moving to a new target (dialog box / back to the hero) instead of jumping
 #define GG_SLIDE 4               // pixels per frame while sliding
+static int gg_y;                 // 1.0.1: lines the piece is lowered so a hero high in a jump stays whole under the line
+#define GG_DROP 2                // lines per frame the piece goes back up when the hero comes down
 
 // Still in the stage although the picture does not match the map (boss dialog drawn over the stage, the stage
 // redrawn after it...): the status bar in the name table is the one of the last frame that was clearly gameplay.
@@ -1960,9 +2037,33 @@ static void gg_render(void) {
   if (follow != was_follow) gg_slide = 1;
   was_follow = follow;
   gg_window(&in, follow);
-  for (int y = 0; y < GG_STAGE; y++) memcpy(pix + (y + GG_LINE) * GG_W, gg_wide + (y + HUD_H) * WIDE_W + gg_x, GG_W * 4);
+  // 1.0.1: the hero high in a jump goes up into the status bar of the picture; instead of cutting his head under the
+  // Game Gear line, the piece goes down with him (as the camera of the Game Gear does) and comes back slowly. Only
+  // the sprites near the hero count (a bat flying up there does not move the piece).
+  int cx = in.map_valid || in.scene ? in.cx : MOD_WIDE_EXT;
+  {
+    int hx = (int16_t)(gram(0xCA24) | gram(0xCA25) << 8) + 8;   // the hero, in the 256-column picture
+    int top = HUD_H;
+    if (follow)
+      for (int y = 0; y < HUD_H && top == HUD_H; y++)
+        for (int x = hx - 16; x <= hx + 16; x++)
+          if (x >= 0 && x < SMS_W && S.fb_spr[y][x]) { top = y; break; }
+    int want = HUD_H - top;
+    if (want > gg_y) gg_y = want;
+    else if (gg_y > want) gg_y = gg_y - GG_DROP > want ? gg_y - GG_DROP : want;
+  }
+  for (int y = 0; y < GG_STAGE; y++) {
+    int sy = y + HUD_H - gg_y;
+    uint32_t* d = pix + (y + GG_LINE) * GG_W;
+    if (sy >= HUD_H) { memcpy(d, gg_wide + sy * WIDE_W + gg_x, GG_W * 4); continue; }
+    // above the stage there is no map: black, with the sprites that are up there
+    for (int c = 0; c < GG_W; c++) {
+      int px = gg_x + c - cx;
+      d[c] = (px >= 0 && px < SMS_W && S.fb_spr[sy][px]) ? gg_wide[sy * WIDE_W + gg_x + c] : 0xFF000000u;
+    }
+  }
   // the Game Gear line on a black band: energy, subweapon ammo and time; in a boss fight, without the label
-  // and with the boss energy next to the hero's
+  // and with the boss energy next to the hero's (nothing else is drawn on it: the piece keeps the hero below it)
   for (int i = 0; i < GG_LINE * GG_W; i++) pix[i] = 0xFF000000u;
   if (music_current == 0x88 || music_current == 0x8E) {   // boss music (rounds 1-4, round 5): a boss fight
     gg_hud_part(72, 16, 64, 3);                 // hero energy dots
@@ -1973,17 +2074,6 @@ static void gg_render(void) {
     gg_hud_part(40, 16, 96, 3);                 // LIFE / VIDA and the energy dots
     gg_hud_part(176, 16, 24, 3 + 96 + 16);      // =NN, subweapon ammo
     gg_hud_part(224, 16, 24, GG_W - 24 - 3);    // time
-  }
-  // sprites that go up into the status bar (the hero's head in a jump) are drawn over the band
-  int cx = in.map_valid || in.scene ? in.cx : MOD_WIDE_EXT;
-  for (int r = 0; r < GG_LINE; r++) {
-    int y = HUD_H - GG_LINE + r;
-    for (int c = 0; c < GG_W; c++) {
-      int px = gg_x + c - cx;
-      if (px < 0 || px >= SMS_W || !S.fb_spr[y][px]) continue;
-      uint32_t* d = pix + r * GG_W + c;
-      if (*d == 0xFF000000u) *d = gg_wide[y * WIDE_W + gg_x + c];
-    }
   }
 }
 
@@ -2729,7 +2819,7 @@ static void present(void) {
   if (gg_in_stage(mod_is_gameplay(&S))) gg_off_frames = 0; else if (gg_off_frames < 1000) gg_off_frames++;
   if (!cfg.gg || on_title_screens() || gg_off_frames > 20) gg_on = 0;
   else if (!gg_off_frames) gg_on = 1;
-  if (!gg_on) gg_x = -1;   // the next stage starts centred on the hero
+  if (!gg_on) { gg_x = -1; gg_y = 0; }   // the next stage starts centred on the hero
   int gw = cfg.widescreen ? WIDE_W : gg_on ? GG_W : SMS_W;
   game_h = gg_on ? GG_H : SMS_H;
   ensure_textures(gw);
@@ -3142,7 +3232,7 @@ int main(int argc, char** argv) {
 #endif
   int win_w = WIDE_W * 3, win_h = SMS_H * 3;
   if (getenv("MOD_WINSIZE")) sscanf(getenv("MOD_WINSIZE"), "%dx%d", &win_w, &win_h);   // tests: other screen shapes
-  win = SDL_CreateWindow("Master of Darkness", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, win_w, win_h, wflags);
+  win = SDL_CreateWindow("Re-Master-ed of Darkness", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, win_w, win_h, wflags);
   ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_TARGETTEXTURE);
   if (!ren) ren = SDL_CreateRenderer(win, -1, 0);
   pix = malloc(sizeof(uint32_t) * WIDE_W * SMS_H);
@@ -3261,6 +3351,7 @@ int main(int argc, char** argv) {
     if (getenv("MOD_LOGROS_LIST")) { show_logros = 1; logros_page = atoi(getenv("MOD_LOGROS_LIST")); }
     if (getenv("MOD_MENU")) { menu_open = 1; menu_sel = atoi(getenv("MOD_MENU")); if (getenv("MOD_PAGE")) menu_page = atoi(getenv("MOD_PAGE")); }
     toast_until = 0;
+    if (getenv("MOD_ACHPOP")) { ach_pop = atoi(getenv("MOD_ACHPOP")); ach_pop_t0 = SDL_GetTicks() - 1000; }   // tests: achievement box
     if (getenv("MOD_TOAST")) show_toast(cfg.gg ? T("Game Gear: a smaller window that follows you.\nPause shows the status bar", "Game Gear: ventana más pequeña que te sigue.\nLa pausa enseña el marcador") : getenv("MOD_TOAST"), 99999);   // tests
     if (getenv("MOD_SUB")) { gram_w(RAM_SUBWEAPON, (uint8_t)atoi(getenv("MOD_SUB"))); gram_w(RAM_AMMO, getenv("MOD_AMMO") ? (uint8_t)atoi(getenv("MOD_AMMO")) : 9); }
     if (getenv("MOD_TOUCHDIR")) {   // a finger on the right arm of the cross
@@ -3342,6 +3433,12 @@ int main(int argc, char** argv) {
     if (rw_count_reset) { rw_count = 0; rw_count_reset = 0; }
     rewinding = !menu_open && !in_launcher && cfg.triggers && !ADVANTAGES_BLOCKED && (any_trigger(trig_l) || key_rewind);
     fast_forward = !menu_open && !rewinding && !in_launcher && cfg.triggers && (!ADVANTAGES_BLOCKED || test_inv) && (any_trigger(trig_r) || key_ff);
+    {
+      // what is sounding: the start screen, the game, or nothing (menu, rewind, fast forward, end screens)
+      static int aud_src = -1;
+      int src = in_launcher ? 1 : (!menu_open && !sv_over && !br_over && !rewinding && !fast_forward) ? 2 : 0;
+      if (src != aud_src) { if (aud_src >= 0) audio_soft_stop(); aud_src = src; }
+    }
     if (!menu_open && !in_launcher && !sv_over && !br_over) {
       // keep the audio queue around 3 frames by nudging the emulation speed slightly
       double queued = audio_dev ? SDL_GetQueuedAudioSize(audio_dev) / 2.0 / SMS_SAMPLES_PER_FRAME : 3.0;
@@ -3397,18 +3494,17 @@ int main(int argc, char** argv) {
           if (LOGROS_ON && (Sint32)(SDL_GetTicks() - logro_shown_until) >= 0) {
             int nl = logros_pop_new();
             if (nl >= 0) {
-              char t[96]; snprintf(t, sizeof t, T("Achievement: %s", "Logro: %s"), logros_get(nl)->name[ES]);
-              show_toast(t, 3000);
-              logro_shown_until = SDL_GetTicks() + 3000;
+              ach_pop = nl; ach_pop_t0 = SDL_GetTicks();
+              logro_shown_until = ach_pop_t0 + ACH_POP_MS + 300;
               vibrate_sample(VIB_BOSS);
             }
           }
         }
         music_set_paused(mod_music_paused(&S));
         if (audio_dev && queued < 8 && !fast_forward) {
-          for (int i = 0; i < SMS_SAMPLES_PER_FRAME; i++) mixbuf[i] = (int16_t)(S.audio[i] * cfg.volume / 10);
+          audio_game(S.audio, mixbuf, SMS_SAMPLES_PER_FRAME, cfg.volume);
           music_mix(mixbuf, SMS_SAMPLES_PER_FRAME, cfg.volume);
-          SDL_QueueAudio(audio_dev, mixbuf, sizeof mixbuf);
+          audio_queue(mixbuf, SMS_SAMPLES_PER_FRAME);
         }
       }
       if (frames == 4) acc = 0;
@@ -3422,13 +3518,16 @@ int main(int argc, char** argv) {
         if (lt_playing == 2) jukebox_mix(mixbuf, SMS_SAMPLES_PER_FRAME, cfg.volume);
         else if (lt_playing == 1) music_mix(mixbuf, SMS_SAMPLES_PER_FRAME, cfg.volume);
         else if (cfg.menu_music) lmusic_mix(mixbuf, SMS_SAMPLES_PER_FRAME, cfg.volume);
-        SDL_QueueAudio(audio_dev, mixbuf, sizeof mixbuf);
+        audio_queue(mixbuf, SMS_SAMPLES_PER_FRAME);
       }
     }
     viewer_tick();
     present();
     if (menu_open || in_launcher) SDL_Delay(1);
   }
+  // let the sound end softly before closing
+  audio_soft_stop();
+  for (int i = 0; i < 30 && audio_dev && SDL_GetQueuedAudioSize(audio_dev) > 0; i++) SDL_Delay(5);
   cfg_save();
   logros_flush();
 #ifdef __ANDROID__

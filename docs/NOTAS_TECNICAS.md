@@ -571,3 +571,15 @@ Cabecera TMR SEGA válida, checksum 6FE6 correcto, región SMS Export, mapper Se
   `NOPAUSE=1` (sin pausa al coger objetos), `PCFRAME=N` con `KILLPC=1` (direcciones 4000-7FFF ejecutadas en ese fotograma).
   Escritorio: `MOD_EVENTS` admite también `Y U D S` (select) `T` (start) de mando.
 - Regresión: con las opciones apagadas (y con `DJ=1` en un bot normal) la huella `-H` es idéntica a la de antes.
+
+## 1.0.1 (9-11-2026) — notas del usuario
+- **Nombre:** `app_name` = "Re-Master-ed of Darkness".
+- **Game Gear, saltos altos:** `gg_y` (0-32) baja la ventana cuando hay sprites en las filas 0-31 de la imagen a ±16 px del héroe (`CA24`+8);
+  sube al instante y vuelve a 2 líneas por fotograma (`GG_DROP`). Las filas por encima del escenario se pintan negras con los sprites. En el
+  diálogo del jefe no cuenta. La franja del marcador ya no lleva sprites encima. Prueba: `headless -p 1495-1495:CA22=38 -S 1496:alto.sav` con
+  un salto en 1490 y luego `MOD_LOADSTATE=alto.sav MOD_MUSIC=8B MOD_ATSHOT=2` con `gg=1`.
+- **Aviso de logro:** `draw_ach_popup` (arriba a la izquierda de la pantalla, 4 s, deslizando 250 ms). Prueba: `MOD_ACHPOP=n`.
+- **Sonido sin chasquidos:** `audio_game` (filtro de continua 0,9995 sobre `S.audio`), `audio_queue` (fundido de entrada, guarda la última
+  muestra), `audio_soft_stop` (rampa de 441 muestras desde la última a 0 y vuelve a cebar el filtro). Se llama cuando cambia lo que suena
+  (launcher / juego / nada) y al salir. Fuera los `SDL_ClearQueuedAudio`. Simulado con `headless -a`: los cortes ya no añaden saltos mayores
+  que los bordes de la propia onda cuadrada (antes, 10 000-13 000).
