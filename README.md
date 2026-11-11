@@ -1,7 +1,7 @@
 # Re-Master-ed of Darkness
 
 *Master of Darkness* (Sega Master System, 1992) remasterizado para Android: panorámico 16:9 de verdad, en
-castellano, con logros, modos nuevos y controles modernos. Un proyecto de fan hecho por **Juanmote**.
+castellano e ingles, con logros, modos nuevos y controles modernos. Un proyecto de fan hecho por **Juanmote**.
 
 **La app no incluye el juego.** Necesitas tu propia copia de la ROM:
 `Master of Darkness (Europe, Brazil) (En).sms` — CRC32 `96FB4D4B`.
