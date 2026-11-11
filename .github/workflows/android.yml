@@ -10,7 +10,7 @@ permissions:
 
 env:
   SDL_TAG: release-2.30.12
-  MOD_VERSION: 1.0.2
+  MOD_VERSION: 1.0.3
 
 jobs:
   apk:
@@ -52,10 +52,15 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
-          name: Master of Darkness ${{ env.MOD_VERSION }} (build ${{ github.run_number }})
+          name: Re-Master-ed of Darkness ${{ env.MOD_VERSION }} (build ${{ github.run_number }})
           body: |
-            APK de prueba compilado automáticamente desde `${{ github.sha }}`.
-            No incluye la ROM: al abrir la app por primera vez se te pedirá que elijas tu copia de Master of Darkness (.sms).
+            **Re-Master-ed of Darkness ${{ env.MOD_VERSION }}** para Android.
+
+            - Descarga el `.apk` de aquí abajo e instálalo. Se instala encima de versiones anteriores sin perder ajustes, partidas ni logros.
+            - **No incluye la ROM:** al abrir la app por primera vez se te pedirá que elijas tu copia de *Master of Darkness (Europe, Brazil) (En).sms*.
+            - Qué trae y cómo se usa: en la [portada del proyecto](https://github.com/${{ github.repository }}#readme).
+
+            Compilado automáticamente desde `${{ github.sha }}`.
           files: dist/*.apk
 
   desktop-check:

@@ -312,7 +312,8 @@ int main(int argc, char** argv) {
       uint32_t hf_ = 2166136261u; for (size_t k = 0; k < sizeof S.fb_idx; k++) hf_ = (hf_ ^ p1[k]) * 16777619u;
       uint32_t hr_ = 2166136261u; for (size_t k = 0; k < sizeof S.st.ram; k++) hr_ = (hr_ ^ S.st.ram[k]) * 16777619u;
       uint32_t ha_ = 2166136261u; for (size_t k = 0; k < sizeof S.audio; k++) ha_ = (ha_ ^ p2[k]) * 16777619u;
-      fprintf(hf, "%u %08X %lu fb=%08X ram=%08X au=%08X\n", fr, h, (unsigned long)S.st.cpu.cyc, hf_, hr_, ha_);
+      uint32_t hw_ = 2166136261u; for (int k = 0; k < W * SMS_H; k++) hw_ = (hw_ ^ pix[k]) * 16777619u;   // the widescreen picture as drawn
+      fprintf(hf, "%u %08X %lu fb=%08X ram=%08X au=%08X wide=%08X\n", fr, h, (unsigned long)S.st.cpu.cyc, hf_, hr_, ha_, hw_);
     }
     if (getenv("MOD_CMP")) { static uint8_t mk[SMS_W*SMS_H]; int d = mod_debug_compare(&S, mk); if (d > 0) { printf("F%u cam=%d mismatch=%d\n", fr, info.cam, d); char mp[512]; snprintf(mp, sizeof mp, "%s/m%06u.pgm", outdir, fr); FILE* o = fopen(mp, "wb"); fprintf(o, "P5\n256 192\n1\n"); fwrite(mk, 1, sizeof mk, o); fclose(o); } }
     if (af) fwrite(S.audio, 2, SMS_SAMPLES_PER_FRAME, af);

@@ -22,7 +22,7 @@
 #include "stb_image.h"
 
 #include "miniz.h"
-#define APP_VERSION "1.0.2"
+#define APP_VERSION "1.0.3"
 #define KNOWN_CRC 0x96FB4D4Bu
 #define UI_W 640
 #define UI_H 360
@@ -222,10 +222,15 @@ static uint8_t* load_file(const char* path, size_t* size) {
 
 // ---------------------------------------------------------------- UI drawing (UI_W x UI_H ARGB)
 static uint32_t ui[UI_W * UI_H];
+// Something has been drawn on the layer since it was cleared. While playing it is nearly always empty: then it is
+// not cleared again, not sent to the GPU and not blended over the picture (it is 640x360: more work per frame
+// than drawing the game itself).
+static int ui_used;
 
-static void ui_clear(void) { memset(ui, 0, sizeof ui); }
+static void ui_clear(void) { if (ui_used) memset(ui, 0, sizeof ui); ui_used = 0; }
 
 static void ui_rect(int x, int y, int w, int h, uint32_t argb) {
+  ui_used = 1;
   for (int j = y; j < y + h; j++) {
     if (j < 0 || j >= UI_H) continue;
     for (int i = x; i < x + w; i++) if (i >= 0 && i < UI_W) ui[j * UI_W + i] = argb;
@@ -250,6 +255,7 @@ static uint32_t utf8_next(const char** s) {
 static int text_width(const char* s) { int n = 0; while (*s) { utf8_next(&s); n++; } return n * FONT_CW; }
 
 static void ui_text(int x, int y, const char* s, uint32_t rgb) {
+  ui_used = 1;
   while (*s) {
     int g = glyph_index(utf8_next(&s));
     for (int j = 0; j < FONT_CH; j++) for (int i = 0; i < FONT_CW; i++) {
@@ -386,7 +392,7 @@ static int menu_open, menu_sel;
 static char toast[128];
 static Uint32 toast_until;
 static int running = 1;
-static uint8_t kb_input, pad_input;
+static uint8_t kb_input;
 static int16_t stick_x[8], stick_y[8];
 
 static void show_toast(const char* msg, Uint32 ms) {
@@ -1890,6 +1896,13 @@ static void draw_crt(SDL_Rect dst, int gw, int curved) {
   enum { GX = 32, GY = 24 };
   static SDL_Vertex v[(GX + 1) * (GY + 1)];
   static int idx[GX * GY * 6];
+  static SDL_Rect grid_for;   // the grid is only worked out again when the picture moves or changes size
+  const int n_idx = GX * GY * 6;
+  if (grid_for.w == dst.w && grid_for.h == dst.h && grid_for.x == dst.x && grid_for.y == dst.y) {
+    SDL_RenderGeometry(ren, tex_crt, v, (GX + 1) * (GY + 1), idx, n_idx);
+    return;
+  }
+  grid_for = dst;
   const double bend = 0.045;
   for (int j = 0; j <= GY; j++)
     for (int i = 0; i <= GX; i++) {
@@ -2787,10 +2800,12 @@ static void present(void) {
     SDL_RenderClear(ren);
     if (viewer.kind) draw_viewer(ww, wh); else draw_launcher(ww, wh);
     draw_ui();
-    SDL_UpdateTexture(tex_ui, NULL, ui, UI_W * 4);
-    double us = (double)ww / UI_W < (double)wh / UI_H ? (double)ww / UI_W : (double)wh / UI_H;
-    SDL_Rect udst = {(int)((ww - UI_W * us) / 2), (int)ui_top(wh, UI_H * us), (int)(UI_W * us), (int)(UI_H * us)};
-    SDL_RenderCopy(ren, tex_ui, NULL, &udst);
+    if (ui_used) {
+      SDL_UpdateTexture(tex_ui, NULL, ui, UI_W * 4);
+      double us = (double)ww / UI_W < (double)wh / UI_H ? (double)ww / UI_W : (double)wh / UI_H;
+      SDL_Rect udst = {(int)((ww - UI_W * us) / 2), (int)ui_top(wh, UI_H * us), (int)(UI_W * us), (int)(UI_H * us)};
+      SDL_RenderCopy(ren, tex_ui, NULL, &udst);
+    }
     SDL_RenderPresent(ren);
     return;
   }
@@ -2847,12 +2862,14 @@ static void present(void) {
   if (gg_on && mod_music_paused(&S)) gg_draw_hud(dst);
   if (touch_visible()) draw_touch(ww, wh);
   draw_ui();
-  SDL_UpdateTexture(tex_ui, NULL, ui, UI_W * 4);
-  SDL_Rect udst = {0, 0, ww, wh};
-  double us = (double)ww / UI_W < (double)wh / UI_H ? (double)ww / UI_W : (double)wh / UI_H;
-  udst.w = (int)(UI_W * us); udst.h = (int)(UI_H * us);
-  udst.x = (ww - udst.w) / 2; udst.y = (wh - udst.h) / 2;
-  SDL_RenderCopy(ren, tex_ui, NULL, &udst);
+  if (ui_used) {
+    SDL_UpdateTexture(tex_ui, NULL, ui, UI_W * 4);
+    SDL_Rect udst = {0, 0, ww, wh};
+    double us = (double)ww / UI_W < (double)wh / UI_H ? (double)ww / UI_W : (double)wh / UI_H;
+    udst.w = (int)(UI_W * us); udst.h = (int)(UI_H * us);
+    udst.x = (ww - udst.w) / 2; udst.y = (wh - udst.h) / 2;
+    SDL_RenderCopy(ren, tex_ui, NULL, &udst);
+  }
   SDL_RenderPresent(ren);
 }
 
@@ -3364,6 +3381,8 @@ int main(int argc, char** argv) {
     if (getenv("MOD_LOOPMODE") && !strcmp(getenv("MOD_LOOPMODE"), "br")) { br_new_run(); test_inv = 1; }
     if (getenv("MOD_LOADSTATE")) load_state_from(getenv("MOD_LOADSTATE"), "");
   }
+  long loop_turns = 0;
+  const Uint32 loop_t0 = SDL_GetTicks();
   while (running) {
     SDL_Event e;
     while (SDL_PollEvent(&e)) handle_event(&e);
@@ -3506,7 +3525,22 @@ int main(int argc, char** argv) {
     viewer_tick();
     present();
     if (menu_open || in_launcher) SDL_Delay(1);
+    // Normally the screen holds the loop back (one turn per refresh). Where it does not (vertical sync off or not
+    // honoured), the loop would spin and draw the same frame again hundreds of times a second: wait here until the
+    // next frame is nearly due. Only after several turns in a row that took almost no time.
+    loop_turns++;
+    if (!looptest) {
+      static int quick_turns;
+      double turn = (double)(SDL_GetPerformanceCounter() - now) / freq;
+      if (turn < 0.002) { if (quick_turns < 1000) quick_turns++; } else quick_turns = 0;
+      if (quick_turns > 8) {
+        int playing = !menu_open && !in_launcher && !sv_over && !br_over;
+        double wait = (playing ? frame_time - acc : frame_time) - turn - 0.0005;
+        if (wait > 0) SDL_Delay(wait >= 0.001 ? (Uint32)(wait * 1000.0) : 1);
+      }
+    }
   }
+  if (getenv("MOD_PACELOG")) printf("turns %ld, game frames %u, %.1f s\n", loop_turns, S.st.frame, (SDL_GetTicks() - loop_t0) / 1000.0);   // tests: loop pacing
   // let the sound end softly before closing
   audio_soft_stop();
   for (int i = 0; i < 30 && audio_dev && SDL_GetQueuedAudioSize(audio_dev) > 0; i++) SDL_Delay(5);

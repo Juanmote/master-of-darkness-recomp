@@ -1,13 +1,28 @@
 # Estado del proyecto — Master of Darkness Re-Master-Ed
 
-Última actualización: 9 de noviembre de 2026. Versión publicada: **v0.16.2** (la 1.0.2 está en la rama `version-1.0`).
+Última actualización: 11 de noviembre de 2026. Versión publicada: **v1.0.3** (en `main`; lanzamiento público el 12-11-2026).
 
 Launcher para Android (y escritorio) que ejecuta *Master of Darkness* (Master System) desde la ROM del
 usuario, con 16:9 real, trucos, opciones de juego, filtros, paletas, pack de música y controles táctiles.
 Detalles técnicos de cada versión: [`docs/NOTAS_TECNICAS.md`](docs/NOTAS_TECNICAS.md). Pack de música:
 [`docs/PACK_MUSICA.md`](docs/PACK_MUSICA.md). Guion de narración: [`docs/GUION_NARRACION.md`](docs/GUION_NARRACION.md).
 
-## Para seguir en un chat nuevo (9-11-2026)
+## Para seguir en un chat nuevo (11-11-2026)
+
+- **1.0.3: auditoría y optimización antes del lanzamiento** (detalles en `docs/NOTAS_TECNICAS.md`, 1.0.3). El juego se comporta igual
+  (comprobado fotograma a fotograma contra la 1.0.2); cambia el trabajo que cuesta cada fotograma:
+  - Núcleo: el fondo de cada línea se dibuja por celdas de 8 píxeles en vez de píxel a píxel (emular un fotograma cuesta la mitad).
+  - 16:9: el centro de cada línea se copia de golpe; la paleta solo se recalcula cuando cambia. 4:3 y Game Gear también ganan.
+  - App: la capa de menús (640×360) ya no se limpia, se sube a la GPU ni se mezcla cuando está vacía (casi siempre al jugar).
+  - Si la pantalla no frena el bucle (sincronía vertical apagada), ya no gira en vacío.
+  - Fallo encontrado y corregido: lectura fuera de tabla en el gancho del driver de sonido (`ms_hook_map[0x811C]`); funcionaba por suerte.
+  - Estados guardados dañados: el chip de sonido ya no puede leer fuera de sus tablas.
+  - README nuevo para el lanzamiento; texto de la Release pensado para el público.
+  - `version-1.0` pasada a `main` (publica el APK 1.0.3) y copiada a la Completa.
+  **Pendiente de decidir por el usuario:** la clave de firma está en el repositorio público con su contraseña (cualquiera podría firmar
+  una APK que se instale encima de la oficial). Si se quiere cerrar, hay que crear una clave nueva y guardarla en los *Secrets* de GitHub
+  (desde la sesión no se pueden tocar los ajustes del repositorio); quien tenga instalada una versión anterior tendría que desinstalarla una vez.
+
 
 - **1.0.2:** el usuario confirma petardeo y aviso de logros perfectos. Game Gear: no le gusta que la ventana baje; prefiere que el héroe no se vea
   al pasar el borde de arriba. Quitado `gg_y`: el escenario empieza bajo la línea y lo que sube más allá no se ve. La "imagen duplicada" era el

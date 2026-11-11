@@ -432,7 +432,7 @@ static bool ms_hook(sms_t* s, uint16_t pc) {
 // ---------------------------------------------------------------- hook entry
 static bool on_hook(sms_t* s, uint16_t pc) {
   z80* z = &s->st.cpu;
-  if (ms_hook_map[pc]) return ms_hook(s, pc);
+  if (pc < 0x8000 && ms_hook_map[pc]) return ms_hook(s, pc);   // (the sound driver hook is at 0x811C, outside the map)
   switch (pc) {
   case 0x3CD0: case 0x52E7: {  // spawn-list entry: is its slot free? (A = slot byte, HL = entry + 3)
     if (z->a == 0 && entry_blocked(s, pc == 0x3CD0 ? 0 : 1, (uint16_t)((z->d << 8) | z->e), (uint16_t)((z->h << 8) | z->l)))

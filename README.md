@@ -1,57 +1,100 @@
-# Master of Darkness Recomp
+# Re-Master-ed of Darkness
 
-Port nativo de *Master of Darkness* (Sega Master System, 1992) para Android, con opciones modernas.
+*Master of Darkness* (Sega Master System, 1992) remasterizado para Android: panorámico 16:9 de verdad, en
+castellano, con logros, modos nuevos y controles modernos. Un proyecto de fan hecho por **Juanmote**.
 
-**Este repositorio no contiene la ROM.** Cada usuario debe aportar su propia copia:
+**La app no incluye el juego.** Necesitas tu propia copia de la ROM:
 `Master of Darkness (Europe, Brazil) (En).sms` — CRC32 `96FB4D4B`.
 
-![Simulación 16:9](docs/master_of_darkness_16x9_prueba.png)
+![Pantalla de inicio](docs/pantalla_inicio.jpg)
+
+![El juego en 16:9](docs/captura_16x9.png)
 
 ## Instalar (Android)
-1. Ve a la sección **Releases** de este repositorio y descarga el último `MasterOfDarkness-*.apk`.
-2. Instálalo. La primera vez que lo abras te pedirá que elijas tu ROM `.sms`; se copia dentro de la app y no vuelve a pedirse.
-3. Las nuevas versiones se instalan encima de la anterior sin perder ajustes ni estados guardados.
+
+1. Ve a [**Releases**](../../releases/latest) y descarga el `.apk`.
+2. Instálalo. La primera vez te pedirá que elijas tu ROM `.sms`: se copia dentro de la app y no vuelve a pedirse.
+3. Las versiones nuevas se instalan encima sin perder ajustes, partidas ni logros.
+
+Funciona en móviles y consolas Android (probado en Odin 3 Max y Retroid Pocket Classic), con mando o con
+controles táctiles. Está en castellano y en inglés.
+
+## Qué trae
+
+**Imagen**
+- **16:9 panorámico real**: los laterales se reconstruyen con el mapa del nivel, y los enemigos viven también ahí.
+- También 4:3, 8:7 (tele de tubo) y **formato Game Gear** (ventana que sigue al héroe, con su marcador).
+- Filtros: nítido, suave, scanlines, CRT y CRT curvo. Seis paletas de color y trajes de varios colores para el Dr. Social.
+
+**Juego**
+- **Sin ralentizaciones** (o con las originales, si las echas de menos).
+- **Texto en castellano**, con traducción propia: introducción, historia, diálogos de los jefes y final.
+- Dificultad fácil, normal o difícil; doble salto; escaleras con salto; reaparición de enemigos a tu gusto.
+- Guardar y cargar estado, rebobinar hasta 20 segundos (L2) y acelerar (R2).
+- Trucos: invencible, vidas y munición infinitas, subarmas sin límite, elegir arma y ronda.
+- «Versión remasterizada» (lo que trae una instalación nueva) y «Volver al juego original», a un botón.
+
+**Modos y logros**
+- **Modo logros**: 37 logros propios, con las ventajas bloqueadas.
+- **Modo Survivor**: todo el juego con una sola vida, en tres dificultades.
+- **Boss Rush**: los cinco jefes seguidos contra el reloj. Cada jefe se desbloquea al llegar a él en cualquier partida.
+- Perfil de logros exportable e importable.
+
+**Controles**
+- Botones configurables (también C y Z de los mandos de seis botones) y vibración ajustable.
+- Controles táctiles en tres tamaños, que se esconden solos al conectar un mando.
+
+**Sonido**
+- Música original del juego, o la tuya: hasta tres packs de música opcionales
+  ([cómo preparar uno](docs/PACK_MUSICA.md)).
+- Galería y manual: packs opcionales de imágenes (`.zip` de `.jpg` o `.png`) que se eligen desde la pantalla de inicio.
 
 ## Controles
+
 | Acción | Mando | Teclado (PC) |
 |---|---|---|
-| Moverse | Cruceta / stick izquierdo | Flechas |
-| Saltar | Botón inferior (A en Xbox) — intercambiable en el menú | X / K / Espacio |
-| Atacar | Botón derecho / izquierdo / superior | Z / J |
-| Pausa del juego | START | Enter |
-| Menú de opciones | SELECT / ATRÁS | Esc / Tab |
+| Moverse | Cruceta o stick izquierdo | Flechas |
+| Saltar | A (se puede cambiar) | X, K o Espacio |
+| Atacar | Los demás botones (se puede cambiar) | Z o J |
+| Subarma | Y (se puede cambiar), o arriba + atacar | Arriba + Z |
+| Pausa | START | Intro |
+| Menú | SELECT o ATRÁS | Esc o Tab |
+| Rebobinar / acelerar | L2 / R2 | Q / E |
+| Guardar / cargar estado | Desde el menú | F5 / F8 |
 
-## Opciones del menú
-- **Formato**: 16:9 panorámico (los laterales se reconstruyen con el mapa real del nivel), 4:3 con píxel cuadrado o tele de tubo (píxel 8:7).
-- **Escalado**: ajustar a pantalla, escala entera o estirar.
-- **Filtro**: nítido, nítido suavizado, suave o scanlines.
-- **Ralentizaciones**: eliminadas (procesador al doble solo durante la partida) u originales.
-- Volumen, intercambio de botones, guardar/cargar estado y reiniciar.
+## Preguntas frecuentes
 
-## Estado
-- v0.1: el juego original se ejecuta en un núcleo propio (CPU Z80 interpretada, vídeo y sonido) con el 16:9 "decorativo".
-- v0.2: los enemigos aparecen y se mueven también por los laterales en 16:9 (en 4:3 el juego es idéntico al original).
-- Siguiente: recompilación del código a C y 16:9 completo con enemigos en los laterales.
+- **¿Dónde consigo la ROM?** Tiene que ser tu propia copia del juego. Este proyecto no la incluye ni la enlaza.
+- **Me dice «ROM no reconocida».** El juego arranca con otras versiones, pero las mejoras solo funcionan con la
+  ROM europea indicada arriba, sin parches.
+- **No oigo la música nueva.** Los packs de música no vienen con la app: cada uno prepara el suyo.
 
-Notas técnicas: `docs/NOTAS_TECNICAS.md`. Estado actual, decisiones y próximas tareas: `ESTADO.md`.
+## Compilar
 
-## Compilar en PC
-Requiere SDL2: `cmake -S . -B build && cmake --build build`, y coloca la ROM como `mod.sms` junto al ejecutable.
+- **Android:** cada cambio en `main` compila y publica el APK con GitHub Actions (`.github/workflows/android.yml`).
+- **PC (para probar):** hace falta SDL2.
+  ```sh
+  cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+  cmake --build build
+  ./build/masterofdarkness mod.sms
+  ```
 
-## Créditos y licencias
-- Port: Juanmote. *Master of Darkness* © SEGA / SIMS 1992; este proyecto no incluye ningún dato del juego.
-- Núcleo Z80: [superzazu/z80](https://github.com/superzazu/z80) (MIT). SDL2 (zlib). Fuente de los menús: DejaVu Sans Mono.
+Cómo está hecho por dentro: [`docs/NOTAS_TECNICAS.md`](docs/NOTAS_TECNICAS.md). Historial y decisiones del
+proyecto: [`ESTADO.md`](ESTADO.md).
 
-## Música
-Se puede cargar un pack de música propio (un .zip con archivos .ogg). Cómo prepararlo:
-[docs/PACK_MUSICA.md](docs/PACK_MUSICA.md).
+## Aviso legal y créditos
 
-## Traducción
-La app trae su propia traducción al español (Sonido e idioma › Texto del juego), escrita para este proyecto:
-introducción, historia, diálogos de los jefes, final, rótulos y marcador. Incluye tildes, Ñ, ¿ y ¡, que se dibujan
-a partir de la fuente del propio juego. El texto está en [`tools/traduccion/es.txt`](tools/traduccion/es.txt) y
-`tools/traduccion/construir.py` comprueba que cada página quepa en su sitio y genera `src/app/text_es.h`.
+- *Master of Darkness* © 1992 SEGA / SIMS. Este es un proyecto de fan, sin ánimo de lucro y sin relación con SEGA.
+- El repositorio y el APK **no contienen la ROM ni ningún dato del juego**: gráficos, música y programa salen de
+  la copia de cada usuario. La traducción al castellano es un texto propio de este proyecto.
+- Recomp y launcher: Juanmote.
+- Núcleo Z80: [superzazu/z80](https://github.com/superzazu/z80) (MIT, `third_party/z80/LICENSE`).
+- [SDL2](https://www.libsdl.org) (zlib), [stb_image y stb_vorbis](https://github.com/nothings/stb) (dominio público),
+  [miniz](https://github.com/richgel999/miniz) (MIT, `third_party/miniz/LICENSE`). Fuente de los menús: DejaVu Sans Mono.
 
-## Bibliotecas de terceros
-- [stb_vorbis](https://github.com/nothings/stb) (dominio público): decodifica los .ogg del pack de música.
-- [miniz](https://github.com/richgel999/miniz) (MIT, `third_party/miniz/LICENSE`): lee el .zip del pack.
+---
+
+**English:** *Master of Darkness* (Sega Master System) remastered for Android — true 16:9 widescreen, no
+slowdowns, achievements, Survivor and Boss Rush modes, rewind, save states and configurable controls. The app is
+in English and Spanish. It does **not** include the game: you need your own ROM (`Master of Darkness (Europe,
+Brazil) (En).sms`, CRC32 `96FB4D4B`). Download the APK from [Releases](../../releases/latest).

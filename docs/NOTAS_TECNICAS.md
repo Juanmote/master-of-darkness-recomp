@@ -588,3 +588,27 @@ Cabecera TMR SEGA válida, checksum 6FE6 correcto, región SMS Export, mapper Se
 - **Game Gear:** fuera `gg_y` (al usuario no le gusta que la ventana baje): el héroe por encima del escenario no se ve. La línea de marcador se
   copia sin sprites: donde `fb_spr` está puesto se usa `sms_color(line_cram[y][fb_bg[y][x]])`. Era la "imagen duplicada" (trozos del héroe
   entre los corazones). Ya no se pintan sprites sobre la banda.
+
+## 1.0.3 (11-11-2026) — auditoría y optimización
+Qué se revisó: compilación con todos los avisos, analizador estático de clang, AddressSanitizer y UBSan (10 partidas de bots con `headless`,
+43 pantallas del ejecutable y el bucle real en modo normal y Boss Rush), y perfil con callgrind.
+
+- **Fallo corregido (`mod_enhance.c`, `on_hook`):** `ms_hook_map[pc]` se leía con `pc = 0x811C` (el gancho del driver de sonido, fuera de las
+  0x8000 entradas de la tabla). Leía la memoria de detrás; si ese byte no hubiera sido 0, los packs de música habrían dejado de sonar.
+  Ahora `pc < 0x8000 &&`.
+- **`render_line` (`sms.c`):** el fondo se dibuja por celdas de la tabla de nombres (hasta 8 píxeles), con `tile_row` (tabla `spread`: los 8
+  bits de un byte como 8 bytes; los 4 planos se juntan con desplazamientos). Se corta en la columna 192 cuando el scroll vertical de las
+  últimas columnas está fijo. Los acentos de las letras propias se miran una vez por celda.
+- **`mod_render` (`mod_wide.c`):** `col_kind`/`run_end` clasifican las columnas una vez por fotograma (lateral, borde tapado, imagen, 8 de la
+  izquierda); las tiras de imagen se copian con `memcpy`. La paleta de la línea solo se recalcula si `line_cram` cambia. Sin traje, los
+  píxeles no pasan por `px_color`. El relleno negro se salta en las líneas que se pintan enteras.
+- **Capa de menús (`main.c`):** `ui_used`. Vacía: ni `memset` (921 KB), ni `SDL_UpdateTexture`, ni mezcla a pantalla completa.
+- **CRT curvo:** la rejilla solo se recalcula si cambia el rectángulo de destino.
+- **Bucle:** si varias vueltas seguidas duran menos de 2 ms (nada frena el bucle), espera hasta el siguiente fotograma.
+- **`sms_load_state`:** `psg.latch`, `psg.noise` y `psg.vol[]` se limitan a su rango.
+- **Medidas (PC de la sesión, µs por fotograma, 1-1 con bot):** emulación 800 → 365; imagen 16:9 340 → 227; imagen 4:3 292 → 150.
+- **Comprobación de que nada cambia:** (1) huellas `-H` (ahora con `wide=`, la imagen 16:9) idénticas a la 1.0.2 en 10 escenarios; (2) código
+  antiguo y nuevo en el mismo programa, fotograma a fotograma, comparando imagen, capas, sonido, RAM, VDP y las dos imágenes finales: las cinco
+  rondas con sus tres fases, en inglés y castellano, 16:9/4:3/Game Gear, con y sin trucos; (3) 43 capturas del ejecutable idénticas.
+- **Sin tocar, anotado:** los estados guardados son la estructura tal cual (con punteros): no valen entre una app de 32 bits y una de 64.
+  La clave de firma del APK está en el repositorio (ver ESTADO).

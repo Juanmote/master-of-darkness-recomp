@@ -303,17 +303,38 @@ void mod_render(const sms_t* s, uint32_t* out, int pitch, int ext, mod_wide_info
   const sms_vdp_t* d = &s->st.vdp;
   const int sh = (d->reg[1] & 0x02) ? 16 : 8;
   const uint32_t black = sms_color(0);
+  // What each column of a playfield line is, the same for every line of the frame:
+  //   COL_SIDE   outside the original picture: drawn from the map
+  //   COL_COVER  inside it but under an edge painted over (hand-picked rule): from the map, unless a sprite is there
+  //   COL_PLAIN  inside it: the picture itself
+  //   COL_LEFT8  inside it, the 8 columns the console may blank on the left: the picture, or the map when blanked
+  // run_end[x] is where the run of columns of the same kind that starts at x ends.
+  enum { COL_SIDE, COL_COVER, COL_PLAIN, COL_LEFT8 };
+  uint8_t col_kind[CACHE_W];
+  uint16_t run_end[CACHE_W];
+  if (valid) {
+    for (int x = 0; x < W; x++) {
+      int vx = v.view + x;
+      bool in_center = x >= cx && x < cx + SMS_W;
+      bool covered = (vx >= v.left && vx < v.left + srcL.cover) || (vx < v.right && vx >= v.right - srcR.cover);
+      col_kind[x] = !in_center ? COL_SIDE : covered ? COL_COVER : x < cx + 8 ? COL_LEFT8 : COL_PLAIN;
+    }
+    for (int x = W - 1; x >= 0; x--) run_end[x] = (uint16_t)((x + 1 < W && col_kind[x + 1] == col_kind[x]) ? run_end[x + 1] : x + 1);
+  }
+  uint32_t pal[32];
   for (int y = 0; y < SMS_H; y++) {
     uint32_t* row = out + y * pitch;
-    uint32_t pal[32];
-    for (int i = 0; i < 32; i++) pal[i] = sms_color(s->line_cram[y][i]);
+    // the palette of this line (it only changes with raster effects)
+    if (y == 0 || memcmp(s->line_cram[y], s->line_cram[y - 1], 32))
+      for (int i = 0; i < 32; i++) pal[i] = sms_color(s->line_cram[y][i]);
     const uint8_t* src = s->fb_idx[y];
     bool scene = valid || from_cache;
     bool fill = scene && y >= GAME_Y0;
     bool hud = scene && y < GAME_Y0;
     bool left_blank = (s->line_reg0[y] & 0x20) != 0;
     int off = fill ? cx : ext;
-    if (ext) for (int x = 0; x < W; x++) row[x] = black;   // the black of the current palette
+    // the black of the current palette (not needed where every column is drawn below: playfield lines with the map)
+    if (ext && !(valid && fill)) for (int x = 0; x < W; x++) row[x] = black;
     if (hud && cx != ext) {
       // status bar stays centred, sprites crossing into it follow the playfield
       for (int x = 0; x < SMS_W; x++) row[ext + x] = pal[s->fb_bg[y][x]];
@@ -348,8 +369,10 @@ void mod_render(const sms_t* s, uint32_t* out, int pitch, int ext, mod_wide_info
       if (left_blank) for (int x = 0; x < 8; x++) row[cx + x] = keepL ? pal[ci[cx + x]] : perL ? pal[bg[8 + pmod(x - 8, 16)]] : back;
       if (keepL) for (int x = 0; x < cache.coverL; x++) if (!s->fb_spr[y][x]) row[cx + x] = pal[ci[cx + x]];
       if (keepR) for (int x = SMS_W - cache.coverR; x < SMS_W; x++) if (!s->fb_spr[y][x]) row[cx + x] = pal[ci[cx + x]];
-    } else {
+    } else if (hero_on) {
       for (int x = 0; x < SMS_W; x++) row[off + x] = px_color(s, pal, y, x, src[x]);
+    } else {
+      for (int x = 0; x < SMS_W; x++) row[off + x] = pal[src[x]];
     }
     if (!ext || !valid) continue;
     if (hud) off = cx;
@@ -357,11 +380,15 @@ void mod_render(const sms_t* s, uint32_t* out, int pitch, int ext, mod_wide_info
     uint8_t* cidx = cache.idx[y];
     // side areas from the map
     for (int x = 0; fill && x < W; x++) {
-      bool in_center = x >= off && x < off + SMS_W;
-      int vx = v.view + x;
-      bool covered = (vx >= v.left && vx < v.left + srcL.cover) || (vx < v.right && vx >= v.right - srcR.cover);
-      if (in_center && covered && s->fb_spr[y][x - off]) { cidx[x] = s->fb_bg[y][x - off]; continue; }
-      if (in_center && !covered && !(left_blank && x < off + 8)) { cidx[x] = s->fb_bg[y][x - off]; continue; }
+      int kind = col_kind[x];
+      bool in_center = kind != COL_SIDE;
+      if (kind == COL_PLAIN || (kind == COL_LEFT8 && !left_blank)) {   // a whole run of the picture at once
+        int x1 = run_end[x];
+        memcpy(cidx + x, s->fb_bg[y] + (x - off), (size_t)(x1 - x));
+        x = x1 - 1;
+        continue;
+      }
+      if (kind == COL_COVER && s->fb_spr[y][x - off]) { cidx[x] = s->fb_bg[y][x - off]; continue; }
       // outside the section (one-screen rooms, section ends): keep repeating the
       // pattern found at the edge, so walls, tombs or pillars simply continue
       int wx = side_wx(&v, &srcL, &srcR, v.view + x, wy);

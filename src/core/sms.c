@@ -187,6 +187,24 @@ static inline int tile_px(const uint8_t* t, int bit) {
   return ((t[0] >> bit) & 1) | (((t[1] >> bit) & 1) << 1) | (((t[2] >> bit) & 1) << 2) | (((t[3] >> bit) & 1) << 3);
 }
 
+// The 8 pixels of one tile row (4 bit planes) as 8 colour numbers, left to right; flipped = mirrored.
+// spread[b] holds the 8 bits of b as 8 bytes (first byte = leftmost pixel = bit 7); spread_flip the other way round.
+static uint64_t spread[256], spread_flip[256];
+static bool spread_ready;
+static void spread_init(void) {
+  for (int b = 0; b < 256; b++) {
+    uint8_t t[8], f[8];
+    for (int i = 0; i < 8; i++) { t[i] = (b >> (7 - i)) & 1; f[i] = (b >> i) & 1; }
+    memcpy(&spread[b], t, 8); memcpy(&spread_flip[b], f, 8);
+  }
+  spread_ready = true;
+}
+static inline void tile_row(const uint8_t* t, bool flipped, uint8_t out[8]) {
+  const uint64_t* sp = flipped ? spread_flip : spread;
+  uint64_t v = sp[t[0]] | (sp[t[1]] << 1) | (sp[t[2]] << 2) | (sp[t[3]] << 3);   // every byte is 0 or 1: the shifts stay inside it
+  memcpy(out, &v, 8);
+}
+
 static void render_line(sms_t* s, int y) {
   sms_vdp_t* d = &s->st.vdp;
   uint8_t* out = s->fb_idx[y];
@@ -205,32 +223,52 @@ static void render_line(sms_t* s, int y) {
   }
   uint16_t nt = (d->reg[2] & 0x0E) << 10;
   int hs = (y < 16 && (d->reg[0] & 0x40)) ? 0 : d->reg[8];
-  for (int x = 0; x < SMS_W; x++) {
+  // Background, one name-table cell (up to 8 pixels) at a time. The picture is cut where the vertical scroll
+  // changes (the last 8 columns can be locked) and at every cell edge.
+  for (int x = 0; x < SMS_W; ) {
+    int seg_end = (x < 192 && (d->reg[0] & 0x80)) ? 192 : SMS_W;
     int vs = (x >= 192 && (d->reg[0] & 0x80)) ? 0 : d->vscroll_latched;
-    int sx = (x - hs) & 255;
     int sy = (y + vs) % 224;
-    int col = sx >> 3, row = sy >> 3;
-    const uint8_t* ep = &d->vram[nt + (row * 32 + col) * 2];
-    uint16_t e = ep[0] | (ep[1] << 8);
-    int px = sx & 7, py = sy & 7;
-    if (e & 0x200) px = 7 - px;
-    if (e & 0x400) py = 7 - py;
-    unsigned gi = (unsigned)(e & 0x1FF) - s->glyph_first;
-    const uint8_t* tp = s->glyphs && gi < s->glyph_count ? s->glyphs[gi] : &d->vram[(e & 0x1FF) * 32];
-    int c = tile_px(tp + py * 4, 7 - px);
-    uint16_t pal = e & 0x800;
-    if (!c && s->glyphs) {
+    int row = sy >> 3, py = sy & 7;
+    while (x < seg_end) {
+      int sx = (x - hs) & 255;
+      int col = sx >> 3, p0 = sx & 7;
+      int n = 8 - p0;
+      if (n > seg_end - x) n = seg_end - x;
+      const uint8_t* ep = &d->vram[nt + (row * 32 + col) * 2];
+      uint16_t e = ep[0] | (ep[1] << 8);
+      unsigned gi = (unsigned)(e & 0x1FF) - s->glyph_first;
+      const uint8_t* tp = s->glyphs && gi < s->glyph_count ? s->glyphs[gi] : &d->vram[(e & 0x1FF) * 32];
+      uint8_t c8[8];
+      tile_row(tp + ((e & 0x400) ? 7 - py : py) * 4, (e & 0x200) != 0, c8);
+      uint8_t pal = (e & 0x800) ? 16 : 0;
+      bool front = (e & 0x1000) != 0;
       // the accent of an extra letter is drawn in the empty row above it (the second half of the table)
-      const uint8_t* bp = &d->vram[nt + (((row + 1) % 28) * 32 + col) * 2];
-      uint16_t be = bp[0] | (bp[1] << 8);
-      unsigned g2 = (unsigned)(be & 0x1FF) - s->glyph_first;
-      if (g2 < s->glyph_count) {
-        c = tile_px(s->glyphs[s->glyph_count + g2] + (sy & 7) * 4, 7 - (sx & 7));
-        if (c) pal = be & 0x800;   // the accent fades with its letter: the blank tile above has another palette
+      const uint8_t* acc = NULL; uint8_t acc_pal = 0;
+      if (s->glyphs) {
+        const uint8_t* bp = &d->vram[nt + (((row + 1) % 28) * 32 + col) * 2];
+        uint16_t be = bp[0] | (bp[1] << 8);
+        unsigned g2 = (unsigned)(be & 0x1FF) - s->glyph_first;
+        if (g2 < s->glyph_count) { acc = s->glyphs[s->glyph_count + g2] + py * 4; acc_pal = (be & 0x800) ? 16 : 0; }
       }
+      if (!acc) {
+        for (int k = 0; k < n; k++) {
+          uint8_t c = c8[p0 + k];
+          out[x + k] = pal + c;
+          prio[x + k] = front && c != 0;
+        }
+      } else {
+        uint8_t a8[8];
+        tile_row(acc, false, a8);
+        for (int k = 0; k < n; k++) {
+          uint8_t c = c8[p0 + k], pl = pal;
+          if (!c) { c = a8[p0 + k]; if (c) pl = acc_pal; }   // the accent fades with its letter: the blank tile above has another palette
+          out[x + k] = pl + c;
+          prio[x + k] = front && c != 0;
+        }
+      }
+      x += n;
     }
-    out[x] = (pal ? 16 : 0) + c;
-    prio[x] = (e & 0x1000) && c != 0;
   }
   memcpy(s->fb_bg[y], out, SMS_W);
   memset(s->fb_spr[y], 0, SMS_W);
@@ -325,6 +363,7 @@ void sms_init(sms_t* s, const uint8_t* rom, int size) {
 void sms_run_frame(sms_t* s) {
   sms_vdp_t* d = &s->st.vdp;
   z80* cpu = &s->st.cpu;
+  if (!spread_ready) spread_init();
   if ((s->input & BTN_PAUSE) && !(s->st.prev_input & BTN_PAUSE)) z80_gen_nmi(cpu);
   s->st.prev_input = s->input;
   s->frame_start_cyc = cpu->cyc;
@@ -395,6 +434,10 @@ bool sms_load_state(sms_t* s, const void* in, size_t size) {
   if (hdr[0] != STATE_MAGIC || hdr[1] != sizeof(sms_state_t) || size != sms_state_size()) return false;
   memcpy(&s->st, (const uint8_t*)in + 8, sizeof s->st);
   bind_cpu(s);
+  // a damaged file must not make the sound chip read or write outside its tables
+  s->st.psg.latch &= 7;
+  s->st.psg.noise &= 7;
+  for (int c = 0; c < 4; c++) s->st.psg.vol[c] &= 15;
   s->psg_log_n = 0;
   return true;
 }
