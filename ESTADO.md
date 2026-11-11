@@ -17,8 +17,8 @@ Detalles técnicos de cada versión: [`docs/NOTAS_TECNICAS.md`](docs/NOTAS_TECNI
     elegidos (Sepia, Pantalla verde...), también en la portada.
   - Clave de firma nueva fuera del repositorio, en los Secrets `MOD_KEYSTORE_B64` y `MOD_KEYSTORE_PASSWORD` (los pone el usuario a mano). Sin
     ellos el flujo no publica. Quien tenga una versión anterior desinstala una vez (exportando antes el perfil).
-  - **Edición completa:** sigue firmada con la clave antigua (desde la sesión no se pudo acceder a su repositorio). Para pasarla a la nueva:
-    los mismos dos Secrets allí y el mismo cambio en su `build.gradle` y flujo.
+  - **Edición completa:** pasada también a la clave nueva (Completa 1.0.5, build 7, con los mismos dos Secrets en su repositorio; huella
+    comprobada en la APK publicada). También hay que desinstalar una vez la Completa anterior.
 
 - **1.0.3: auditoría y optimización antes del lanzamiento** (detalles en `docs/NOTAS_TECNICAS.md`, 1.0.3). El juego se comporta igual
   (comprobado fotograma a fotograma contra la 1.0.2); cambia el trabajo que cuesta cada fotograma:
