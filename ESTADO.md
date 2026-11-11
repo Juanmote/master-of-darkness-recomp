@@ -1,6 +1,6 @@
 # Estado del proyecto — Master of Darkness Re-Master-Ed
 
-Última actualización: 11 de noviembre de 2026. Versión publicada: **v1.0.4** (en `main`; lanzamiento público el 12-11-2026).
+Última actualización: 11 de noviembre de 2026. Versión publicada: **v1.0.5** (en `main`; lanzamiento público el 12-11-2026).
 
 Launcher para Android (y escritorio) que ejecuta *Master of Darkness* (Master System) desde la ROM del
 usuario, con 16:9 real, trucos, opciones de juego, filtros, paletas, pack de música y controles táctiles.
@@ -8,6 +8,9 @@ Detalles técnicos de cada versión: [`docs/NOTAS_TECNICAS.md`](docs/NOTAS_TECNI
 [`docs/PACK_MUSICA.md`](docs/PACK_MUSICA.md). Guion de narración: [`docs/GUION_NARRACION.md`](docs/GUION_NARRACION.md).
 
 ## Para seguir en un chat nuevo (11-11-2026)
+
+- **1.0.5: el filtro también en las bandas** (detalles en `docs/NOTAS_TECNICAS.md`, 1.0.5). Con Scanlines / CRT / CRT curvo y colores que no
+  son negro puro, las bandas vacías llevan el mismo filtro que la imagen (antes salían lisas y se notaba el corte). **Falta:** que lo pruebe.
 
 - **1.0.4: bandas y clave de firma** (detalles en `docs/NOTAS_TECNICAS.md`, 1.0.4).
   - Game Gear empieza con bandas negras (antes forzaba "Ambiente"); las bandas negras y la línea del marcador toman el negro de los colores

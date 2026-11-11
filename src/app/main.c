@@ -22,7 +22,7 @@
 #include "stb_image.h"
 
 #include "miniz.h"
-#define APP_VERSION "1.0.4"
+#define APP_VERSION "1.0.5"
 #define KNOWN_CRC 0x96FB4D4Bu
 #define UI_W 640
 #define UI_H 360
@@ -1823,10 +1823,11 @@ static void ensure_textures(int game_w) {
   }
   if (!tex_scan) {
     // 4 texture rows per game line: last one darkened
-    uint32_t px[SMS_H * 4];
+    uint32_t* px = malloc(sizeof(uint32_t) * game_h * 4);   // game_h can be more than the console's lines (padded picture)
     for (int i = 0; i < game_h * 4; i++) px[i] = (i % 4 == 3) ? 0x90000000 : (i % 4 == 2 ? 0x30000000 : 0x00000000);
     tex_scan = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STATIC, 1, game_h * 4);
     SDL_UpdateTexture(tex_scan, NULL, px, 4);
+    free(px);
     SDL_SetTextureBlendMode(tex_scan, SDL_BLENDMODE_BLEND);
     SDL_SetTextureScaleMode(tex_scan, SDL_ScaleModeLinear);
   }
@@ -2821,17 +2822,43 @@ static void present(void) {
   if (!gg_on) gg_x = -1;   // the next stage starts centred on the hero
   int gw = cfg.widescreen ? WIDE_W : gg_on ? GG_W : SMS_W;
   game_h = gg_on ? GG_H : SMS_H;
-  ensure_textures(gw);
   if (cfg.widescreen) mod_render(&S, pix, gw, MOD_WIDE_EXT, NULL, E.wide ? E.shown : NULL, E.wide ? E.n_shown : 0);
   else if (gg_on) gg_render();
   else mod_render_full43(&S, pix, gw);   // also fills the column the game blanks on the left
-  SDL_UpdateTexture(tex_game, NULL, pix, gw * 4);
   int ww, wh;
   SDL_GetRendererOutputSize(ren, &ww, &wh);
   SDL_Rect dst = dest_rect(ww, wh, gw);
+  const SDL_Rect pic = dst;       // where the game picture itself is (the Game Gear pause bar goes over it)
+  const int pic_h = game_h;
   // plain bands take the black of the chosen colours (1.0.4): with Sepia, Green screen... the empty screen
   // around the picture matches it also on the title screens, not only when the Game Gear window fills it
   uint32_t k0 = sms_color(0);
+  // ...and with Scanlines / CRT / Curved CRT they are part of the picture (1.0.5): the picture is sent with
+  // extra lines and columns of that colour, enough to fill the screen, so the filter covers the bands too
+  // (flat bands next to a filtered picture showed where it ended). Not needed when that black is pure black.
+  const uint32_t* src = pix;
+  int filt = cfg.filter == FILTER_SCANLINES || cfg.filter == FILTER_CRT || cfg.filter == FILTER_CRT_CURVED;
+  int padded = 0;
+  if (filt && !cfg.bands && (k0 & 0xFFFFFF) && cfg.scale != SCALE_STRETCH && dst.w > 0 && dst.h > 0 && (dst.x > 0 || dst.y > 0)) {
+    int padx = (dst.x * gw + dst.w - 1) / dst.w, pady = (dst.y * game_h + dst.h - 1) / dst.h;
+    if (padx > 2 * gw) padx = 2 * gw;
+    if (pady > 2 * game_h) pady = 2 * game_h;
+    int pw = gw + 2 * padx, ph = game_h + 2 * pady;
+    static uint32_t* padbuf; static int pad_cap;
+    if (pw * ph > pad_cap) { free(padbuf); padbuf = malloc(sizeof(uint32_t) * pw * ph); pad_cap = padbuf ? pw * ph : 0; }
+    if (padbuf) {
+      for (int i = 0; i < pw * ph; i++) padbuf[i] = k0;
+      for (int y = 0; y < game_h; y++) memcpy(padbuf + (y + pady) * pw + padx, pix + y * gw, gw * 4);
+      double fx = (double)dst.w / gw, fy = (double)dst.h / game_h;
+      dst.x -= (int)(padx * fx + 0.5); dst.y -= (int)(pady * fy + 0.5);
+      dst.w = (int)(pw * fx + 0.5); dst.h = (int)(ph * fy + 0.5);
+      src = padbuf; gw = pw; game_h = ph; padded = 1;
+    }
+  }
+  ensure_textures(gw);
+  SDL_UpdateTexture(tex_game, NULL, src, gw * 4);
+  // around a curved tube that takes the whole screen there is nothing: black
+  if (padded && cfg.filter == FILTER_CRT_CURVED) k0 = 0;
   SDL_SetRenderDrawColor(ren, (k0 >> 16) & 255, (k0 >> 8) & 255, k0 & 255, 255);
   SDL_RenderClear(ren);
   if (cfg.bands && (dst.w < ww - 2 || dst.h < wh - 2)) draw_ambient(gw, ww, wh);
@@ -2864,7 +2891,8 @@ static void present(void) {
     SDL_RenderCopy(ren, tex_game, NULL, &dst);
     if (cfg.filter == FILTER_SCANLINES) SDL_RenderCopy(ren, tex_scan, NULL, &dst);
   }
-  if (gg_on && mod_music_paused(&S)) gg_draw_hud(dst);
+  game_h = pic_h;
+  if (gg_on && mod_music_paused(&S)) gg_draw_hud(pic);
   if (touch_visible()) draw_touch(ww, wh);
   draw_ui();
   if (ui_used) {

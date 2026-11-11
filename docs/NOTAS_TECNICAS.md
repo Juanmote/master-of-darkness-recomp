@@ -625,3 +625,12 @@ Qué se revisó: compilación con todos los avisos, analizador estático de clan
   en vez de publicar. Una compilación sin clave (fork, local) usa la de depuración. Huella SHA-256 del certificado:
   `63:54:07:35:34:7A:B5:00:96:8E:4C:05:9B:42:F9:71:9A:90:E3:55:5D:11:0C:6D:48:99:A3:32:4E:74:E4:38`.
   Quien tenga una versión anterior tiene que desinstalarla una vez (antes, Modos de juego › Exportar perfil).
+
+## 1.0.5 (11-11-2026) — el filtro también en las bandas
+- Con Scanlines, CRT o CRT curvo y bandas negras de una paleta cuyo negro no es negro puro (Sepia, Pantalla verde, Tele antigua, Nocturna),
+  las bandas salían lisas junto a la imagen filtrada y se veía dónde acababa el filtro (captura del usuario en 8:7, Pantalla verde, Scanlines).
+  Ahora `present` manda la imagen con líneas y columnas de más de ese color (`padbuf`, `sms_color(0)`), las justas para llenar la pantalla,
+  y `dst` crece igual: el filtro cubre también las bandas y la imagen del juego queda donde estaba (`pic`, para la barra de pausa del Game Gear).
+  `game_h` vale la altura con relleno solo mientras se dibuja. En CRT curvo la curva coge toda la pantalla y fuera queda negro.
+  Con "Original" y "Vivos" (negro puro), con "Ambiente", con "Estirar" o con los filtros sin líneas no cambia nada.
+- `tex_scan`: su tabla ya no tiene tamaño fijo (`SMS_H * 4`), porque la imagen con relleno tiene más líneas.
