@@ -15,6 +15,8 @@ castellano, con logros, modos nuevos y controles modernos. Un proyecto de fan he
 1. Ve a [**Releases**](../../releases/latest) y descarga el `.apk`.
 2. Instálalo. La primera vez te pedirá que elijas tu ROM `.sms`: se copia dentro de la app y no vuelve a pedirse.
 3. Las versiones nuevas se instalan encima sin perder ajustes, partidas ni logros.
+4. Si vienes de una versión anterior a la 1.0.4 (la firma cambió), desinstálala una vez. Antes, en *Jugar › Exportar perfil*,
+   guarda tu perfil de logros para importarlo después.
 
 Funciona en móviles y consolas Android (probado en Odin 3 Max y Retroid Pocket Classic), con mando o con
 controles táctiles. Está en castellano y en inglés.
@@ -23,30 +25,36 @@ controles táctiles. Está en castellano y en inglés.
 
 **Imagen**
 - **16:9 panorámico real**: los laterales se reconstruyen con el mapa del nivel, y los enemigos viven también ahí.
-- También 4:3, 8:7 (tele de tubo) y **formato Game Gear** (ventana que sigue al héroe, con su marcador).
-- Filtros: nítido, suave, scanlines, CRT y CRT curvo. Seis paletas de color y trajes de varios colores para el Dr. Social.
+- También 4:3, 8:7 (tele de tubo) y **formato Game Gear** (ventana que sigue al héroe, con su marcador y bandas negras).
+- Filtros: nítido, suave, scanlines, CRT y CRT curvo, que cubren también las bandas vacías. Seis paletas de color
+  (las bandas toman el negro de la paleta elegida) y trajes de varios colores para el Dr. Social.
+- Pantalla de inicio con siete secciones y arte propio; icono adaptable; la app se llama **Re-Master-ed of Darkness**.
 
 **Juego**
 - **Sin ralentizaciones** (o con las originales, si las echas de menos).
 - **Texto en castellano**, con traducción propia: introducción, historia, diálogos de los jefes y final.
-- Dificultad fácil, normal o difícil; doble salto; escaleras con salto; reaparición de enemigos a tu gusto.
+- Dificultad fácil, normal o difícil; doble salto (seguro junto al techo); escaleras con salto; reaparición de enemigos a tu gusto.
+- Pausa al coger objetos: la original, o sin ella.
 - Guardar y cargar estado, rebobinar hasta 20 segundos (L2) y acelerar (R2).
 - Trucos: invencible, vidas y munición infinitas, subarmas sin límite, elegir arma y ronda.
 - «Versión remasterizada» (lo que trae una instalación nueva) y «Volver al juego original», a un botón.
+- Auditado y optimizado: emular un fotograma cuesta la mitad y el juego se comporta igual que antes.
 
 **Modos y logros**
-- **Modo logros**: 37 logros propios, con las ventajas bloqueadas.
+- **Modo logros**: 37 logros propios con icono y aviso al desbloquearlos, con las ventajas bloqueadas.
 - **Modo Survivor**: todo el juego con una sola vida, en tres dificultades.
 - **Boss Rush**: los cinco jefes seguidos contra el reloj. Cada jefe se desbloquea al llegar a él en cualquier partida.
 - Perfil de logros exportable e importable.
 
 **Controles**
-- Botones configurables (también C y Z de los mandos de seis botones) y vibración ajustable.
+- Botones configurables (también C y Z de los mandos de seis botones): «Definir botones» pide atacar, saltar y subarma
+  seguidos, y atacar puede ser un botón o todos los libres. Vibración ajustable.
 - Controles táctiles en tres tamaños, que se esconden solos al conectar un mando.
 
 **Sonido**
 - Música original del juego, o la tuya: hasta tres packs de música opcionales
-  ([cómo preparar uno](docs/PACK_MUSICA.md)).
+  ([cómo preparar uno](docs/PACK_MUSICA.md)), con prueba de pistas también en el launcher.
+- Música del menú original, sintetizada en la app, y sin chasquidos al abrir o cerrar el menú.
 - Galería y manual: packs opcionales de imágenes (`.zip` de `.jpg` o `.png`) que se eligen desde la pantalla de inicio.
 
 ## Controles
