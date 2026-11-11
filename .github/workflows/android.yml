@@ -10,7 +10,7 @@ permissions:
 
 env:
   SDL_TAG: release-2.30.12
-  MOD_VERSION: 1.0.3
+  MOD_VERSION: 1.0.4
 
 jobs:
   apk:
@@ -29,8 +29,22 @@ jobs:
           # The Java side must match the C side exactly: always take it from the same SDL copy
           cp android/app/jni/SDL/android-project/app/src/main/java/org/libsdl/app/*.java android/app/src/main/java/org/libsdl/app/
 
+      - name: Release key (from the repository Secrets)
+        env:
+          KEY_B64: ${{ secrets.MOD_KEYSTORE_B64 }}
+          KEY_PW: ${{ secrets.MOD_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -z "$KEY_B64" ] || [ -z "$KEY_PW" ]; then
+            echo "::error::Faltan los Secrets MOD_KEYSTORE_B64 y MOD_KEYSTORE_PASSWORD: no se publica un APK sin la clave oficial"
+            exit 1
+          fi
+          echo "$KEY_B64" | base64 -d > "$RUNNER_TEMP/mod-release.p12"
+          echo "MOD_KEYSTORE_FILE=$RUNNER_TEMP/mod-release.p12" >> "$GITHUB_ENV"
+
       - name: Build APK
         working-directory: android
+        env:
+          MOD_KEYSTORE_PASSWORD: ${{ secrets.MOD_KEYSTORE_PASSWORD }}
         run: |
           NDK_VER=$(grep Pkg.Revision "$ANDROID_NDK_LATEST_HOME/source.properties" | cut -d= -f2 | tr -d ' ')
           echo "Using NDK $NDK_VER"
@@ -57,6 +71,7 @@ jobs:
             **Re-Master-ed of Darkness ${{ env.MOD_VERSION }}** para Android.
 
             - Descarga el `.apk` de aquí abajo e instálalo. Se instala encima de versiones anteriores sin perder ajustes, partidas ni logros.
+            - **Si probaste una versión anterior a la 1.0.4** (testers): esa iba firmada con otra clave, así que hay que desinstalarla una vez antes de instalar esta. Para no perder los logros, antes usa *Modos de juego › Exportar perfil* y después *Importar perfil*.
             - **No incluye la ROM:** al abrir la app por primera vez se te pedirá que elijas tu copia de *Master of Darkness (Europe, Brazil) (En).sms*.
             - Qué trae y cómo se usa: en la [portada del proyecto](https://github.com/${{ github.repository }}#readme).
 

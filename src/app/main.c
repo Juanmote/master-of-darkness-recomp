@@ -22,7 +22,7 @@
 #include "stb_image.h"
 
 #include "miniz.h"
-#define APP_VERSION "1.0.3"
+#define APP_VERSION "1.0.4"
 #define KNOWN_CRC 0x96FB4D4Bu
 #define UI_W 640
 #define UI_H 360
@@ -911,8 +911,9 @@ static void menu_change(int dir) {
     cfg.widescreen = f == 0;
     cfg.crt = f == 2;
     cfg.gg = f == 3;
-    // 8:7 keeps its shape (fit) and the bands left on a square screen take the picture's colours
-    if (cfg.crt || cfg.gg) { cfg.scale = SCALE_FIT; cfg.bands = 1; }
+    // 8:7 keeps its shape (fit) and the bands left on a square screen take the picture's colours;
+    // Game Gear starts with plain bands (the black of the chosen colours, 1.0.4: the user prefers it)
+    if (cfg.crt || cfg.gg) { cfg.scale = SCALE_FIT; cfg.bands = cfg.crt; }
     if (cfg.gg) show_toast(T("Game Gear: a smaller window that follows you.\nPause shows the status bar",
                              "Game Gear: ventana más pequeña que te sigue.\nLa pausa enseña el marcador"), 3500);
     mod_enhance_set_wide(&E, cfg.widescreen || cfg.gg, MOD_WIDE_EXT);
@@ -2059,7 +2060,8 @@ static void gg_render(void) {
   for (int y = 0; y < GG_STAGE; y++) memcpy(pix + (y + GG_LINE) * GG_W, gg_wide + (y + HUD_H) * WIDE_W + gg_x, GG_W * 4);
   // the Game Gear line on a black band: energy, subweapon ammo and time; in a boss fight, without the label
   // and with the boss energy next to the hero's (nothing else is drawn on it)
-  for (int i = 0; i < GG_LINE * GG_W; i++) pix[i] = 0xFF000000u;
+  uint32_t k0 = sms_color(0);   // the black of the chosen colours, like the bands around it
+  for (int i = 0; i < GG_LINE * GG_W; i++) pix[i] = k0;
   if (music_current == 0x88 || music_current == 0x8E) {   // boss music (rounds 1-4, round 5): a boss fight
     gg_hud_part(72, 16, 64, 3);                 // hero energy dots
     gg_hud_part(72, 24, 64, 72);                // boss energy dots
@@ -2827,7 +2829,10 @@ static void present(void) {
   int ww, wh;
   SDL_GetRendererOutputSize(ren, &ww, &wh);
   SDL_Rect dst = dest_rect(ww, wh, gw);
-  SDL_SetRenderDrawColor(ren, 0, 0, 0, 255);
+  // plain bands take the black of the chosen colours (1.0.4): with Sepia, Green screen... the empty screen
+  // around the picture matches it also on the title screens, not only when the Game Gear window fills it
+  uint32_t k0 = sms_color(0);
+  SDL_SetRenderDrawColor(ren, (k0 >> 16) & 255, (k0 >> 8) & 255, k0 & 255, 255);
   SDL_RenderClear(ren);
   if (cfg.bands && (dst.w < ww - 2 || dst.h < wh - 2)) draw_ambient(gw, ww, wh);
   if (cfg.filter == FILTER_SHARP_SMOOTH) {

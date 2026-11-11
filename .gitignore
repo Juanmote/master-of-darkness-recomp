@@ -17,3 +17,7 @@ android/local.properties
 # Recompiled game code: derived from the ROM, never committed or distributed
 generated/
 out/
+# Release keys are never committed (they live in the repository Secrets)
+*.jks
+*.p12
+*.keystore

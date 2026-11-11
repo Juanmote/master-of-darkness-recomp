@@ -612,3 +612,16 @@ Qué se revisó: compilación con todos los avisos, analizador estático de clan
   rondas con sus tres fases, en inglés y castellano, 16:9/4:3/Game Gear, con y sin trucos; (3) 43 capturas del ejecutable idénticas.
 - **Sin tocar, anotado:** los estados guardados son la estructura tal cual (con punteros): no valen entre una app de 32 bits y una de 64.
   La clave de firma del APK está en el repositorio (ver ESTADO).
+
+## 1.0.4 (11-11-2026) — bandas y clave de firma
+- **Game Gear:** al elegir el formato, las bandas vacías pasan a "Negras" (antes se forzaba "Ambiente"; el usuario lo prefiere así). El 8:7
+  sigue poniendo "Ambiente".
+- **Bandas negras con colores:** el fondo de la pantalla (`SDL_RenderClear` en `present`) y la línea del marcador del Game Gear usan
+  `sms_color(0)`, el negro de la paleta elegida (Sepia, Pantalla verde...), no el negro puro. Se notaba en una pantalla casi cuadrada (Classic):
+  en la portada y las historias las franjas de arriba y abajo salían negras y al jugar la ventana Game Gear las tapaba. Con "Original" no cambia.
+- **Clave de firma nueva:** fuera `android/keystore/mod-release.jks` (estaba en el repositorio público con su contraseña). La clave nueva
+  (PKCS12, alias `mod`, la misma contraseña para el almacén y la clave) está en los Secrets del repositorio: `MOD_KEYSTORE_B64` (el archivo en
+  base64) y `MOD_KEYSTORE_PASSWORD`. El flujo la escribe en `$RUNNER_TEMP` y Gradle la lee de `MOD_KEYSTORE_FILE`; sin Secrets el flujo se para
+  en vez de publicar. Una compilación sin clave (fork, local) usa la de depuración. Huella SHA-256 del certificado:
+  `63:54:07:35:34:7A:B5:00:96:8E:4C:05:9B:42:F9:71:9A:90:E3:55:5D:11:0C:6D:48:99:A3:32:4E:74:E4:38`.
+  Quien tenga una versión anterior tiene que desinstalarla una vez (antes, Modos de juego › Exportar perfil).

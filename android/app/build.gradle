@@ -20,22 +20,25 @@ android {
         }
     }
     signingConfigs {
-        // Fixed key committed to the repo so every build can update the previous one
-        // without uninstalling. It only identifies this fan project.
+        // Release key (1.0.4): it is NOT in the repository. The GitHub build takes it from the repository
+        // Secrets (MOD_KEYSTORE_B64 and MOD_KEYSTORE_PASSWORD, see .github/workflows/android.yml), so nobody
+        // else can sign an APK that installs over the official one. A build without it (a fork, a local
+        // build) gets the usual debug key: it works, but it can never update the official app.
         mod {
-            storeFile file('../keystore/mod-release.jks')
-            storePassword 'masterofdarkness'
-            keyAlias 'mod'
-            keyPassword 'masterofdarkness'
+            def ks = System.getenv('MOD_KEYSTORE_FILE')
+            if (ks) {
+                storeFile file(ks)
+                storeType 'pkcs12'
+                storePassword System.getenv('MOD_KEYSTORE_PASSWORD')
+                keyAlias 'mod'
+                keyPassword System.getenv('MOD_KEYSTORE_PASSWORD')
+            }
         }
     }
     buildTypes {
         release {
             minifyEnabled false
-            signingConfig signingConfigs.mod
-        }
-        debug {
-            signingConfig signingConfigs.mod
+            signingConfig System.getenv('MOD_KEYSTORE_FILE') ? signingConfigs.mod : signingConfigs.debug
         }
     }
     externalNativeBuild {
